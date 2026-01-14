@@ -1,30 +1,43 @@
-# TreeDB Quick Start
+# ConDB Quick Start
 
 ## Installation
 
 No dependencies required. Just use the Python file:
 
 ```python
-from treedb import TreeDB
+from condb import ConDB
 ```
+
+## Core Operations
+
+ConDB implements the Context Tree consumption model with four primary operations:
+
+| Operation | What it does | Method |
+|-----------|--------------|--------|
+| **Select** | Choose a node by ID | `get_node()` |
+| **Expand** | Get more detail (children or subtree) | `get_children()`, `get_subtree()` |
+| **Collapse** | Use summary only | Read `attrs_json` |
+| **Traverse** | Move up/down abstraction levels | Use `parent_id` or `path` |
 
 ## Basic Usage
 
 ```python
+from condb import ConDB
+
 # Initialize
-db = TreeDB("mydata.sqlite")
+db = ConDB("context.sqlite")
 
-# Create a tree
-tree_id, root_node_id = db.create_tree(meta={"name": "My Tree"})
+# Create a Context Tree
+tree_id, root_id = db.create_tree(meta={"domain": "research"})
 
-# Get a node
-node = db.get_node(tree_id, root_node_id)
+# Select: get a specific node
+node = db.get_node(tree_id, root_id)
 
-# Get children
-children = db.get_children(tree_id, root_node_id)
+# Expand: get children (one level of refinement)
+children = db.get_children(tree_id, root_id)
 
-# Get subtree
-subtree = db.get_subtree(tree_id, root_node_id, max_depth=5)
+# Expand: get subtree (multiple refinement levels)
+subtree = db.get_subtree(tree_id, root_id, max_depth=3)
 
 # Close
 db.close()
@@ -33,65 +46,92 @@ db.close()
 ## Context Manager
 
 ```python
-with TreeDB("mydata.sqlite") as db:
+with ConDB("context.sqlite") as db:
     tree_id, root_id = db.create_tree()
     # ... operations ...
     # Automatically closed
 ```
 
-## Ingest a Tree
+## Ingest a Context Tree
+
+Build a hierarchical context structure with summaries and content references:
 
 ```python
-tree_structure = {
+# Define the Context Tree structure
+context_tree = {
     "type": "object",
+    "attrs": {"summary": "Research paper on machine learning optimization"},
     "entity_type": "document",
-    "entity_id": "doc_001",
+    "entity_id": "paper_001",
     "children": {
-        "title": {
+        "abstract": {
             "type": "leaf",
-            "attrs": {"text": "My Document"}
+            "attrs": {"summary": "Novel approach to gradient descent with 15% improvement"},
+            "entity_type": "section",
+            "entity_id": "abstract_001"
         },
-        "sections": {
-            "type": "array",
-            "children": [
-                {
-                    "type": "object",
+        "methodology": {
+            "type": "object",
+            "attrs": {"summary": "Experimental setup and algorithms"},
+            "children": {
+                "algorithm": {
+                    "type": "leaf",
+                    "attrs": {"summary": "Modified Adam optimizer with momentum decay"},
                     "entity_type": "section",
-                    "entity_id": "sect_001",
-                    "children": {
-                        "heading": {"type": "leaf", "attrs": {"text": "Introduction"}},
-                        "content": {"type": "leaf", "entity_id": "text_001"}
-                    }
+                    "entity_id": "algo_001"
+                },
+                "dataset": {
+                    "type": "leaf",
+                    "attrs": {"summary": "ImageNet subset, 100k samples"},
+                    "entity_type": "section",
+                    "entity_id": "data_001"
                 }
-            ]
+            }
         }
     }
 }
 
-entities = {
-    "doc_001": {"type": "document", "title": "TreeDB Guide"},
-    "sect_001": {"type": "section", "number": 1},
-    "text_001": {"type": "text", "content": "Welcome to TreeDB..."}
+# Define the underlying content
+content = {
+    "paper_001": {"title": "Adaptive Learning Rate Methods", "authors": ["A", "B"]},
+    "abstract_001": {"text": "We present a novel optimization technique..."},
+    "algo_001": {"text": "The algorithm modifies standard Adam by...", "code": "..."},
+    "data_001": {"text": "Training was performed on ImageNet...", "samples": 100000}
 }
 
-tree_id = db.ingest_tree(tree_structure, entities=entities)
+# Ingest
+tree_id = db.ingest_tree(context_tree, entities=content)
 ```
 
-## Get Subtree with Entities
+## Expand with Content
 
 ```python
-# Get entire subtree with entity data dereferenced
+# Get subtree with dereferenced content
 result = db.get_subtree(
     tree_id,
-    root_node_id,
-    max_depth=10,
-    with_entities=True
+    root_id,
+    max_depth=5,
+    with_entities=True  # Include underlying content
 )
 
-# Each node in result may have an 'entity' field
+# Each node may have an 'entity' field with content
 for node in result:
+    print(f"Summary: {node.get('attrs', {}).get('summary', 'N/A')}")
     if 'entity' in node:
-        print(f"Node {node['node_id']} has entity: {node['entity']['payload']}")
+        print(f"Content: {node['entity']['payload']}")
+```
+
+## Traverse Abstraction Levels
+
+```python
+# Start at a leaf node, traverse up to higher abstractions
+node = db.get_node(tree_id, some_leaf_id)
+
+# Move up: get parent (higher abstraction)
+parent = db.get_node(tree_id, node['parent_id'])
+
+# Move down: get children (lower abstraction / more detail)
+children = db.get_children(tree_id, parent['node_id'])
 ```
 
 ## Direct SQL Queries
@@ -99,33 +139,57 @@ for node in result:
 ```python
 cursor = db.conn.cursor()
 
-# Find all nodes with a specific entity type
+# Find all leaf nodes (factual grounding)
 cursor.execute("""
-    SELECT node_id, depth, path
+    SELECT node_id, attrs_json, entity_id
     FROM nodes
-    WHERE tree_id = ? AND entity_type = ?
-""", (tree_id, "section"))
+    WHERE tree_id = ? AND node_type = 2
+""", (tree_id,))
 
-for row in cursor.fetchall():
-    print(f"Section at depth {row['depth']}: {row['path']}")
+# Get nodes at a specific abstraction level
+cursor.execute("""
+    SELECT node_id, attrs_json
+    FROM nodes
+    WHERE tree_id = ? AND depth = 2
+""", (tree_id,))
+
+# Find nodes by content type
+cursor.execute("""
+    SELECT node_id, entity_id
+    FROM nodes
+    WHERE tree_id = ? AND entity_type = 'section'
+""", (tree_id,))
 ```
 
 ## Node Types
 
-- `TreeDB.OBJECT` (0): Container with named children
-- `TreeDB.ARRAY` (1): Container with ordered children
-- `TreeDB.LEAF` (2): Terminal node
+- `ConDB.OBJECT` (0): Named refinements (semantic children)
+- `ConDB.ARRAY` (1): Ordered refinements (sequential children)
+- `ConDB.LEAF` (2): Factual grounding (no further refinement)
 
 ## Common Patterns
 
-### Find all leaf nodes
+### Get all summaries at depth N
 
 ```python
-cursor.execute("SELECT * FROM nodes WHERE tree_id = ? AND node_type = 2", (tree_id,))
-leaves = cursor.fetchall()
+cursor.execute("""
+    SELECT node_id, json_extract(attrs_json, '$.summary') as summary
+    FROM nodes
+    WHERE tree_id = ? AND depth = ?
+""", (tree_id, 1))
 ```
 
-### Get depth distribution
+### Find nodes by summary keyword
+
+```python
+cursor.execute("""
+    SELECT node_id, attrs_json
+    FROM nodes
+    WHERE tree_id = ? AND attrs_json LIKE '%optimization%'
+""", (tree_id,))
+```
+
+### Get abstraction level distribution
 
 ```python
 cursor.execute("""
@@ -137,52 +201,29 @@ cursor.execute("""
 """, (tree_id,))
 ```
 
-### Find nodes by entity type
+### Count children per node
 
 ```python
 cursor.execute("""
-    SELECT node_id, entity_id
+    SELECT parent_id, COUNT(*) as refinements
     FROM nodes
-    WHERE tree_id = ? AND entity_type = ?
-""", (tree_id, "user"))
-```
-
-### Get children count
-
-```python
-cursor.execute("""
-    SELECT parent_id, COUNT(*) as child_count
-    FROM nodes
-    WHERE tree_id = ?
+    WHERE tree_id = ? AND parent_id IS NOT NULL
     GROUP BY parent_id
 """, (tree_id,))
 ```
 
 ## Performance Tips
 
-1. Use transactions for batch operations
-2. Limit subtree depth to avoid large result sets
-3. Use `with_entities=False` when entity data isn't needed
-4. Index on entity_type if doing frequent entity queries
-5. Keep attrs_json small (< 1KB recommended)
-
-## Examples
-
-See `examples.py` for complete working examples:
-- Document tree with chapters and paragraphs
-- Configuration tree
-- Abstract syntax tree
-- Navigation menu hierarchy
-- Advanced queries
-
-Run with:
-```bash
-python examples.py
-```
+1. Use `max_depth` to control expansion scope
+2. Use `with_entities=False` when only summaries are needed (Collapse pattern)
+3. Store concise summaries in `attrs_json` for effective navigation
+4. Keep content payloads in entities, not in node attributes
+5. Use transactions for batch ingestion
 
 ## Demo
 
-Run the full demo:
+Run the demo to see Context Tree operations in action:
+
 ```bash
 python demo.py
 ```
@@ -190,15 +231,15 @@ python demo.py
 ## Inspect Database
 
 ```bash
-sqlite3 mydata.sqlite
+sqlite3 context.sqlite
 
 # Show tables
 .tables
 
-# Show schema
+# Show Context Node schema
 .schema nodes
 
 # Query nodes
 SELECT COUNT(*) FROM nodes;
-SELECT * FROM nodes LIMIT 5;
+SELECT depth, COUNT(*) FROM nodes GROUP BY depth;
 ```
