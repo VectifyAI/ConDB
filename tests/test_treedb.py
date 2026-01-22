@@ -1,14 +1,10 @@
-#!/usr/bin/env python3
-"""
-Simple tests for TreeDB v0.1
-"""
-
 import os
-from treedb import TreeDB
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from contextdb.core.storage import TreeDB
 
 
 def test_create_tree():
-    """Test tree creation"""
     print("Test 1: Create tree... ", end="")
     db = TreeDB(":memory:")
     tree_id, root_id = db.create_tree(meta={"test": "value"})
@@ -19,7 +15,6 @@ def test_create_tree():
 
 
 def test_get_node():
-    """Test node retrieval"""
     print("Test 2: Get node... ", end="")
     db = TreeDB(":memory:")
     tree_id, root_id = db.create_tree()
@@ -33,7 +28,6 @@ def test_get_node():
 
 
 def test_get_children():
-    """Test children retrieval"""
     print("Test 3: Get children... ", end="")
     db = TreeDB(":memory:")
     tree_id, root_id = db.create_tree()
@@ -44,10 +38,8 @@ def test_get_children():
 
 
 def test_ingest_simple_tree():
-    """Test simple tree ingestion"""
     print("Test 4: Ingest simple tree... ", end="")
     db = TreeDB(":memory:")
-
     tree = {
         "type": "object",
         "children": {
@@ -55,21 +47,18 @@ def test_ingest_simple_tree():
             "child2": {"type": "leaf"}
         }
     }
-
     tree_id = db.ingest_tree(tree)
     cursor = db.conn.cursor()
     cursor.execute("SELECT COUNT(*) as count FROM nodes WHERE tree_id = ?", (tree_id,))
     count = cursor.fetchone()['count']
-    assert count == 3  # root + 2 children
+    assert count == 3
     db.close()
     print("PASS")
 
 
 def test_ingest_with_entities():
-    """Test tree ingestion with entities"""
     print("Test 5: Ingest tree with entities... ", end="")
     db = TreeDB(":memory:")
-
     tree = {
         "type": "object",
         "entity_type": "doc",
@@ -82,28 +71,22 @@ def test_ingest_with_entities():
             }
         }
     }
-
     entities = {
         "doc1": {"type": "doc", "title": "Test"},
         "text1": {"type": "text", "content": "Hello"}
     }
-
     tree_id = db.ingest_tree(tree, entities=entities)
-
     cursor = db.conn.cursor()
     cursor.execute("SELECT COUNT(*) as count FROM entities")
     entity_count = cursor.fetchone()['count']
     assert entity_count == 2
-
     db.close()
     print("PASS")
 
 
 def test_get_subtree():
-    """Test subtree retrieval"""
     print("Test 6: Get subtree... ", end="")
     db = TreeDB(":memory:")
-
     tree = {
         "type": "object",
         "children": {
@@ -120,44 +103,29 @@ def test_get_subtree():
             }
         }
     }
-
     tree_id = db.ingest_tree(tree)
-
     cursor = db.conn.cursor()
     cursor.execute("SELECT root_node_id FROM trees WHERE tree_id = ?", (tree_id,))
     root_id = cursor.fetchone()['root_node_id']
 
-    # Get depth 1
     subtree = db.get_subtree(tree_id, root_id, max_depth=1)
-    assert len(subtree) == 2  # root + 1 child
+    assert len(subtree) == 2
 
-    # Get depth 2
     subtree = db.get_subtree(tree_id, root_id, max_depth=2)
-    assert len(subtree) == 3  # root + 2 descendants
+    assert len(subtree) == 3
 
-    # Get full tree
     subtree = db.get_subtree(tree_id, root_id, max_depth=10)
-    assert len(subtree) == 4  # all nodes
+    assert len(subtree) == 4
 
     db.close()
     print("PASS")
 
 
 def test_get_entity():
-    """Test entity retrieval"""
     print("Test 7: Get entity... ", end="")
     db = TreeDB(":memory:")
-
-    tree = {
-        "type": "leaf",
-        "entity_type": "user",
-        "entity_id": "user123"
-    }
-
-    entities = {
-        "user123": {"type": "user", "name": "John"}
-    }
-
+    tree = {"type": "leaf", "entity_type": "user", "entity_id": "user123"}
+    entities = {"user123": {"type": "user", "name": "John"}}
     tree_id = db.ingest_tree(tree, entities=entities)
 
     cursor = db.conn.cursor()
@@ -167,43 +135,31 @@ def test_get_entity():
     entity = db.get_entity(tree_id, root_id)
     assert entity is not None
     assert entity.entity_type == "user"
-
     db.close()
     print("PASS")
 
 
 def test_path_structure():
-    """Test path materialization"""
     print("Test 8: Path structure... ", end="")
     db = TreeDB(":memory:")
-
     tree = {
         "type": "object",
         "children": {
             "a": {
                 "type": "object",
-                "children": {
-                    "b": {"type": "leaf"}
-                }
+                "children": {"b": {"type": "leaf"}}
             }
         }
     }
-
     tree_id = db.ingest_tree(tree)
-
     cursor = db.conn.cursor()
     cursor.execute("SELECT path, depth FROM nodes WHERE tree_id = ? ORDER BY depth", (tree_id,))
     rows = cursor.fetchall()
 
-    # Root
     assert rows[0]['depth'] == 0
     assert rows[0]['path'].startswith('/r/')
-
-    # Level 1
     assert rows[1]['depth'] == 1
     assert rows[0]['path'] in rows[1]['path']
-
-    # Level 2
     assert rows[2]['depth'] == 2
     assert rows[1]['path'] in rows[2]['path']
 
@@ -212,10 +168,8 @@ def test_path_structure():
 
 
 def test_array_children():
-    """Test array node type"""
     print("Test 9: Array children... ", end="")
     db = TreeDB(":memory:")
-
     tree = {
         "type": "array",
         "children": [
@@ -224,9 +178,7 @@ def test_array_children():
             {"type": "leaf", "attrs": {"value": "third"}}
         ]
     }
-
     tree_id = db.ingest_tree(tree)
-
     cursor = db.conn.cursor()
     cursor.execute("SELECT root_node_id FROM trees WHERE tree_id = ?", (tree_id,))
     root_id = cursor.fetchone()['root_node_id']
@@ -242,7 +194,6 @@ def test_array_children():
 
 
 def test_context_manager():
-    """Test context manager"""
     print("Test 10: Context manager... ", end="")
     with TreeDB(":memory:") as db:
         tree_id, root_id = db.create_tree()
@@ -251,28 +202,18 @@ def test_context_manager():
 
 
 def run_all_tests():
-    """Run all tests"""
-    print("=" * 60)
-    print("  TreeDB v0.1 - Test Suite")
-    print("=" * 60)
-    print()
+    print("=" * 50)
+    print("  TreeDB Test Suite")
+    print("=" * 50)
 
     tests = [
-        test_create_tree,
-        test_get_node,
-        test_get_children,
-        test_ingest_simple_tree,
-        test_ingest_with_entities,
-        test_get_subtree,
-        test_get_entity,
-        test_path_structure,
-        test_array_children,
-        test_context_manager
+        test_create_tree, test_get_node, test_get_children,
+        test_ingest_simple_tree, test_ingest_with_entities,
+        test_get_subtree, test_get_entity, test_path_structure,
+        test_array_children, test_context_manager
     ]
 
-    passed = 0
-    failed = 0
-
+    passed = failed = 0
     for test in tests:
         try:
             test()
@@ -281,15 +222,12 @@ def run_all_tests():
             print(f"FAIL - {e}")
             failed += 1
 
-    print()
-    print("=" * 60)
+    print("=" * 50)
     print(f"  Results: {passed} passed, {failed} failed")
-    print("=" * 60)
-
+    print("=" * 50)
     return failed == 0
 
 
 if __name__ == "__main__":
     import sys
-    success = run_all_tests()
-    sys.exit(0 if success else 1)
+    sys.exit(0 if run_all_tests() else 1)
