@@ -1,4 +1,4 @@
-# ContextDB
+# ContextDB v0.2
 
 SQLite storage for hierarchical context trees. Works with [PageIndex](https://github.com/VectifyAI/PageIndex).
 
