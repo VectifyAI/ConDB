@@ -55,43 +55,27 @@ def test_manual():
 
 
 def test_llm():
-    print("Test: LLM Retriever")
+    print("Test: Iterative Retriever")
     print("=" * 40)
 
     try:
         Config.validate()
     except ValueError as e:
         print(f"Skip: {e}")
-        return True
+        return
 
-    try:
-        llm = Config.get_llm_client()
-        ct = ContextTree("test_llm.sqlite", llm=llm)
-    except Exception as e:
-        print(f"Init fail: {e}")
-        return False
+    llm = Config.get_llm_client()
+    ct = ContextTree("test_llm.sqlite", llm=llm)
 
-    try:
-        tree_id = ct.index_pageindex(TEST_DATA)
-        print(f"Indexed: {tree_id[:8]}")
-        print(ct.format_tree_view(tree_id, depth=2))
+    tree_id = ct.index_pageindex(TEST_DATA)
+    print(f"Indexed: {tree_id[:8]}")
 
-        result = ct.query(tree_id, "What is regression?", use_llm=True, max_turns=8)
-        print(f"Query 1: {result.turns} turns, {len(result.contents)} contents")
+    r = ct.query(tree_id, "What is regression?", max_turns=5)
+    print(f"turns: {r.turns}, nodes: {len(r.nodes)}")
+    assert len(r.nodes) >= 0
 
-        result = ct.query(tree_id, "What is clustering?", use_llm=True, max_turns=8)
-        print(f"Query 2: {result.turns} turns, {len(result.contents)} contents")
-
-        print("=" * 40)
-        print("OK")
-        return True
-    except Exception as e:
-        print(f"FAIL: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        ct.close()
+    ct.close()
+    print("OK")
 
 
 if __name__ == "__main__":

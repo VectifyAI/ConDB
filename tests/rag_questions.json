@@ -1,0 +1,34 @@
+{
+  "2023-annual-report-truncated_structure.json": [
+    "What does the document say about the Federal Reserve?",
+    "Summarize the overview section."
+  ],
+  "2023-annual-report_structure.json": [
+    "What does the document say about the Federal Reserve?",
+    "Summarize the overview section."
+  ],
+  "PRML_structure.json": [
+    "What is covered in the mathematical notation section?",
+    "What does the preface emphasize?"
+  ],
+  "Regulation Best Interest_proposed rule_structure.json": [
+    "What is discussed in the introduction?",
+    "What is the scope of Regulation Best Interest?"
+  ],
+  "earthmover_structure.json": [
+    "What is the paper about?",
+    "What is covered in the introduction?"
+  ],
+  "four-lectures_structure.json": [
+    "What does the document say about ML at a glance?",
+    "What is covered in programming with ML modules?"
+  ],
+  "q1-fy25-earnings_structure.json": [
+    "What are the summarized financial results?",
+    "What is discussed in the first quarter segment results?"
+  ],
+  "regulation_best_interest.json": [
+    "What is discussed in the introduction?",
+    "What is the interpretation and application section about?"
+  ]
+}

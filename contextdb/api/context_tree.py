@@ -1,10 +1,11 @@
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from contextdb.core.storage import StorageProtocol, TreeDB
 from contextdb.adapter.base import PageIndexAdapter, ChatIndexAdapter, GenericAdapter
-from contextdb.retriever.base import LLMRetriever, ManualRetriever, RetrievalResult, TreeFormatter
+from contextdb.retriever import BeamRetriever, ManualRetriever, RetrievalResult, TreeFormatter, BaseRetriever
 from contextdb.llm import LLMProtocol, LLMClient
 
 
@@ -57,24 +58,26 @@ class ContextTree:
 
     def index_pageindex(self, data: Dict[str, Any]) -> str:
         tree, entities = self.adapters["pageindex"].convert(data)
+        tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
     def index_chatindex(self, data: Dict[str, Any]) -> str:
         tree, entities = self.adapters["chatindex"].convert(data)
+        tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
     def index_generic(self, data: Dict[str, Any], adapter: str = "generic") -> str:
         adapter = self.adapters.get(adapter, self.adapters["generic"])
         tree, entities = adapter.convert(data)
+        tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
-    def query(self, tree_id: str, question: str, use_llm: bool = False, max_turns: int = 10) -> RetrievalResult:
-        if use_llm:
-            if not self.llm:
-                raise ValueError("LLM client not provided")
-            retriever = LLMRetriever(self.storage, self.llm)
-            return retriever.retrieve(tree_id, question, max_turns)
-        raise NotImplementedError("Manual query not implemented")
+    def query(self, tree_id: str, question: str, retriever: BaseRetriever = None, **kwargs) -> RetrievalResult:
+        if not self.llm:
+            raise ValueError("LLM client not provided")
+        if retriever is None:
+            retriever = BeamRetriever(self.storage, self.llm)
+        return retriever.retrieve(tree_id, question, **kwargs)
 
     def query_manual(self, tree_id: str, query: str, actions: List[Dict]) -> RetrievalResult:
         retriever = ManualRetriever(self.storage)
@@ -113,6 +116,32 @@ class ContextTree:
 
     def close(self):
         self.storage.close()
+
+    @staticmethod
+    def _namespace_entities(tree: Dict[str, Any],
+                            entities: Optional[Dict[str, Dict[str, Any]]],
+                            namespace: Optional[str] = None):
+        if not entities:
+            return tree, entities
+
+        ns = namespace or uuid.uuid4().hex
+        mapping = {eid: f"{ns}:{eid}" for eid in entities.keys()}
+
+        def remap(node: Dict[str, Any]):
+            eid = node.get("entity_id")
+            if eid in mapping:
+                node["entity_id"] = mapping[eid]
+            children = node.get("children")
+            if isinstance(children, dict):
+                for child in children.values():
+                    remap(child)
+            elif isinstance(children, list):
+                for child in children:
+                    remap(child)
+
+        remap(tree)
+        new_entities = {mapping[eid]: payload for eid, payload in entities.items()}
+        return tree, new_entities
 
     def __enter__(self):
         return self

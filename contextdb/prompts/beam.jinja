@@ -1,0 +1,24 @@
+You are ranking tree nodes to answer a user question.
+
+Query: {{ query }}
+
+Selected so far:
+{% if selected %}
+{{ selected }}
+{% else %}
+(none)
+{% endif %}
+
+Candidates (pick up to {{ k }} ids, best first):
+{% for c in candidates -%}
+- id: {{ c.node_id }}
+  title: {{ c.title }}
+  summary: {{ c.summary }}
+  text: {{ c.text }}
+  range: {{ c.page_start }}-{{ c.page_end }}
+  path: {{ c.path }}
+{% endfor %}
+
+Return ONE tool call "rank" with:
+- selected: list of ids in best-to-worst order
+- done: true ONLY if you've reached leaf nodes or the content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.
