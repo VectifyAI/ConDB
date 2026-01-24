@@ -1,3 +1,4 @@
+import json
 from typing import List, Dict, Any, Optional, Protocol, runtime_checkable
 
 
@@ -42,7 +43,14 @@ class LLMClient:
 
         response = self._client.messages.create(**kwargs)
 
-        result = {"content": [], "stop_reason": response.stop_reason}
+        usage = None
+        if hasattr(response, "usage") and response.usage:
+            usage = {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens
+            }
+        result = {"content": [], "stop_reason": response.stop_reason, "usage": usage}
         for block in response.content:
             if block.type == "text":
                 result["content"].append({"type": "text", "text": block.text})
@@ -107,15 +115,27 @@ class LLMClient:
         response = self._client.chat.completions.create(**kwargs)
         choice = response.choices[0]
 
-        result = {"content": [], "stop_reason": choice.finish_reason}
+        usage = None
+        if hasattr(response, "usage") and response.usage:
+            usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens
+            }
+        result = {"content": [], "stop_reason": choice.finish_reason, "usage": usage}
         if choice.message.content:
             result["content"].append({"type": "text", "text": choice.message.content})
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
+                args = tc.function.arguments or ""
+                try:
+                    parsed = json.loads(args) if args else {}
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid tool arguments JSON: {args}") from e
                 result["content"].append({
                     "type": "tool_use",
                     "id": tc.id,
                     "name": tc.function.name,
-                    "input": eval(tc.function.arguments) if tc.function.arguments else {}
+                    "input": parsed
                 })
         return result

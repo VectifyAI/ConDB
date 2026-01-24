@@ -4,6 +4,9 @@ import json
 import time
 from typing import Optional, List, Dict, Any, Tuple, Protocol, runtime_checkable
 from dataclasses import dataclass, asdict
+from contextdb.logger import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -87,6 +90,7 @@ class TreeDB:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._init_schema()
+        log.info(f"TreeDB opened: {db_path}")
 
     def _init_schema(self):
         cursor = self.conn.cursor()
@@ -156,6 +160,7 @@ class TreeDB:
             (tree_id, root_id, self.OBJECT, f"/r/{root_id}", now, now)
         )
         self.conn.commit()
+        log.debug(f"create_tree: {tree_id[:8]}")
         return tree_id, root_id
 
     def get_node(self, tree_id: str, node_id: str) -> Optional[Node]:
@@ -170,6 +175,7 @@ class TreeDB:
         return [Node(**dict(row)) for row in cursor.fetchall()]
 
     def get_subtree(self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False) -> List[Dict[str, Any]]:
+        log.debug(f"get_subtree: {node_id[:8]} depth={max_depth}")
         cursor = self.conn.cursor()
         cursor.execute("SELECT path, depth FROM nodes WHERE tree_id = ? AND node_id = ?", (tree_id, node_id))
         root_row = cursor.fetchone()
@@ -263,13 +269,23 @@ class TreeDB:
 
             insert(tree_structure, root_id, None, None, -1, None)
             self.conn.commit()
+            log.info(f"ingest_tree: {tree_id[:8]}")
             return tree_id
         except Exception as e:
+            log.error(f"ingest_tree failed: {e}")
             self.conn.rollback()
             raise e
 
+    def delete_tree(self, tree_id: str):
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM nodes WHERE tree_id = ?", (tree_id,))
+        cursor.execute("DELETE FROM trees WHERE tree_id = ?", (tree_id,))
+        self.conn.commit()
+        log.info(f"delete_tree: {tree_id[:8]}")
+
     def close(self):
         self.conn.close()
+        log.debug(f"TreeDB closed: {self.db_path}")
 
     def __enter__(self):
         return self
