@@ -36,7 +36,7 @@ class StatisticsRecorder:
     def format(self, title: str = "LLM Statistics") -> str:
         """Return formatted statistics string."""
         s = self.summary()
-        total_s = sum(self._latencies_s)
+        total_s = s["total_latency_ms"] / 1000
         mins, secs = divmod(int(total_s), 60)
         lines = [
             f"*** {title} ***",

@@ -1,6 +1,7 @@
 """RAG: retrieve + generate answer."""
-from contextdb.retriever.base import RetrievalResult
+
 from contextdb.llm import LLMProtocol
+from contextdb.retriever.base import RetrievalResult
 
 
 class RAG:

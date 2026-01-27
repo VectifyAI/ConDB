@@ -2,11 +2,12 @@ import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Optional
+
+from contextdb.adapter.base import ChatIndexAdapter, GenericAdapter, PageIndexAdapter
 from contextdb.core.storage import StorageProtocol, TreeDB
-from contextdb.adapter.base import PageIndexAdapter, ChatIndexAdapter, GenericAdapter
-from contextdb.retriever import BeamRetriever, ManualRetriever, RetrievalResult, TreeFormatter, BaseRetriever
-from contextdb.llm import LLMProtocol, LLMClient
+from contextdb.llm import LLMProtocol
+from contextdb.retriever import BaseRetriever, BeamRetriever, ManualRetriever, RetrievalResult, TreeFormatter
 
 
 class ContextTree:
@@ -14,17 +15,13 @@ class ContextTree:
         self.storage = storage or TreeDB(db_path)
         self.llm = llm
         self.formatter = TreeFormatter(self.storage)
-        self.adapters = {
-            "pageindex": PageIndexAdapter(),
-            "chatindex": ChatIndexAdapter(),
-            "generic": GenericAdapter()
-        }
+        self.adapters = {"pageindex": PageIndexAdapter(), "chatindex": ChatIndexAdapter(), "generic": GenericAdapter()}
 
     def index_markdown_file(self, md_path: str) -> str:
         try:
             from pageindex import md_to_tree
-        except ImportError:
-            raise ImportError("Install pageindex: pip install pageindex")
+        except ImportError as e:
+            raise ImportError("Install pageindex: pip install pageindex") from e
 
         path = Path(md_path)
         if not path.exists():
@@ -37,38 +34,40 @@ class ContextTree:
         try:
             from pageindex import page_index_main
             from pageindex.utils import ConfigLoader
-        except ImportError:
-            raise ImportError("Install pageindex: pip install pageindex")
+        except ImportError as e:
+            raise ImportError("Install pageindex: pip install pageindex") from e
 
         path = Path(pdf_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {pdf_path}")
 
-        config = ConfigLoader().load({
-            "toc_check_page_num": 20,
-            "max_page_num_each_node": 10,
-            "max_token_num_each_node": 20000,
-            "if_add_node_id": "yes",
-            "if_add_node_summary": "yes",
-            "if_add_doc_description": "no",
-            "if_add_node_text": "no"
-        })
+        config = ConfigLoader().load(
+            {
+                "toc_check_page_num": 20,
+                "max_page_num_each_node": 10,
+                "max_token_num_each_node": 20000,
+                "if_add_node_id": "yes",
+                "if_add_node_summary": "yes",
+                "if_add_doc_description": "no",
+                "if_add_node_text": "no",
+            }
+        )
         result = page_index_main(str(path), config)
         return self.index_pageindex(result)
 
-    def index_pageindex(self, data: Dict[str, Any]) -> str:
+    def index_pageindex(self, data: dict[str, Any]) -> str:
         tree, entities = self.adapters["pageindex"].convert(data)
         tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
-    def index_chatindex(self, data: Dict[str, Any]) -> str:
+    def index_chatindex(self, data: dict[str, Any]) -> str:
         tree, entities = self.adapters["chatindex"].convert(data)
         tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
-    def index_generic(self, data: Dict[str, Any], adapter: str = "generic") -> str:
-        adapter = self.adapters.get(adapter, self.adapters["generic"])
-        tree, entities = adapter.convert(data)
+    def index_generic(self, data: dict[str, Any], adapter: str = "generic") -> str:
+        adapter_instance = self.adapters.get(adapter, self.adapters["generic"])
+        tree, entities = adapter_instance.convert(data)
         tree, entities = self._namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
@@ -79,24 +78,24 @@ class ContextTree:
             retriever = BeamRetriever(self.storage, self.llm)
         return retriever.retrieve(tree_id, question, **kwargs)
 
-    def query_manual(self, tree_id: str, query: str, actions: List[Dict]) -> RetrievalResult:
+    def query_manual(self, tree_id: str, query: str, actions: list[dict]) -> RetrievalResult:
         retriever = ManualRetriever(self.storage)
         return retriever.retrieve(tree_id, query, actions)
 
-    def expand(self, tree_id: str, node_id: str, depth: int = 1) -> List[Dict[str, Any]]:
+    def expand(self, tree_id: str, node_id: str, depth: int = 1) -> list[dict[str, Any]]:
         return self.storage.get_subtree(tree_id, node_id, max_depth=depth)
 
-    def get_content(self, tree_id: str, node_id: str) -> Optional[Dict[str, Any]]:
+    def get_content(self, tree_id: str, node_id: str) -> Optional[dict[str, Any]]:
         entity = self.storage.get_entity(tree_id, node_id)
         if entity:
             return json.loads(entity.payload_json)
         return None
 
-    def get_children(self, tree_id: str, node_id: str) -> List[Dict[str, Any]]:
+    def get_children(self, tree_id: str, node_id: str) -> list[dict[str, Any]]:
         nodes = self.storage.get_children(tree_id, node_id)
         return [n.to_dict() for n in nodes]
 
-    def get_node(self, tree_id: str, node_id: str) -> Dict[str, Any]:
+    def get_node(self, tree_id: str, node_id: str) -> dict[str, Any]:
         node = self.storage.get_node(tree_id, node_id)
         return node.to_dict() if node else {}
 
@@ -107,7 +106,7 @@ class ContextTree:
             return ""
         return self.formatter.format_view(tree_id, node_id, depth)
 
-    def format_tree_json(self, tree_id: str, node_id: str = None, depth: int = 2) -> Dict[str, Any]:
+    def format_tree_json(self, tree_id: str, node_id: str = None, depth: int = 2) -> dict[str, Any]:
         if node_id is None:
             node_id = self.storage.get_root_id(tree_id)
         if not node_id:
@@ -118,16 +117,16 @@ class ContextTree:
         self.storage.close()
 
     @staticmethod
-    def _namespace_entities(tree: Dict[str, Any],
-                            entities: Optional[Dict[str, Dict[str, Any]]],
-                            namespace: Optional[str] = None):
+    def _namespace_entities(
+        tree: dict[str, Any], entities: Optional[dict[str, dict[str, Any]]], namespace: Optional[str] = None
+    ):
         if not entities:
             return tree, entities
 
         ns = namespace or uuid.uuid4().hex
         mapping = {eid: f"{ns}:{eid}" for eid in entities.keys()}
 
-        def remap(node: Dict[str, Any]):
+        def remap(node: dict[str, Any]):
             eid = node.get("entity_id")
             if eid in mapping:
                 node["entity_id"] = mapping[eid]

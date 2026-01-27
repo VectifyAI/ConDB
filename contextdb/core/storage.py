@@ -1,9 +1,10 @@
-import sqlite3
-import uuid
 import json
+import sqlite3
 import time
-from typing import Optional, List, Dict, Any, Tuple, Protocol, runtime_checkable
-from dataclasses import dataclass, asdict
+import uuid
+from dataclasses import asdict, dataclass
+from typing import Any, Optional, Protocol, runtime_checkable
+
 from contextdb.logger import get_logger
 
 log = get_logger(__name__)
@@ -24,12 +25,12 @@ class Node:
     created_at: Optional[int] = None
     updated_at: Optional[int] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         result = {k: v for k, v in asdict(self).items() if v is not None}
-        if 'attrs_json' in result:
-            if result['attrs_json']:
-                result['attrs'] = json.loads(result['attrs_json'])
-            del result['attrs_json']
+        if "attrs_json" in result:
+            if result["attrs_json"]:
+                result["attrs"] = json.loads(result["attrs_json"])
+            del result["attrs_json"]
         return result
 
 
@@ -40,12 +41,12 @@ class Entity:
     payload_json: str
     created_at: int
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
-            'entity_id': self.entity_id,
-            'entity_type': self.entity_type,
-            'payload': json.loads(self.payload_json),
-            'created_at': self.created_at
+            "entity_id": self.entity_id,
+            "entity_type": self.entity_type,
+            "payload": json.loads(self.payload_json),
+            "created_at": self.created_at,
         }
 
 
@@ -57,26 +58,34 @@ class Tree:
     updated_at: int
     meta_json: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         result = {
-            'tree_id': self.tree_id,
-            'root_node_id': self.root_node_id,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
+            "tree_id": self.tree_id,
+            "root_node_id": self.root_node_id,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }
         if self.meta_json:
-            result['meta'] = json.loads(self.meta_json)
+            result["meta"] = json.loads(self.meta_json)
         return result
 
 
 @runtime_checkable
 class StorageProtocol(Protocol):
-    def create_tree(self, meta: Optional[Dict[str, Any]] = None) -> Tuple[str, str]: ...
+    def create_tree(self, meta: Optional[dict[str, Any]] = None) -> tuple[str, str]: ...
     def get_node(self, tree_id: str, node_id: str) -> Optional[Node]: ...
-    def get_children(self, tree_id: str, node_id: str) -> List[Node]: ...
-    def get_subtree(self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False) -> List[Dict[str, Any]]: ...
+    def get_children(self, tree_id: str, node_id: str) -> list[Node]: ...
+    def get_subtree(
+        self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False
+    ) -> list[dict[str, Any]]: ...
     def get_entity(self, tree_id: str, node_id: str) -> Optional[Entity]: ...
-    def ingest_tree(self, tree_structure: Dict[str, Any], entities: Optional[Dict[str, Dict[str, Any]]] = None, meta: Optional[Dict[str, Any]] = None) -> str: ...
+    def get_root_id(self, tree_id: str) -> Optional[str]: ...
+    def ingest_tree(
+        self,
+        tree_structure: dict[str, Any],
+        entities: Optional[dict[str, dict[str, Any]]] = None,
+        meta: Optional[dict[str, Any]] = None,
+    ) -> str: ...
     def close(self) -> None: ...
 
 
@@ -145,7 +154,7 @@ class TreeDB:
     def _ts(self) -> int:
         return int(time.time() * 1000)
 
-    def create_tree(self, meta: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
+    def create_tree(self, meta: Optional[dict[str, Any]] = None) -> tuple[str, str]:
         tree_id = str(uuid.uuid4())
         root_id = str(uuid.uuid4())
         now = self._ts()
@@ -153,11 +162,11 @@ class TreeDB:
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO trees (tree_id, root_node_id, created_at, updated_at, meta_json) VALUES (?, ?, ?, ?, ?)",
-            (tree_id, root_id, now, now, json.dumps(meta) if meta else None)
+            (tree_id, root_id, now, now, json.dumps(meta) if meta else None),
         )
         cursor.execute(
             "INSERT INTO nodes (tree_id, node_id, parent_id, slot, node_type, depth, path, created_at, updated_at) VALUES (?, ?, NULL, NULL, ?, 0, ?, ?, ?)",
-            (tree_id, root_id, self.OBJECT, f"/r/{root_id}", now, now)
+            (tree_id, root_id, self.OBJECT, f"/r/{root_id}", now, now),
         )
         self.conn.commit()
         log.debug(f"create_tree: {tree_id[:8]}")
@@ -169,12 +178,14 @@ class TreeDB:
         row = cursor.fetchone()
         return Node(**dict(row)) if row else None
 
-    def get_children(self, tree_id: str, node_id: str) -> List[Node]:
+    def get_children(self, tree_id: str, node_id: str) -> list[Node]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM nodes WHERE tree_id = ? AND parent_id = ? ORDER BY slot", (tree_id, node_id))
         return [Node(**dict(row)) for row in cursor.fetchall()]
 
-    def get_subtree(self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False) -> List[Dict[str, Any]]:
+    def get_subtree(
+        self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False
+    ) -> list[dict[str, Any]]:
         log.debug(f"get_subtree: {node_id[:8]} depth={max_depth}")
         cursor = self.conn.cursor()
         cursor.execute("SELECT path, depth FROM nodes WHERE tree_id = ? AND node_id = ?", (tree_id, node_id))
@@ -182,13 +193,16 @@ class TreeDB:
         if not root_row:
             return []
 
-        root_path, root_depth = root_row['path'], root_row['depth']
-        cursor.execute("""
+        root_path, root_depth = root_row["path"], root_row["depth"]
+        cursor.execute(
+            """
             SELECT * FROM nodes WHERE tree_id = ? AND node_id = ?
             UNION ALL
             SELECT * FROM nodes WHERE tree_id = ? AND path LIKE ? || '/%%' AND depth <= ?
             ORDER BY path
-        """, (tree_id, node_id, tree_id, root_path, root_depth + max_depth))
+        """,
+            (tree_id, node_id, tree_id, root_path, root_depth + max_depth),
+        )
 
         nodes = [Node(**dict(row)) for row in cursor.fetchall()]
         if not with_entities:
@@ -198,15 +212,15 @@ class TreeDB:
         if not entity_ids:
             return [n.to_dict() for n in nodes]
 
-        placeholders = ','.join('?' * len(entity_ids))
+        placeholders = ",".join("?" * len(entity_ids))
         cursor.execute(f"SELECT * FROM entities WHERE entity_id IN ({placeholders})", entity_ids)
-        ent_map = {row['entity_id']: Entity(**dict(row)) for row in cursor.fetchall()}
+        ent_map = {row["entity_id"]: Entity(**dict(row)) for row in cursor.fetchall()}
 
         result = []
         for n in nodes:
             d = n.to_dict()
             if n.entity_id and n.entity_id in ent_map:
-                d['entity'] = ent_map[n.entity_id].to_dict()
+                d["entity"] = ent_map[n.entity_id].to_dict()
             result.append(d)
         return result
 
@@ -214,9 +228,9 @@ class TreeDB:
         cursor = self.conn.cursor()
         cursor.execute("SELECT entity_id FROM nodes WHERE tree_id = ? AND node_id = ?", (tree_id, node_id))
         row = cursor.fetchone()
-        if not row or not row['entity_id']:
+        if not row or not row["entity_id"]:
             return None
-        cursor.execute("SELECT * FROM entities WHERE entity_id = ?", (row['entity_id'],))
+        cursor.execute("SELECT * FROM entities WHERE entity_id = ?", (row["entity_id"],))
         ent_row = cursor.fetchone()
         return Entity(**dict(ent_row)) if ent_row else None
 
@@ -224,9 +238,14 @@ class TreeDB:
         cursor = self.conn.cursor()
         cursor.execute("SELECT root_node_id FROM trees WHERE tree_id = ?", (tree_id,))
         row = cursor.fetchone()
-        return row['root_node_id'] if row else None
+        return row["root_node_id"] if row else None
 
-    def ingest_tree(self, tree_structure: Dict[str, Any], entities: Optional[Dict[str, Dict[str, Any]]] = None, meta: Optional[Dict[str, Any]] = None) -> str:
+    def ingest_tree(
+        self,
+        tree_structure: dict[str, Any],
+        entities: Optional[dict[str, dict[str, Any]]] = None,
+        meta: Optional[dict[str, Any]] = None,
+    ) -> str:
         tree_id = str(uuid.uuid4())
         root_id = str(uuid.uuid4())
         now = self._ts()
@@ -236,29 +255,46 @@ class TreeDB:
             cursor.execute("BEGIN")
             cursor.execute(
                 "INSERT INTO trees (tree_id, root_node_id, created_at, updated_at, meta_json) VALUES (?, ?, ?, ?, ?)",
-                (tree_id, root_id, now, now, json.dumps(meta) if meta else None)
+                (tree_id, root_id, now, now, json.dumps(meta) if meta else None),
             )
 
             if entities:
-                for eid, payload in entities.items():
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO entities (entity_id, entity_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
-                        (eid, payload.get('type', 'unknown'), json.dumps(payload), now)
-                    )
+                cursor.executemany(
+                    "INSERT OR IGNORE INTO entities (entity_id, entity_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
+                    [(eid, p.get("type", "unknown"), json.dumps(p), now) for eid, p in entities.items()],
+                )
 
-            def insert(data: Dict, nid: str, pid: Optional[str], ppath: Optional[str], pdepth: int, slot: Optional[str]):
+            def insert(
+                data: dict, nid: str, pid: Optional[str], ppath: Optional[str], pdepth: int, slot: Optional[str]
+            ):
                 depth = pdepth + 1 if pid else 0
                 path = f"{ppath}/{nid}" if ppath else f"/r/{nid}"
-                ntype_str = data.get('type', 'object')
-                ntype = self.OBJECT if ntype_str == 'object' else (self.ARRAY if ntype_str == 'array' else self.LEAF)
-                attrs = data.get('attrs')
+                ntype_str = data.get("type", "object")
+                ntype = self.OBJECT if ntype_str == "object" else (self.ARRAY if ntype_str == "array" else self.LEAF)
+                attrs = data.get("attrs")
 
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO nodes (tree_id, node_id, parent_id, slot, node_type, depth, path, entity_type, entity_id, attrs_json, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (tree_id, nid, pid, slot, ntype, depth, path, data.get('entity_type'), data.get('entity_id'), json.dumps(attrs) if attrs else None, now, now))
+                """,
+                    (
+                        tree_id,
+                        nid,
+                        pid,
+                        slot,
+                        ntype,
+                        depth,
+                        path,
+                        data.get("entity_type"),
+                        data.get("entity_id"),
+                        json.dumps(attrs) if attrs else None,
+                        now,
+                        now,
+                    ),
+                )
 
-                children = data.get('children')
+                children = data.get("children")
                 if children:
                     if isinstance(children, dict):
                         for k, child in children.items():

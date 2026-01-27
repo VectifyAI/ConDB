@@ -1,12 +1,14 @@
 """Beam search retriever - keep top-k paths instead of a single path."""
+
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Any
 
 from jinja2 import Template
-from contextdb.retriever.base import RetrievalResult
-from contextdb.retriever.algorithm.base_retriever import BaseRetriever
+
 from contextdb.logger import get_logger
+from contextdb.retriever.algorithm.base_retriever import BaseRetriever
+from contextdb.retriever.base import RetrievalResult
 
 log = get_logger(__name__)
 
@@ -20,12 +22,9 @@ TOOLS = [
         "description": "Rank candidate node ids for the query",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "selected": {"type": "array", "items": {"type": "string"}},
-                "done": {"type": "boolean"}
-            },
-            "required": ["selected"]
-        }
+            "properties": {"selected": {"type": "array", "items": {"type": "string"}}, "done": {"type": "boolean"}},
+            "required": ["selected"],
+        },
     }
 ]
 
@@ -37,14 +36,11 @@ class BeamRetriever(BaseRetriever):
         # storage must provide get_root_id/get_children/get_entity
         super().__init__(storage, llm)
         # llm must follow LLMProtocol.chat(messages, tools=...)
-        self._entity_cache: Dict[str, Dict[str, Any]] = {}
+        self._entity_cache: dict[str, dict[str, Any]] = {}
 
-    def retrieve(self,
-                 tree_id: str,
-                 query: str,
-                 beam_size: int = None,
-                 max_turns: int = None,
-                 select_k: int = 1) -> RetrievalResult:
+    def retrieve(
+        self, tree_id: str, query: str, beam_size: int = None, max_turns: int = None, select_k: int = 1
+    ) -> RetrievalResult:
         """
         Run beam search on a tree.
         - beam_size: how many paths to keep each step (k in beam search)
@@ -55,14 +51,17 @@ class BeamRetriever(BaseRetriever):
         if not root_id:
             return RetrievalResult([], [], [], 0)
 
+        # Clear cache to prevent memory leak across multiple retrieve calls
+        self._entity_cache.clear()
+
         if max_turns is None:
             max_turns = self._tree_max_depth(tree_id)
 
         log.debug("start beam_size=%s max_turns=%s query=%s", beam_size, max_turns, query[:50])
 
         beams = [{"node_id": root_id, "titles": []}]
-        selected: List[str] = []
-        trace: List[Dict[str, Any]] = []
+        selected: list[str] = []
+        trace: list[dict[str, Any]] = []
 
         for turn in range(max_turns):
             candidates = []
@@ -91,15 +90,18 @@ class BeamRetriever(BaseRetriever):
             k = len(candidates) if beam_size is None else max(beam_size, select_k)
             ranked_ids, done = self._rank_with_llm(query, candidates, selected, k=k)
 
+            # Build lookup map for O(1) access
+            candidates_map = {c["node_id"]: c for c in candidates}
+
             # Show LLM decision
             log.debug("turn %d: LLM ranked top-%d, done=%s", turn, len(ranked_ids), done)
             for i, nid in enumerate(ranked_ids[:5]):
-                c = next((x for x in candidates if x["node_id"] == nid), None)
+                c = candidates_map.get(nid)
                 if c:
                     log.debug("  #%d [%s] %s", i + 1, nid[:8], c["title"])
 
             # Pick top candidates as "selected" (answers).
-            for node_id in ranked_ids[:max(1, select_k)]:
+            for node_id in ranked_ids[: max(1, select_k)]:
                 if node_id not in selected:
                     selected.append(node_id)
 
@@ -110,7 +112,7 @@ class BeamRetriever(BaseRetriever):
                 if node_id in seen:
                     continue
                 seen.add(node_id)
-                cand = next(c for c in candidates if c["node_id"] == node_id)
+                cand = candidates_map[node_id]
                 next_beams.append({"node_id": cand["node_id"], "titles": cand["path_titles"]})
                 if beam_size is not None and len(next_beams) >= max(1, beam_size):
                     break
@@ -121,12 +123,7 @@ class BeamRetriever(BaseRetriever):
                     seen.add(cand["node_id"])
                     next_beams.append({"node_id": cand["node_id"], "titles": cand["path_titles"]})
 
-            trace.append({
-                "turn": turn,
-                "candidates": len(candidates),
-                "kept": len(next_beams),
-                "done": done
-            })
+            trace.append({"turn": turn, "candidates": len(candidates), "kept": len(next_beams), "done": done})
 
             beams = next_beams
             if done:
@@ -147,11 +144,9 @@ class BeamRetriever(BaseRetriever):
 
         return RetrievalResult(selected, contents, trace, len(trace))
 
-    def _rank_with_llm(self,
-                       query: str,
-                       candidates: List[Dict[str, Any]],
-                       selected: List[str],
-                       k: int) -> Tuple[List[str], bool]:
+    def _rank_with_llm(
+        self, query: str, candidates: list[dict[str, Any]], selected: list[str], k: int
+    ) -> tuple[list[str], bool]:
         """
         Ask the LLM to rank candidates. Returns (ranked_ids, done).
         This is the core "LLM as judge" step.
@@ -163,15 +158,15 @@ class BeamRetriever(BaseRetriever):
                 continue
             if block.get("name") != "rank":
                 continue
-            selected = block.get("input", {}).get("selected", []) or []
+            ranked_ids = block.get("input", {}).get("selected", []) or []
             done = bool(block.get("input", {}).get("done", False))
             # Keep only ids that actually exist in candidates.
             known = {c["node_id"] for c in candidates}
-            ranked = [nid for nid in selected if nid in known]
+            ranked = [nid for nid in ranked_ids if nid in known]
             return ranked, done
         raise ValueError("LLM did not return a rank tool call")
 
-    def _candidate_from_child(self, tree_id: str, child, parent_titles: List[str]) -> Dict[str, Any]:
+    def _candidate_from_child(self, tree_id: str, child, parent_titles: list[str]) -> dict[str, Any]:
         """Build a candidate dict from a child node (for the LLM prompt)."""
         attrs = self._node_attrs(child)
         title = attrs.get("title") or ""
@@ -187,17 +182,24 @@ class BeamRetriever(BaseRetriever):
             "page_end": attrs.get("page_end"),
             "depth": child.depth,
             "path": " > ".join(path_titles),
-            "path_titles": path_titles
+            "path_titles": path_titles,
         }
 
-    def _candidate_from_node(self, tree_id: str, node_id: str, parent_titles: List[str]) -> Dict[str, Any]:
+    def _candidate_from_node(self, tree_id: str, node_id: str, parent_titles: list[str]) -> dict[str, Any]:
         """Build a candidate dict from an existing node id (leaf case)."""
         node = self.storage.get_node(tree_id, node_id)
         if not node:
-            return {"node_id": node_id, "title": "", "summary": "", "text": "", "path": " > ".join(parent_titles), "path_titles": parent_titles}
+            return {
+                "node_id": node_id,
+                "title": "",
+                "summary": "",
+                "text": "",
+                "path": " > ".join(parent_titles),
+                "path_titles": parent_titles,
+            }
         return self._candidate_from_child(tree_id, node, parent_titles)
 
-    def _node_attrs(self, node) -> Dict[str, Any]:
+    def _node_attrs(self, node) -> dict[str, Any]:
         """Parse attrs_json from Node into a dict (safe for None)."""
         if not getattr(node, "attrs_json", None):
             return {}

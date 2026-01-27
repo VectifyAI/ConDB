@@ -1,15 +1,16 @@
 """Logging module for ConDB"""
-import os
+
 import logging
+import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
 
 # ANSI colors
 COLORS = {
-    "DEBUG": "\033[36m",     # cyan
-    "INFO": "\033[32m",      # green
-    "WARNING": "\033[33m",   # yellow
-    "ERROR": "\033[31m",     # red
+    "DEBUG": "\033[36m",  # cyan
+    "INFO": "\033[32m",  # green
+    "WARNING": "\033[33m",  # yellow
+    "ERROR": "\033[31m",  # red
     "CRITICAL": "\033[35m",  # magenta
     "RESET": "\033[0m",
 }

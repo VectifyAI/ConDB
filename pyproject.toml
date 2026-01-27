@@ -14,7 +14,30 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0.0"]
+dev = ["pytest>=7.0.0", "ruff>=0.4.0"]
 
 [tool.setuptools]
-packages = ["contextdb", "contextdb.core", "contextdb.adapter", "contextdb.retriever", "contextdb.api"]
+packages = ["contextdb", "contextdb.core", "contextdb.adapter", "contextdb.retriever", "contextdb.retriever.algorithm", "contextdb.api", "contextdb.metrics"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
