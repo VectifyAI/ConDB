@@ -17,6 +17,7 @@ Candidates (pick up to {{ k }} ids, best first):
   text: {{ c.text }}
   range: {{ c.page_start }}-{{ c.page_end }}
   path: {{ c.path }}
+  parent_context: {{ c.parent_summary[:300] if c.parent_summary else "(root)" }}
 {% endfor %}
 
 Return ONE tool call "rank" with:

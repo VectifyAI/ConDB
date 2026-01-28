@@ -59,7 +59,7 @@ class BeamRetriever(BaseRetriever):
 
         log.debug("start beam_size=%s max_turns=%s query=%s", beam_size, max_turns, query[:50])
 
-        beams = [{"node_id": root_id, "titles": []}]
+        beams = [{"node_id": root_id, "titles": [], "parent_summary": ""}]
         selected: list[str] = []
         trace: list[dict[str, Any]] = []
 
@@ -69,14 +69,19 @@ class BeamRetriever(BaseRetriever):
             # Expand beams
             log.debug("turn %d: expanding %d beams", turn, len(beams))
             for beam in beams:
+                # Get parent node's summary for context carrying
+                parent_summary = beam.get("parent_summary", "")
                 children = self.storage.get_children(tree_id, beam["node_id"])
                 if not children:
-                    candidates.append(self._candidate_from_node(tree_id, beam["node_id"], beam["titles"]))
+                    # Leaf node: mark is_leaf=True to exclude from next beams
+                    candidates.append(self._candidate_from_node(
+                        tree_id, beam["node_id"], beam["titles"], parent_summary, is_leaf=True))
                     log.debug("  leaf: %s", beam["node_id"][:8])
                     continue
 
                 for child in children:
-                    candidates.append(self._candidate_from_child(tree_id, child, beam["titles"]))
+                    candidates.append(self._candidate_from_child(
+                        tree_id, child, beam["titles"], parent_summary))
 
             if not candidates:
                 log.debug("turn %d: no candidates, stopping", turn)
@@ -118,7 +123,7 @@ class BeamRetriever(BaseRetriever):
                 if node_id not in selected:
                     selected.append(node_id)
 
-            # Keep the next beam set.
+            # Keep the next beam set (exclude leaf nodes)
             next_beams = []
             seen = set()
             for node_id in ranked_ids:
@@ -126,15 +131,28 @@ class BeamRetriever(BaseRetriever):
                     continue
                 seen.add(node_id)
                 cand = candidates_map[node_id]
-                next_beams.append({"node_id": cand["node_id"], "titles": cand["path_titles"]})
+                if cand.get("is_leaf"):
+                    # Leaf nodes go to selected, not next_beams
+                    if node_id not in selected:
+                        selected.append(node_id)
+                    continue
+                next_beams.append({
+                    "node_id": cand["node_id"],
+                    "titles": cand["path_titles"],
+                    "parent_summary": cand.get("summary", ""),
+                })
                 if beam_size is not None and len(next_beams) >= max(1, beam_size):
                     break
             if beam_size is None:
                 for cand in candidates:
-                    if cand["node_id"] in seen:
+                    if cand["node_id"] in seen or cand.get("is_leaf"):
                         continue
                     seen.add(cand["node_id"])
-                    next_beams.append({"node_id": cand["node_id"], "titles": cand["path_titles"]})
+                    next_beams.append({
+                        "node_id": cand["node_id"],
+                        "titles": cand["path_titles"],
+                        "parent_summary": cand.get("summary", ""),
+                    })
 
             trace.append({"turn": turn, "candidates": len(candidates), "kept": len(next_beams), "done": done})
 
@@ -179,7 +197,9 @@ class BeamRetriever(BaseRetriever):
             return ranked, done
         raise ValueError("LLM did not return a rank tool call")
 
-    def _candidate_from_child(self, tree_id: str, child, parent_titles: list[str]) -> dict[str, Any]:
+    def _candidate_from_child(
+        self, tree_id: str, child, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False
+    ) -> dict[str, Any]:
         """Build a candidate dict from a child node (for the LLM prompt)."""
         attrs = self._node_attrs(child)
         title = attrs.get("title") or ""
@@ -191,14 +211,18 @@ class BeamRetriever(BaseRetriever):
             "title": title,
             "summary": summary,
             "text": text[:200] if text else "",
+            "parent_summary": parent_summary,
             "page_start": attrs.get("page_start"),
             "page_end": attrs.get("page_end"),
             "depth": child.depth,
             "path": " > ".join(path_titles),
             "path_titles": path_titles,
+            "is_leaf": is_leaf,
         }
 
-    def _candidate_from_node(self, tree_id: str, node_id: str, parent_titles: list[str]) -> dict[str, Any]:
+    def _candidate_from_node(
+        self, tree_id: str, node_id: str, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False
+    ) -> dict[str, Any]:
         """Build a candidate dict from an existing node id (leaf case)."""
         node = self.storage.get_node(tree_id, node_id)
         if not node:
@@ -209,8 +233,10 @@ class BeamRetriever(BaseRetriever):
                 "text": "",
                 "path": " > ".join(parent_titles),
                 "path_titles": parent_titles,
+                "parent_summary": parent_summary,
+                "is_leaf": is_leaf,
             }
-        return self._candidate_from_child(tree_id, node, parent_titles)
+        return self._candidate_from_child(tree_id, node, parent_titles, parent_summary, is_leaf)
 
     def _node_attrs(self, node) -> dict[str, Any]:
         """Parse attrs_json from Node into a dict (safe for None)."""

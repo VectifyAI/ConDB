@@ -33,6 +33,10 @@ handler.setFormatter(ColorFormatter("%(asctime)s [%(levelname)s] %(name)s: %(mes
 logging.root.addHandler(handler)
 logging.root.setLevel(getattr(logging, LOG_LEVEL, logging.DEBUG))
 
+# Silence noisy third-party loggers
+for name in ["httpcore", "httpx", "openai", "anthropic", "urllib3"]:
+    logging.getLogger(name).setLevel(logging.WARNING)
+
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
