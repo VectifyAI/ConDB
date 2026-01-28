@@ -82,6 +82,19 @@ class BeamRetriever(BaseRetriever):
                 log.debug("turn %d: no candidates, stopping", turn)
                 break
 
+            # Check if all beams are leaves (no children to expand)
+            # If so, stop early - no point asking LLM whether to continue
+            all_leaves = all(
+                not self.storage.get_children(tree_id, beam["node_id"]) for beam in beams
+            )
+            if all_leaves and len(beams) > 0:
+                log.debug("turn %d: all beams are leaves, stopping early", turn)
+                # Add leaf nodes to selected before stopping
+                for beam in beams:
+                    if beam["node_id"] not in selected:
+                        selected.append(beam["node_id"])
+                break
+
             # Show candidates
             log.debug("turn %d: %d candidates:", turn, len(candidates))
             for c in candidates[:10]:
