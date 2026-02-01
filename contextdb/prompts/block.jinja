@@ -1,0 +1,23 @@
+You are ranking tree nodes to answer a user question.
+
+Query: {{ query }}
+
+Selected so far:
+{% if selected %}
+{{ selected }}
+{% else %}
+(none)
+{% endif %}
+
+{% if input_beams %}
+Input beams (context from previous block):
+{% for beam in input_beams %}
+- {{ beam.node_id }}: {{ beam.title }} ({{ beam.path }})
+{% endfor %}
+{% endif %}
+
+Pick up to {{ k }} candidates from the BLOCK CONTENT above, best first.
+
+Return ONE tool call "rank" with:
+- selected: list of ids in best-to-worst order
+- done: true ONLY if you've reached leaf nodes or content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.

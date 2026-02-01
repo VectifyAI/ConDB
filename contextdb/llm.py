@@ -7,6 +7,23 @@ class LLMProtocol(Protocol):
     def chat(self, messages: list[dict], system: str = "", tools: list[dict] = None) -> dict[str, Any]: ...
 
 
+@runtime_checkable
+class LLMWithCacheProtocol(Protocol):
+    """Extended protocol with prompt caching support."""
+
+    def chat(self, messages: list[dict], system: str = "", tools: list[dict] = None) -> dict[str, Any]: ...
+
+    def chat_with_cache(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] = None,
+        cache_content: str = None,
+    ) -> dict[str, Any]:
+        """Chat with prompt caching support for static content."""
+        ...
+
+
 class LLMClient:
     def __init__(self, provider: str = "anthropic", api_key: str = None, model: str = None):
         self.provider = provider
@@ -32,6 +49,37 @@ class LLMClient:
         elif self.provider == "openai":
             return self._chat_openai(messages, system, tools)
 
+    def chat_with_cache(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] = None,
+        cache_content: str = None,
+    ) -> dict[str, Any]:
+        """
+        Chat with prompt caching support.
+
+        For Anthropic, uses the cache_control feature to cache static content.
+        For OpenAI, falls back to regular chat (no native caching support).
+
+        Args:
+            messages: Chat messages
+            system: System prompt
+            tools: Tool definitions
+            cache_content: Static content to cache (prepended to first user message)
+
+        Returns:
+            Chat response with usage stats including cache metrics
+        """
+        if self.provider == "anthropic":
+            return self._chat_anthropic_with_cache(messages, system, tools, cache_content)
+        else:
+            # OpenAI doesn't have native prompt caching, fall back to regular chat
+            if cache_content:
+                # Prepend cache content to first user message
+                messages = self._prepend_cache_content(messages, cache_content)
+            return self._chat_openai(messages, system, tools)
+
     def _chat_anthropic(self, messages: list[dict], system: str, tools: list[dict]) -> dict[str, Any]:
         kwargs = {"model": self.model, "max_tokens": 1024, "messages": messages}
         if system:
@@ -54,6 +102,101 @@ class LLMClient:
                 result["content"].append({"type": "text", "text": block.text})
             elif block.type == "tool_use":
                 result["content"].append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        return result
+
+    def _chat_anthropic_with_cache(
+        self, messages: list[dict], system: str, tools: list[dict], cache_content: str
+    ) -> dict[str, Any]:
+        """
+        Anthropic chat with prompt caching.
+
+        Uses cache_control to mark static content for caching.
+        This can significantly reduce costs for repeated queries over the same document.
+        """
+        # Build messages with cache control
+        cached_messages = []
+        for i, msg in enumerate(messages):
+            if i == 0 and msg["role"] == "user" and cache_content:
+                # First user message: prepend cache content with cache_control
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    cached_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": cache_content,
+                                    "cache_control": {"type": "ephemeral"},
+                                },
+                                {"type": "text", "text": content},
+                            ],
+                        }
+                    )
+                else:
+                    # Content is already a list
+                    cached_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": cache_content,
+                                    "cache_control": {"type": "ephemeral"},
+                                },
+                                *content,
+                            ],
+                        }
+                    )
+            else:
+                cached_messages.append(msg)
+
+        kwargs = {"model": self.model, "max_tokens": 1024, "messages": cached_messages}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = tools
+
+        response = self._client.messages.create(**kwargs)
+
+        usage = None
+        if hasattr(response, "usage") and response.usage:
+            usage = {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            }
+            # Add cache-specific metrics if available
+            if hasattr(response.usage, "cache_creation_input_tokens"):
+                usage["cache_creation_input_tokens"] = response.usage.cache_creation_input_tokens
+            if hasattr(response.usage, "cache_read_input_tokens"):
+                usage["cache_read_input_tokens"] = response.usage.cache_read_input_tokens
+
+        result = {"content": [], "stop_reason": response.stop_reason, "usage": usage}
+        for block in response.content:
+            if block.type == "text":
+                result["content"].append({"type": "text", "text": block.text})
+            elif block.type == "tool_use":
+                result["content"].append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+        return result
+
+    def _prepend_cache_content(self, messages: list[dict], cache_content: str) -> list[dict]:
+        """Prepend cache content to first user message."""
+        if not messages:
+            return [{"role": "user", "content": cache_content}]
+
+        result = []
+        prepended = False
+        for msg in messages:
+            if not prepended and msg["role"] == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    result.append({"role": "user", "content": f"{cache_content}\n\n{content}"})
+                else:
+                    result.append({"role": "user", "content": [{"type": "text", "text": cache_content}, *content]})
+                prepended = True
+            else:
+                result.append(msg)
         return result
 
     def _chat_openai(self, messages: list[dict], system: str, tools: list[dict]) -> dict[str, Any]:
