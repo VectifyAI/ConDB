@@ -24,13 +24,11 @@ class BlockCutter:
         self,
         storage: StorageProtocol,
         token_counter: TokenCounter,
-        max_tokens_per_block: int = 16000,  # T parameter
-        levels_per_block: int = 1,  # K parameter for vertical cutting
+        max_tokens_per_block: int = 16000,
     ):
         self.storage = storage
         self.token_counter = token_counter
         self.max_tokens = max_tokens_per_block
-        self.levels_per_block = levels_per_block
 
     def cut_tree(self, tree_id: str) -> BlockTreePlan:
         """Generate complete block cutting plan for a tree."""
@@ -58,36 +56,44 @@ class BlockCutter:
             tree_info.max_depth,
         )
 
-        # Process depth by depth
+        # Greedy vertical merging: start from depth 0, keep adding deeper
+        # levels into the same block until hitting the token limit T.
+        # When a single level exceeds T, use horizontal cutting for that level.
         max_depth = tree_info.max_depth
         current_depth = 0
 
         while current_depth <= max_depth:
-            # Determine depth range for this vertical block
-            depth_end = min(current_depth + self.levels_per_block - 1, max_depth)
+            # Greedy: try to merge as many levels as possible into one vertical block
+            depth_end = current_depth
+            accumulated_tokens = tree_info.token_by_depth.get(current_depth, 0)
 
-            # Calculate total tokens for these depths
-            depth_range_tokens = sum(tree_info.token_by_depth.get(d, 0) for d in range(current_depth, depth_end + 1))
+            while depth_end + 1 <= max_depth:
+                next_depth_tokens = tree_info.token_by_depth.get(depth_end + 1, 0)
+                if accumulated_tokens + next_depth_tokens <= self.max_tokens:
+                    depth_end += 1
+                    accumulated_tokens += next_depth_tokens
+                else:
+                    break
 
             log.debug(
                 "  depth %d-%d: %d tokens (max=%d)",
                 current_depth,
                 depth_end,
-                depth_range_tokens,
+                accumulated_tokens,
                 self.max_tokens,
             )
 
             # Get nodes at these depths
             nodes_at_depths = self._get_nodes_at_depth_range(tree_id, current_depth, depth_end)
 
-            if depth_range_tokens <= self.max_tokens:
-                # Single vertical block is sufficient
+            if accumulated_tokens <= self.max_tokens:
+                # Merged vertical block fits within budget
                 block = self._create_vertical_block(tree_id, current_depth, depth_end, nodes_at_depths)
                 plan.blocks.append(block)
                 plan.block_map[block.block_id] = block
-                log.debug("    -> vertical block %s", block.block_id)
+                log.debug("    -> vertical block %s (%d levels merged)", block.block_id, depth_end - current_depth + 1)
             else:
-                # Need horizontal cutting
+                # Single level exceeds T, need horizontal cutting
                 h_group = self._create_horizontal_blocks(tree_id, current_depth, depth_end, nodes_at_depths)
                 plan.horizontal_groups.append(h_group)
                 for block in h_group.blocks:
@@ -247,8 +253,6 @@ class BlockCutter:
             depth_start=depth_start,
             depth_end=depth_end,
             node_ids=node_ids,
-            horizontal_group_id=group_id,
-            horizontal_index=index,
             total_tokens=total_tokens,
             max_tokens=self.max_tokens,
             cached_content=cached_content,

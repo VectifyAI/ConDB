@@ -83,11 +83,11 @@ class LLMWithStats:
         self.recorder.record(usage, latency_s)
         return resp
 
-    def chat_with_cache(self, messages, system: str = "", tools=None, cache_content: str = None):
+    def chat_with_cache(self, messages, system: str = "", tools=None, cache_content: str = None, non_cached_content: str = None):
         """Chat with Anthropic prompt caching support."""
         start = time.perf_counter()
         if hasattr(self.llm, "chat_with_cache"):
-            resp = self.llm.chat_with_cache(messages, system=system, tools=tools, cache_content=cache_content)
+            resp = self.llm.chat_with_cache(messages, system=system, tools=tools, cache_content=cache_content, non_cached_content=non_cached_content)
         else:
             # Fallback
             resp = self.llm.chat(messages, system=system, tools=tools)

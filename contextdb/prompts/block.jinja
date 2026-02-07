@@ -16,8 +16,9 @@ Input beams (context from previous block):
 {% endfor %}
 {% endif %}
 
-Pick up to {{ k }} candidates from the BLOCK CONTENT above, best first.
+Pick up to {{ k }} candidates from the CURRENT BLOCK above, best first.
+Previous blocks are provided for context only — do NOT select nodes from them.
 
 Return ONE tool call "rank" with:
-- selected: list of ids in best-to-worst order
+- selected: list of ids from the CURRENT BLOCK in best-to-worst order
 - done: true ONLY if you've reached leaf nodes or content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.

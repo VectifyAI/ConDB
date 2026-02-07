@@ -1,6 +1,5 @@
 """Utility modules for ContextDB."""
 
-from contextdb.utils.prefix_cache import BlockContentCache, PrefixCache
 from contextdb.utils.token_counter import (
     NodeTokenInfo,
     SubtreeTokenInfo,
@@ -11,8 +10,6 @@ from contextdb.utils.token_counter import (
 )
 
 __all__ = [
-    "PrefixCache",
-    "BlockContentCache",
     "TokenCounter",
     "TiktokenCounter",
     "TokenizerProtocol",

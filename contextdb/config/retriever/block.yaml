@@ -1,25 +1,2 @@
 # Block retriever configuration
-
-# Token limits
 max_tokens_per_block: 16000    # T parameter - max tokens per block
-tokens_per_node: 300           # Estimated tokens per node (for quick estimation)
-reserved_tokens: 10000         # Reserved tokens for prompt overhead
-
-# Block cutting parameters
-levels_per_block: 1            # K parameter - tree levels per vertical block
-
-# Cache settings
-cache_enabled: true
-cache_max_entries: 1000
-cache_ttl_seconds: 3600
-cache_max_memory_mb: 100
-
-# Parallel processing settings
-parallel_horizontal: true      # Enable parallel processing for horizontal blocks
-max_parallel_workers: 10       # Max concurrent workers for parallel processing
-
-# Map-Reduce settings
-reduce_rerank_threshold: 10    # Rerank with LLM if candidates exceed this count
-
-# Beam-guided pruning
-enable_beam_pruning: true      # Filter nodes by parent-child relationship with beams

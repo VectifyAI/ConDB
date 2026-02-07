@@ -1,5 +1,4 @@
 from contextdb.retriever.algorithm import (
-    AdaptiveRetriever,
     BaseRetriever,
     BeamRetriever,
     Block,
@@ -8,7 +7,6 @@ from contextdb.retriever.algorithm import (
     BlockRetriever,
     BlockTreePlan,
     BlockType,
-    HorizontalBlockGroup,
 )
 from contextdb.retriever.base import ManualRetriever, RetrievalResult, TreeFormatter
 
@@ -16,7 +14,6 @@ __all__ = [
     "RetrievalResult",
     "TreeFormatter",
     "ManualRetriever",
-    "AdaptiveRetriever",
     "BaseRetriever",
     "BeamRetriever",
     "BlockRetriever",
@@ -25,5 +22,4 @@ __all__ = [
     "BlockResult",
     "BlockTreePlan",
     "BlockRetrievalResult",
-    "HorizontalBlockGroup",
 ]

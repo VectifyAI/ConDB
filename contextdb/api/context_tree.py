@@ -97,8 +97,7 @@ class ContextTree:
             use_block_retriever: Use BlockRetriever for large documents (default: False)
             **kwargs: Additional arguments passed to retriever.retrieve()
                 For BeamRetriever: beam_size, max_turns, select_k
-                For BlockRetriever: beam_size, max_turns, select_k,
-                    max_tokens_per_block, levels_per_block, cache_enabled
+                For BlockRetriever: beam_size, max_turns, select_k, max_tokens_per_block
 
         Returns:
             RetrievalResult or BlockRetrievalResult with selected nodes and contents
@@ -108,9 +107,8 @@ class ContextTree:
 
         if retriever is None:
             if use_block_retriever:
-                # Extract BlockRetriever-specific kwargs
                 block_kwargs = {}
-                for key in ["max_tokens_per_block", "levels_per_block", "cache_enabled", "parallel_horizontal"]:
+                for key in ["max_tokens_per_block"]:
                     if key in kwargs:
                         block_kwargs[key] = kwargs.pop(key)
                 retriever = BlockRetriever(self.storage, self.llm, **block_kwargs)
@@ -124,29 +122,8 @@ class ContextTree:
         tree_id: str,
         question: str,
         max_tokens_per_block: int = 16000,
-        levels_per_block: int = 1,
-        cache_enabled: bool = True,
         **kwargs,
     ) -> BlockRetrievalResult:
-        """
-        Query using Block-level Beam Search (convenience method).
-
-        This method is optimized for large documents by:
-        1. Cutting the tree into token-limited blocks
-        2. Processing blocks sequentially with state passing
-        3. Using prefix caching for efficiency
-
-        Args:
-            tree_id: ID of the tree to query
-            question: The question to answer
-            max_tokens_per_block: Maximum tokens per block (default: 16000)
-            levels_per_block: Tree levels per block (default: 1)
-            cache_enabled: Enable prefix caching (default: True)
-            **kwargs: Additional arguments (beam_size, max_turns, select_k)
-
-        Returns:
-            BlockRetrievalResult with nodes, contents, and block metrics
-        """
         if not self.llm:
             raise ValueError("LLM client not provided")
 
@@ -154,8 +131,6 @@ class ContextTree:
             self.storage,
             self.llm,
             max_tokens_per_block=max_tokens_per_block,
-            levels_per_block=levels_per_block,
-            cache_enabled=cache_enabled,
         )
         return retriever.retrieve(tree_id, question, **kwargs)
 

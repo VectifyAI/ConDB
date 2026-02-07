@@ -19,6 +19,7 @@ class LLMWithCacheProtocol(Protocol):
         system: str = "",
         tools: list[dict] = None,
         cache_content: str = None,
+        non_cached_content: str = None,
     ) -> dict[str, Any]:
         """Chat with prompt caching support for static content."""
         ...
@@ -55,29 +56,35 @@ class LLMClient:
         system: str = "",
         tools: list[dict] = None,
         cache_content: str = None,
+        non_cached_content: str = None,
     ) -> dict[str, Any]:
         """
         Chat with prompt caching support.
 
         For Anthropic, uses the cache_control feature to cache static content.
-        For OpenAI, falls back to regular chat (no native caching support).
+        Non-cached content is sent as regular input (no cache_control overhead).
 
         Args:
             messages: Chat messages
             system: System prompt
             tools: Tool definitions
-            cache_content: Static content to cache (prepended to first user message)
+            cache_content: Static content to cache (with cache_control, 1.25x write cost)
+            non_cached_content: One-time content NOT worth caching (regular 1x input cost)
 
         Returns:
             Chat response with usage stats including cache metrics
         """
         if self.provider == "anthropic":
-            return self._chat_anthropic_with_cache(messages, system, tools, cache_content)
+            return self._chat_anthropic_with_cache(messages, system, tools, cache_content, non_cached_content)
         else:
             # OpenAI doesn't have native prompt caching, fall back to regular chat
+            all_content = ""
             if cache_content:
-                # Prepend cache content to first user message
-                messages = self._prepend_cache_content(messages, cache_content)
+                all_content += cache_content + "\n\n"
+            if non_cached_content:
+                all_content += non_cached_content + "\n\n"
+            if all_content:
+                messages = self._prepend_cache_content(messages, all_content)
             return self._chat_openai(messages, system, tools)
 
     def _chat_anthropic(self, messages: list[dict], system: str, tools: list[dict]) -> dict[str, Any]:
@@ -105,57 +112,66 @@ class LLMClient:
         return result
 
     def _chat_anthropic_with_cache(
-        self, messages: list[dict], system: str, tools: list[dict], cache_content: str
+        self, messages: list[dict], system: str, tools: list[dict],
+        cache_content: str, non_cached_content: str = None,
     ) -> dict[str, Any]:
         """
         Anthropic chat with prompt caching.
 
-        Uses cache_control to mark static content for caching.
-        This can significantly reduce costs for repeated queries over the same document.
+        User message structure:
+        1. cache_content (with cache_control) — reusable prefix, 1.25x write / 0.1x read
+        2. non_cached_content (NO cache_control) — one-time content, regular 1x cost
+        3. dynamic prompt — query/beams/selected
+
+        See: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
         """
-        # Build messages with cache control
+        # Build messages with selective cache control
         cached_messages = []
         for i, msg in enumerate(messages):
-            if i == 0 and msg["role"] == "user" and cache_content:
-                # First user message: prepend cache content with cache_control
-                content = msg.get("content", "")
-                if isinstance(content, str):
-                    cached_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": cache_content,
-                                    "cache_control": {"type": "ephemeral"},
-                                },
-                                {"type": "text", "text": content},
-                            ],
-                        }
-                    )
-                else:
-                    # Content is already a list
-                    cached_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": cache_content,
-                                    "cache_control": {"type": "ephemeral"},
-                                },
-                                *content,
-                            ],
-                        }
-                    )
+            if i == 0 and msg["role"] == "user" and (cache_content or non_cached_content):
+                dynamic = msg.get("content", "")
+                content_blocks = []
+
+                # Cached prefix (reusable across queries)
+                if cache_content:
+                    content_blocks.append({
+                        "type": "text",
+                        "text": cache_content,
+                        "cache_control": {"type": "ephemeral"},
+                    })
+
+                # Non-cached content (one-time, no cache overhead)
+                if non_cached_content:
+                    content_blocks.append({"type": "text", "text": non_cached_content})
+
+                # Dynamic prompt
+                if isinstance(dynamic, str):
+                    content_blocks.append({"type": "text", "text": dynamic})
+                elif isinstance(dynamic, list):
+                    content_blocks.extend(dynamic)
+
+                cached_messages.append({"role": "user", "content": content_blocks})
             else:
                 cached_messages.append(msg)
 
         kwargs = {"model": self.model, "max_tokens": 1024, "messages": cached_messages}
+
+        # System prompt with cache_control (static across all calls)
         if system:
-            kwargs["system"] = system
+            kwargs["system"] = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+            ]
+
+        # Tools with cache_control on last tool (static across all calls)
         if tools:
-            kwargs["tools"] = tools
+            cached_tools = []
+            for j, tool in enumerate(tools):
+                t = dict(tool)
+                if j == len(tools) - 1:
+                    # Mark last tool with cache_control (caches entire tools prefix)
+                    t["cache_control"] = {"type": "ephemeral"}
+                cached_tools.append(t)
+            kwargs["tools"] = cached_tools
 
         response = self._client.messages.create(**kwargs)
 
@@ -165,12 +181,9 @@ class LLMClient:
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
                 "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+                "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             }
-            # Add cache-specific metrics if available
-            if hasattr(response.usage, "cache_creation_input_tokens"):
-                usage["cache_creation_input_tokens"] = response.usage.cache_creation_input_tokens
-            if hasattr(response.usage, "cache_read_input_tokens"):
-                usage["cache_read_input_tokens"] = response.usage.cache_read_input_tokens
 
         result = {"content": [], "stop_reason": response.stop_reason, "usage": usage}
         for block in response.content:
