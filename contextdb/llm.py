@@ -1,17 +1,30 @@
 import json
+import os
 from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
 class LLMProtocol(Protocol):
-    def chat(self, messages: list[dict], system: str = "", tools: list[dict] = None) -> dict[str, Any]: ...
+    def chat(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] = None,
+        cache_key: str = None,
+    ) -> dict[str, Any]: ...
 
 
 @runtime_checkable
 class LLMWithCacheProtocol(Protocol):
     """Extended protocol with prompt caching support."""
 
-    def chat(self, messages: list[dict], system: str = "", tools: list[dict] = None) -> dict[str, Any]: ...
+    def chat(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] = None,
+        cache_key: str = None,
+    ) -> dict[str, Any]: ...
 
     def chat_with_cache(
         self,
@@ -20,6 +33,7 @@ class LLMWithCacheProtocol(Protocol):
         tools: list[dict] = None,
         cache_content: str = None,
         non_cached_content: str = None,
+        cache_key: str = None,
     ) -> dict[str, Any]:
         """Chat with prompt caching support for static content."""
         ...
@@ -44,11 +58,17 @@ class LLMClient:
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
-    def chat(self, messages: list[dict], system: str = "", tools: list[dict] = None) -> dict[str, Any]:
+    def chat(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] = None,
+        cache_key: str = None,
+    ) -> dict[str, Any]:
         if self.provider == "anthropic":
             return self._chat_anthropic(messages, system, tools)
         elif self.provider == "openai":
-            return self._chat_openai(messages, system, tools)
+            return self._chat_openai(messages, system, tools, cache_key=cache_key)
 
     def chat_with_cache(
         self,
@@ -57,6 +77,7 @@ class LLMClient:
         tools: list[dict] = None,
         cache_content: str = None,
         non_cached_content: str = None,
+        cache_key: str = None,
     ) -> dict[str, Any]:
         """
         Chat with prompt caching support.
@@ -78,14 +99,14 @@ class LLMClient:
             return self._chat_anthropic_with_cache(messages, system, tools, cache_content, non_cached_content)
         else:
             # OpenAI doesn't have native prompt caching, fall back to regular chat
-            all_content = ""
+            parts = []
             if cache_content:
-                all_content += cache_content + "\n\n"
+                parts.append(cache_content)
             if non_cached_content:
-                all_content += non_cached_content + "\n\n"
-            if all_content:
-                messages = self._prepend_cache_content(messages, all_content)
-            return self._chat_openai(messages, system, tools)
+                parts.append(non_cached_content)
+            if parts:
+                messages = self._prepend_cache_content(messages, "\n\n".join(parts))
+            return self._chat_openai(messages, system, tools, cache_key=cache_key)
 
     def _chat_anthropic(self, messages: list[dict], system: str, tools: list[dict]) -> dict[str, Any]:
         kwargs = {"model": self.model, "max_tokens": 1024, "messages": messages}
@@ -212,7 +233,13 @@ class LLMClient:
                 result.append(msg)
         return result
 
-    def _chat_openai(self, messages: list[dict], system: str, tools: list[dict]) -> dict[str, Any]:
+    def _chat_openai(
+        self,
+        messages: list[dict],
+        system: str,
+        tools: list[dict],
+        cache_key: str = None,
+    ) -> dict[str, Any]:
         oai_messages = []
         if system:
             oai_messages.append({"role": "system", "content": system})
@@ -268,6 +295,11 @@ class LLMClient:
                     oai_messages.append({"role": "assistant", "content": content})
 
         kwargs = {"model": self.model, "messages": oai_messages}
+        if cache_key:
+            kwargs["prompt_cache_key"] = cache_key
+            retention = os.getenv("OPENAI_PROMPT_CACHE_RETENTION")
+            if retention:
+                kwargs["prompt_cache_retention"] = retention
         if tools:
             kwargs["tools"] = [
                 {
@@ -287,6 +319,16 @@ class LLMClient:
                 "output_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             }
+            prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+            if prompt_details:
+                if hasattr(prompt_details, "model_dump"):
+                    details_dict = prompt_details.model_dump()
+                elif isinstance(prompt_details, dict):
+                    details_dict = prompt_details
+                else:
+                    details_dict = {}
+                usage["prompt_tokens_details"] = details_dict
+                usage["cached_tokens"] = int(details_dict.get("cached_tokens", 0) or 0)
         result = {"content": [], "stop_reason": choice.finish_reason, "usage": usage}
         if choice.message.content:
             result["content"].append({"type": "text", "text": choice.message.content})

@@ -5,6 +5,7 @@ from contextdb.retriever.algorithm import (
     BlockRetrievalResult,
     BlockResult,
     BlockRetriever,
+    LegacyBlockRetriever,
     BlockTreePlan,
     BlockType,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "BaseRetriever",
     "BeamRetriever",
     "BlockRetriever",
+    "LegacyBlockRetriever",
     "Block",
     "BlockType",
     "BlockResult",

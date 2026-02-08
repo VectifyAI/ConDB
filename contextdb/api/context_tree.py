@@ -11,6 +11,7 @@ from contextdb.retriever import (
     BaseRetriever,
     BeamRetriever,
     BlockRetriever,
+    LegacyBlockRetriever,
     BlockRetrievalResult,
     ManualRetriever,
     RetrievalResult,
@@ -85,6 +86,7 @@ class ContextTree:
         question: str,
         retriever: BaseRetriever = None,
         use_block_retriever: bool = False,
+        use_legacy_block_retriever: bool = False,
         **kwargs,
     ) -> RetrievalResult:
         """
@@ -95,6 +97,7 @@ class ContextTree:
             question: The question to answer
             retriever: Custom retriever instance (optional)
             use_block_retriever: Use BlockRetriever for large documents (default: False)
+            use_legacy_block_retriever: Use LegacyBlockRetriever when use_block_retriever=True
             **kwargs: Additional arguments passed to retriever.retrieve()
                 For BeamRetriever: beam_size, max_turns, select_k
                 For BlockRetriever: beam_size, max_turns, select_k, max_tokens_per_block
@@ -111,7 +114,10 @@ class ContextTree:
                 for key in ["max_tokens_per_block"]:
                     if key in kwargs:
                         block_kwargs[key] = kwargs.pop(key)
-                retriever = BlockRetriever(self.storage, self.llm, **block_kwargs)
+                if use_legacy_block_retriever:
+                    retriever = LegacyBlockRetriever(self.storage, self.llm, **block_kwargs)
+                else:
+                    retriever = BlockRetriever(self.storage, self.llm, **block_kwargs)
             else:
                 retriever = BeamRetriever(self.storage, self.llm)
 
@@ -128,6 +134,23 @@ class ContextTree:
             raise ValueError("LLM client not provided")
 
         retriever = BlockRetriever(
+            self.storage,
+            self.llm,
+            max_tokens_per_block=max_tokens_per_block,
+        )
+        return retriever.retrieve(tree_id, question, **kwargs)
+
+    def query_with_legacy_blocks(
+        self,
+        tree_id: str,
+        question: str,
+        max_tokens_per_block: int = 16000,
+        **kwargs,
+    ) -> BlockRetrievalResult:
+        if not self.llm:
+            raise ValueError("LLM client not provided")
+
+        retriever = LegacyBlockRetriever(
             self.storage,
             self.llm,
             max_tokens_per_block=max_tokens_per_block,

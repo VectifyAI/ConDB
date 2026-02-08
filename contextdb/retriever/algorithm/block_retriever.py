@@ -1,13 +1,14 @@
-"""Block-level beam search retriever with subtree-driven prefix caching."""
+"""Block-level beam search retriever with fixed-block prefix caching."""
 
-import hashlib
 import json
+import os
+import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from jinja2 import Template
 
-from contextdb.config import get_llm_config, get_retriever_config
+from contextdb.config import get_retriever_config
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 from contextdb.retriever.algorithm.block_cutter import BlockCutter
@@ -16,7 +17,6 @@ from contextdb.retriever.algorithm.block_types import (
     BlockResult,
     BlockRetrievalResult,
     BlockTreePlan,
-    BlockType,
 )
 from contextdb.utils.token_counter import TokenCounter
 
@@ -24,44 +24,9 @@ log = get_logger(__name__)
 
 _DEFAULT_CONFIG = get_retriever_config("block")
 
-BLOCK_PROMPT = Template(
-    (Path(__file__).parent.parent.parent / "prompts/block.jinja").read_text()
-    if (Path(__file__).parent.parent.parent / "prompts/block.jinja").exists()
-    else """
-You are ranking tree nodes to answer a user question.
-
-Query: {{ query }}
-
-Selected so far:
-{% if selected %}
-{{ selected }}
-{% else %}
-(none)
-{% endif %}
-
-{% if input_beams %}
-Input beams (context from previous block):
-{% for beam in input_beams %}
-- {{ beam.node_id }}: {{ beam.title }} ({{ beam.path }})
-{% endfor %}
-{% endif %}
-
-Pick up to {{ k }} candidates from the CURRENT BLOCK above, best first.
-Previous blocks are provided for context only — do NOT select nodes from them.
-
-Return ONE tool call "rank" with:
-- selected: list of ids from the CURRENT BLOCK in best-to-worst order
-- done: true ONLY if you've reached leaf nodes or content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.
-"""
-)
-
-BLOCK_CONTENT_PREFIX = """=== DOCUMENT TREE NODES ===
-
-"""
-
-CURRENT_BLOCK_MARKER = """
-=== CURRENT BLOCK (rank these nodes) ===
-"""
+_PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
+BLOCK_CACHE_PREFIX_PROMPT = Template((_PROMPTS_DIR / "block_cache_prefix.jinja").read_text(encoding="utf-8"))
 
 TOOLS = [
     {
@@ -96,7 +61,6 @@ class BlockRetriever(BaseRetriever):
 
         self.token_counter = TokenCounter()
         self.block_cutter = BlockCutter(storage, self.token_counter, self.max_tokens_per_block)
-
         self._plan_cache: dict[str, BlockTreePlan] = {}
 
     def retrieve(
@@ -108,11 +72,10 @@ class BlockRetriever(BaseRetriever):
         select_k: int = 1,
     ) -> BlockRetrievalResult:
         """
-        Subtree-driven block beam search.
-
-        1. Process top block (greedy-merged shallow layers) → select beams
-        2. For each beam, create subtree block dynamically (greedy packing by token budget)
-        3. Repeat until done or max_turns reached
+        Fixed-block beam retrieval:
+        1. Use BlockCutter plan blocks as stable cacheable prefixes.
+        2. Keep block content unchanged across queries.
+        3. Use beam paths to dynamically filter allowed node ids per block.
         """
         root_id = self.storage.get_root_id(tree_id)
         if not root_id:
@@ -125,10 +88,8 @@ class BlockRetriever(BaseRetriever):
         if not plan.blocks:
             return self._empty_result()
 
-        top_block = plan.blocks[0]
-        top_prefix = top_block.cached_content or ""
-
         beams = [{"node_id": root_id, "title": "root", "path": "root"}]
+        previous_selected: list[str] = []
         selected: list[str] = []
         trace: list[dict[str, Any]] = []
         block_traces: list[dict[str, Any]] = []
@@ -139,78 +100,57 @@ class BlockRetriever(BaseRetriever):
         blocks_processed = 0
 
         k = beam_size if beam_size else select_k
-        max_calls = max_turns if max_turns else 20
+        max_calls = max_turns if max_turns else len(plan.blocks)
 
-        # Step 1: Process top block
-        result, llm_called, cache_metrics = self._process_block(
-            top_block, query, beams, selected, k, prefix="",
-        )
-        total_llm_calls += llm_called
-        cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
-        cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
-        blocks_processed += 1
-
-        beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
-        for node_id in result.selected_node_ids:
-            if node_id not in selected:
-                selected.append(node_id)
-
-        block_traces.append({
-            "type": "top",
-            "block_id": top_block.block_id,
-            "depth_range": f"{top_block.depth_start}-{top_block.depth_end}",
-            "nodes": len(top_block.node_ids),
-        })
-        trace.append({
-            "turn": 0,
-            "block_id": top_block.block_id,
-            "candidates": len(top_block.node_ids),
-            "kept": len(result.ranked_node_ids),
-            "done": result.done,
-        })
-
-        # Step 2: Iteratively process subtree blocks
-        turn = 1
-        while not result.done and total_llm_calls < max_calls:
-            has_children = any(
-                b["node_id"] and self.storage.get_children(tree_id, b["node_id"])
-                for b in beams
-            )
-            if not has_children:
+        for block in plan.blocks:
+            if total_llm_calls >= max_calls:
                 break
 
-            beam_ids = [b["node_id"] for b in beams if b["node_id"]]
-            subtree_block = self._create_subtree_block(tree_id, beam_ids)
-            if subtree_block is None:
+            if total_llm_calls > 0 and not self._beams_have_children(tree_id, beams):
                 break
+
+            allowed_node_ids = self._collect_allowed_node_ids(tree_id, block, beams)
+            if not allowed_node_ids:
+                continue
 
             result, llm_called, cache_metrics = self._process_block(
-                subtree_block, query, beams, selected, k, prefix=top_prefix,
+                block=block,
+                query=query,
+                input_beams=beams,
+                previous_selected=previous_selected,
+                allowed_node_ids=allowed_node_ids,
+                k=k,
             )
             total_llm_calls += llm_called
             cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
             cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
             blocks_processed += 1
 
-            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
             for node_id in result.selected_node_ids:
                 if node_id not in selected:
                     selected.append(node_id)
 
+            previous_selected = list(result.selected_node_ids)
+            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
+
             block_traces.append({
-                "type": "subtree",
-                "block_id": subtree_block.block_id,
-                "nodes": len(subtree_block.node_ids),
-                "tokens": subtree_block.total_tokens,
+                "type": "plan_block",
+                "block_id": block.block_id,
+                "depth_range": f"{block.depth_start}-{block.depth_end}",
+                "nodes": len(block.node_ids),
+                "allowed": len(allowed_node_ids),
+                "tokens": block.total_tokens,
             })
             trace.append({
-                "turn": turn,
-                "block_id": subtree_block.block_id,
-                "candidates": len(subtree_block.node_ids),
+                "turn": len(trace),
+                "block_id": block.block_id,
+                "candidates": len(allowed_node_ids),
                 "kept": len(result.ranked_node_ids),
                 "done": result.done,
             })
-            turn += 1
+
+            if result.done:
+                break
 
         contents = self._gather_contents(tree_id, selected)
 
@@ -226,138 +166,108 @@ class BlockRetriever(BaseRetriever):
             block_traces=block_traces,
         )
 
-    # ---- subtree block creation ----
-
-    def _create_subtree_block(self, tree_id: str, beam_node_ids: list[str]) -> Optional[Block]:
-        """Create a block by greedy-packing beam subtrees within the token budget T.
-
-        Uses dynamic content detail: full content for nodes that fit,
-        compact (title+summary only) for overflow nodes to maximize coverage.
-        """
-        all_descendants = []
-        for node_id in beam_node_ids:
-            all_descendants.extend(self._get_subtree_nodes(tree_id, node_id))
-
-        if not all_descendants:
-            return None
-
-        total_tokens = sum(
-            self.token_counter.get_cached_count(d["node_id"])
-            or self.token_counter.count_node_tokens(d)
-            for d in all_descendants
-        )
-
-        if total_tokens <= self.max_tokens_per_block:
-            return self._make_block(tree_id, beam_node_ids, all_descendants, total_tokens, "subtree")
-
-        # Greedy pack children's subtrees, with dynamic detail level
-        packed_full = []     # nodes with full content (title + summary + text)
-        packed_compact = []  # nodes with compact content (title + summary only)
-        packed_tokens = 0
-
-        for beam_id in beam_node_ids:
-            for child in self._get_direct_children_nodes(tree_id, beam_id):
-                child_subtree = self._get_subtree_nodes(tree_id, child["node_id"])
-                child_subtree_tokens = sum(
-                    self.token_counter.get_cached_count(n["node_id"])
-                    or self.token_counter.count_node_tokens(n)
-                    for n in child_subtree
-                )
-                child_node_tokens = (
-                    self.token_counter.get_cached_count(child["node_id"])
-                    or self.token_counter.count_node_tokens(child)
-                )
-
-                if packed_tokens + child_node_tokens + child_subtree_tokens <= self.max_tokens_per_block:
-                    packed_full.append(child)
-                    packed_full.extend(child_subtree)
-                    packed_tokens += child_node_tokens + child_subtree_tokens
-                else:
-                    packed_compact.append(child)
-                    packed_tokens += child_node_tokens
-
-        all_packed = packed_full + packed_compact
-        if not all_packed:
-            return None
-
-        # Generate content: full detail for packed_full, compact for packed_compact
-        full_ids = {n["node_id"] for n in packed_full}
-        content = self._generate_content_from_nodes(all_packed, compact_ids={
-            n["node_id"] for n in packed_compact
-        })
-        node_ids = [n["node_id"] for n in all_packed]
-        depths = [n.get("depth", 0) for n in all_packed]
-
-        return Block(
-            block_id=f"packed_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}",
-            block_type=BlockType.VERTICAL,
-            tree_id=tree_id,
-            depth_start=min(depths) if depths else 0,
-            depth_end=max(depths) if depths else 0,
-            node_ids=node_ids,
-            total_tokens=packed_tokens,
-            max_tokens=self.max_tokens_per_block,
-            cached_content=content,
-            content_hash=hashlib.md5(content.encode()).hexdigest(),
-        )
-
-    def _make_block(self, tree_id, beam_ids, nodes, total_tokens, prefix):
-        node_ids = [n["node_id"] for n in nodes]
-        content = self._generate_content_from_nodes(nodes)
-        depths = [n.get("depth", 0) for n in nodes]
-        return Block(
-            block_id=f"{prefix}_{'_'.join(bid[:8] for bid in beam_ids[:3])}",
-            block_type=BlockType.VERTICAL,
-            tree_id=tree_id,
-            depth_start=min(depths) if depths else 0,
-            depth_end=max(depths) if depths else 0,
-            node_ids=node_ids,
-            total_tokens=total_tokens,
-            max_tokens=self.max_tokens_per_block,
-            cached_content=content,
-            content_hash=hashlib.md5(content.encode()).hexdigest(),
-        )
-
     # ---- LLM interaction ----
 
-    def _process_block(self, block, query, beams, selected, k, prefix=""):
-        """Process a block with LLM. Returns (BlockResult, llm_calls, cache_metrics)."""
+    def _process_block(self, block, query, input_beams, previous_selected, allowed_node_ids, k):
+        """Process one fixed block with dynamic beam filter."""
         empty_metrics = {"cache_read_tokens": 0, "cache_creation_tokens": 0}
-
-        node_ids = block.node_ids
-        content = block.cached_content
-
-        if not node_ids:
+        if not allowed_node_ids:
             return BlockResult(block_id=block.block_id, ranked_node_ids=[], selected_node_ids=[], done=False), 0, empty_metrics
 
-        # Cached prefix (reusable across queries) vs non-cached current block (one-time)
-        if prefix:
-            cache_part = BLOCK_CONTENT_PREFIX + prefix
-            non_cached_part = CURRENT_BLOCK_MARKER + content
-        else:
-            cache_part = BLOCK_CONTENT_PREFIX + content
-            non_cached_part = None
-
-        dynamic_prompt = BLOCK_PROMPT.render(query=query, selected=selected, input_beams=beams, k=k)
+        cache_key = self._build_block_cache_key(block)
+        cache_part = BLOCK_CACHE_PREFIX_PROMPT.render(block_content=block.cached_content or "")
+        dynamic_prompt = BLOCK_PROMPT.render(
+            query=query,
+            previous_selected=previous_selected,
+            input_beams=input_beams,
+            allowed_node_ids=allowed_node_ids,
+            k=k,
+        )
+        prefix_tokens = self.token_counter.count_text_tokens(cache_part)
+        dynamic_tokens = self.token_counter.count_text_tokens(dynamic_prompt)
+        est_total_tokens = prefix_tokens + dynamic_tokens
+        log.info(
+            "prompt_tokens block=%s prefix=%d dynamic=%d est_total=%d allowed=%d",
+            block.block_id,
+            prefix_tokens,
+            dynamic_tokens,
+            est_total_tokens,
+            len(allowed_node_ids),
+        )
 
         if hasattr(self.llm, "chat_with_cache"):
-            resp = self.llm.chat_with_cache(
-                [{"role": "user", "content": dynamic_prompt}],
-                tools=TOOLS,
-                cache_content=cache_part,
-                non_cached_content=non_cached_part,
-            )
+            call_started = time.perf_counter()
+            cache_call_kwargs = {
+                "tools": TOOLS,
+                "cache_content": cache_part,
+                "cache_key": cache_key,
+            }
+            try:
+                resp = self.llm.chat_with_cache(
+                    [{"role": "user", "content": dynamic_prompt}],
+                    **cache_call_kwargs,
+                )
+            except TypeError:
+                cache_call_kwargs.pop("cache_key", None)
+                resp = self.llm.chat_with_cache(
+                    [{"role": "user", "content": dynamic_prompt}],
+                    **cache_call_kwargs,
+                )
         else:
-            full_prompt = cache_part + "\n\n" + (non_cached_part or "") + "\n\n" + dynamic_prompt
-            resp = self.llm.chat([{"role": "user", "content": full_prompt}], tools=TOOLS)
+            call_started = time.perf_counter()
+            full_prompt = cache_part + "\n\n" + dynamic_prompt
+            chat_kwargs = {"tools": TOOLS, "cache_key": cache_key}
+            try:
+                resp = self.llm.chat([{"role": "user", "content": full_prompt}], **chat_kwargs)
+            except TypeError:
+                chat_kwargs.pop("cache_key", None)
+                resp = self.llm.chat([{"role": "user", "content": full_prompt}], **chat_kwargs)
+        call_latency_s = time.perf_counter() - call_started
 
         usage = resp.get("usage") or {}
+        cache_read_tokens = usage.get("cache_read_input_tokens", usage.get("cached_tokens", 0)) or 0
+        cache_creation_tokens = usage.get("cache_creation_input_tokens", 0) or 0
+        try:
+            network_rtt_s = max(0.0, float(os.getenv("CONDB_NETWORK_RTT_EST_MS", "0")) / 1000.0)
+        except (TypeError, ValueError):
+            network_rtt_s = 0.0
+        adjusted_wall_s = max(0.0, call_latency_s - network_rtt_s)
         cache_metrics = {
-            "cache_read_tokens": usage.get("cache_read_input_tokens", 0) or 0,
-            "cache_creation_tokens": usage.get("cache_creation_input_tokens", 0) or 0,
+            "cache_read_tokens": cache_read_tokens,
+            "cache_creation_tokens": cache_creation_tokens,
         }
+        input_tokens = usage.get("input_tokens", 0) or 0
+        output_tokens = usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0
+        effective_prefill_tokens = max(0, int(input_tokens) - int(cache_read_tokens))
+        total_work_tokens = effective_prefill_tokens + int(output_tokens)
+        if total_work_tokens > 0:
+            prefill_est_s = adjusted_wall_s * effective_prefill_tokens / total_work_tokens
+            decode_est_s = adjusted_wall_s * int(output_tokens) / total_work_tokens
+        else:
+            prefill_est_s = 0.0
+            decode_est_s = 0.0
 
-        ranked_ids, done = self._parse_llm_response(resp, node_ids)
+        log.info(
+            "usage_tokens block=%s input=%d output=%d cache_read=%d cache_create=%d",
+            block.block_id,
+            int(input_tokens),
+            int(output_tokens),
+            int(cache_read_tokens),
+            int(cache_creation_tokens),
+        )
+        log.info(
+            "timing block=%s wall=%.3fs wall_adj=%.3fs net_rtt_est=%.3fs prefill_est=%.3fs decode_est=%.3fs prefill_tokens=%d decode_tokens=%d",
+            block.block_id,
+            call_latency_s,
+            adjusted_wall_s,
+            network_rtt_s,
+            prefill_est_s,
+            decode_est_s,
+            effective_prefill_tokens,
+            int(output_tokens),
+        )
+
+        ranked_ids, done = self._parse_llm_response(resp, allowed_node_ids)
 
         result = BlockResult(
             block_id=block.block_id,
@@ -367,6 +277,10 @@ class BlockRetriever(BaseRetriever):
             usage=usage,
         )
         return result, 1, cache_metrics
+
+    def _build_block_cache_key(self, block: Block) -> str:
+        identity = block.content_hash or block.block_id
+        return f"condb:block:{identity}"
 
     def _parse_llm_response(self, resp, valid_node_ids):
         valid_set = set(valid_node_ids)
@@ -388,7 +302,8 @@ class BlockRetriever(BaseRetriever):
                 try:
                     attrs = json.loads(node.attrs_json)
                 except json.JSONDecodeError:
-                    pass
+                    attrs = {}
+
             new_beams.append({
                 "node_id": node_id,
                 "title": attrs.get("title", ""),
@@ -396,76 +311,67 @@ class BlockRetriever(BaseRetriever):
             })
             if beam_size and len(new_beams) >= beam_size:
                 break
+
         return new_beams if new_beams else [{"node_id": "", "title": "", "path": ""}]
 
-    # ---- DB helpers ----
+    def _beams_have_children(self, tree_id: str, beams: list[dict[str, str]]) -> bool:
+        for beam in beams:
+            node_id = beam.get("node_id", "")
+            if node_id and self.storage.get_children(tree_id, node_id):
+                return True
+        return False
 
-    def _get_subtree_nodes(self, tree_id, node_id):
-        cursor = self.storage.conn.cursor()
-        cursor.execute("SELECT path FROM nodes WHERE tree_id = ? AND node_id = ?", (tree_id, node_id))
-        row = cursor.fetchone()
-        if not row:
+    # ---- allowed node filtering (dynamic, but content stays fixed) ----
+
+    def _collect_allowed_node_ids(self, tree_id: str, block: Block, beams: list[dict[str, str]]) -> list[str]:
+        beam_ids = [b["node_id"] for b in beams if b.get("node_id")]
+        if not beam_ids:
             return []
-        cursor.execute(
-            """SELECT n.node_id, n.parent_id, n.depth, n.path, n.attrs_json, e.payload_json
-               FROM nodes n LEFT JOIN entities e ON n.entity_id = e.entity_id
-               WHERE n.tree_id = ? AND n.path LIKE ? AND n.node_id != ?
-               ORDER BY n.path""",
-            (tree_id, row[0] + "%", node_id),
-        )
-        return [self._row_to_node(r) for r in cursor.fetchall()]
 
-    def _get_direct_children_nodes(self, tree_id, node_id):
+        beam_path_map = self._get_node_paths(tree_id, beam_ids)
+        if not beam_path_map:
+            return []
+
+        block_path_map = self._get_node_paths(tree_id, block.node_ids)
+        if not block_path_map:
+            return []
+
+        beam_id_set = set(beam_ids)
+        beam_paths = list(beam_path_map.values())
+        allowed: list[str] = []
+
+        for node_id in block.node_ids:
+            if node_id in beam_id_set:
+                continue
+            node_path = block_path_map.get(node_id)
+            if not node_path:
+                continue
+            if any(node_path.startswith(f"{beam_path}/") for beam_path in beam_paths):
+                allowed.append(node_id)
+
+        return allowed
+
+    def _get_node_paths(self, tree_id: str, node_ids: list[str]) -> dict[str, str]:
+        if not node_ids:
+            return {}
+
         cursor = self.storage.conn.cursor()
-        cursor.execute(
-            """SELECT n.node_id, n.parent_id, n.depth, n.path, n.attrs_json, e.payload_json
-               FROM nodes n LEFT JOIN entities e ON n.entity_id = e.entity_id
-               WHERE n.tree_id = ? AND n.parent_id = ?
-               ORDER BY n.path""",
-            (tree_id, node_id),
-        )
-        return [self._row_to_node(r) for r in cursor.fetchall()]
+        path_map: dict[str, str] = {}
+        chunk_size = 500
 
-    def _row_to_node(self, row):
-        node = {"node_id": row["node_id"], "parent_id": row["parent_id"],
-                "depth": row["depth"], "path": row["path"], "attrs_json": row["attrs_json"]}
-        if row["attrs_json"]:
-            node["attrs"] = json.loads(row["attrs_json"])
-        if row["payload_json"]:
-            node["entity"] = {"payload": json.loads(row["payload_json"])}
-        return node
+        for i in range(0, len(node_ids), chunk_size):
+            chunk = node_ids[i:i + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(
+                f"SELECT node_id, path FROM nodes WHERE tree_id = ? AND node_id IN ({placeholders})",
+                (tree_id, *chunk),
+            )
+            for row in cursor.fetchall():
+                path_map[row["node_id"]] = row["path"]
 
-    def _generate_content_from_nodes(self, nodes, compact_ids=None):
-        """Generate block content. Nodes in compact_ids get title+summary only."""
-        compact_ids = compact_ids or set()
-        lines = []
-        for node in nodes:
-            attrs = node.get("attrs") or {}
-            if isinstance(attrs, str):
-                try:
-                    attrs = json.loads(attrs)
-                except json.JSONDecodeError:
-                    attrs = {}
+        return path_map
 
-            lines.append(f"- id: {node['node_id']}")
-            if attrs.get("title"):
-                lines.append(f"  title: {attrs['title']}")
-            if attrs.get("summary"):
-                lines.append(f"  summary: {attrs['summary']}")
-
-            if node["node_id"] not in compact_ids:
-                entity = node.get("entity", {})
-                payload = entity.get("payload", {}) if isinstance(entity, dict) else {}
-                text = payload.get("text") or payload.get("content") or ""
-                if text:
-                    lines.append(f"  text: {text[:200]}")
-
-            lines.append(f"  depth: {node.get('depth', 0)}")
-            page_start = attrs.get("page_start")
-            page_end = attrs.get("page_end")
-            if page_start is not None or page_end is not None:
-                lines.append(f"  range: {page_start}-{page_end}")
-        return "\n".join(lines)
+    # ---- DB helpers ----
 
     def _gather_contents(self, tree_id, selected):
         contents = []
@@ -484,9 +390,15 @@ class BlockRetriever(BaseRetriever):
 
     def _empty_result(self):
         return BlockRetrievalResult(
-            nodes=[], contents=[], trace=[], turns=0,
-            blocks_processed=0, total_llm_calls=0,
-            cache_read_tokens=0, cache_creation_tokens=0, block_traces=[],
+            nodes=[],
+            contents=[],
+            trace=[],
+            turns=0,
+            blocks_processed=0,
+            total_llm_calls=0,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            block_traces=[],
         )
 
     def clear_cache(self):
@@ -500,13 +412,3 @@ class BlockRetriever(BaseRetriever):
 
     def get_cache_stats(self):
         return {"plan_cache_size": len(self._plan_cache)}
-
-    def _get_llm_max_concurrent(self, llm):
-        provider = getattr(llm, "provider", None)
-        model = getattr(llm, "model", None)
-        if provider and model:
-            try:
-                return get_llm_config(provider, model).get("max_concurrent", 10)
-            except Exception:
-                pass
-        return 10

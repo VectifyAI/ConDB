@@ -1,0 +1,10 @@
+=== DOCUMENT TREE NODES ===
+
+{{ block_content }}
+
+You are ranking tree nodes to answer a user question.
+Previous blocks are provided for context only — do NOT select nodes from them.
+
+Return ONE tool call "rank" with:
+- selected: list of ids from the CURRENT BLOCK in best-to-worst order
+- done: true ONLY if you've reached leaf nodes or content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.
