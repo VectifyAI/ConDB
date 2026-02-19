@@ -9,7 +9,6 @@ from contextdb.adapter.base import ChatIndexAdapter, GenericAdapter, PageIndexAd
 from contextdb.core.storage import TreeDB
 from contextdb.llm import LLMClient, LLMProtocol
 from contextdb.retriever import (
-    AdaptiveRetriever,
     BaseRetriever,
     BeamRetriever,
     BlockRetriever,
@@ -138,9 +137,6 @@ class ConDB:
             return BlockRetriever(self.storage, llm,
                                   max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000),
                                   cache_enabled=kwargs.get("cache_enabled", True))
-        if strategy == "adaptive":
-            return AdaptiveRetriever(self.storage, llm,
-                                     cache_enabled=kwargs.get("cache_enabled", True))
         raise ValueError(f"Unknown strategy: {strategy!r}")
 
     def _pick_strategy(self, tree_id: str) -> str:
@@ -149,9 +145,7 @@ class ConDB:
         count = cur.fetchone()["c"]
         if count <= 50:
             return "beam"
-        if count <= 500:
-            return "block"
-        return "adaptive"
+        return "block"
 
     # ── Navigate ────────────────────────────────────────────────────
 

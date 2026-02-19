@@ -261,7 +261,22 @@ class BlockCutter:
 
     def _generate_block_content(self, nodes: list[dict]) -> str:
         """Generate cacheable content string for a block."""
-        lines = []
+        title_map: dict[str, str] = {}
+        for node in nodes:
+            nid = node.get("node_id")
+            a = node.get("attrs") or {}
+            if isinstance(a, str):
+                try:
+                    a = json.loads(a)
+                except json.JSONDecodeError:
+                    a = {}
+            if nid and a.get("title"):
+                title_map[nid] = a["title"]
+
+        node_metadata: list[list[str]] = []
+        node_texts: list[str] = []
+        metadata_chars = 0
+
         for node in nodes:
             attrs = node.get("attrs") or {}
             if isinstance(attrs, str):
@@ -273,22 +288,45 @@ class BlockCutter:
             entity = node.get("entity", {})
             payload = entity.get("payload", {}) if isinstance(entity, dict) else {}
 
-            lines.append(f"- id: {node['node_id']}")
+            meta_lines = []
+            meta_lines.append(f"- id: {node['node_id']}")
             if attrs.get("title"):
-                lines.append(f"  title: {attrs['title']}")
+                meta_lines.append(f"  title: {attrs['title']}")
+
+            parent_id = node.get("parent_id")
+            if parent_id and parent_id in title_map:
+                meta_lines.append(f"  parent: {title_map[parent_id]}")
+
             if attrs.get("summary"):
-                lines.append(f"  summary: {attrs['summary']}")
+                meta_lines.append(f"  summary: {attrs['summary']}")
 
-            text = payload.get("text") or payload.get("content") or ""
-            if text:
-                lines.append(f"  text: {text[:200]}")
+            meta_lines.append(f"  depth: {node.get('depth', 0)}")
 
-            lines.append(f"  depth: {node.get('depth', 0)}")
-
-            # Add page range if available
             page_start = attrs.get("page_start")
             page_end = attrs.get("page_end")
             if page_start is not None or page_end is not None:
-                lines.append(f"  range: {page_start}-{page_end}")
+                meta_lines.append(f"  range: {page_start}-{page_end}")
+
+            node_metadata.append(meta_lines)
+            metadata_chars += sum(len(l) for l in meta_lines)
+
+            text = payload.get("text") or payload.get("content") or ""
+            node_texts.append(text)
+
+        chars_per_token = 4
+        metadata_tokens_est = metadata_chars // chars_per_token
+        remaining_tokens = max(0, self.max_tokens - metadata_tokens_est)
+        nodes_with_text = sum(1 for t in node_texts if t)
+
+        if nodes_with_text > 0:
+            chars_per_node = max(200, (remaining_tokens * chars_per_token) // nodes_with_text)
+        else:
+            chars_per_node = 200
+
+        lines = []
+        for meta_lines, text in zip(node_metadata, node_texts):
+            lines.extend(meta_lines)
+            if text:
+                lines.append(f"  text: {text[:chars_per_node]}")
 
         return "\n".join(lines)

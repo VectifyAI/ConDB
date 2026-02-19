@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -59,9 +60,12 @@ class BlockRetriever(BaseRetriever):
             else _DEFAULT_CONFIG.get("max_tokens_per_block", 16000)
         )
 
-        self.token_counter = TokenCounter()
+        provider = getattr(llm, "provider", None)
+        model = getattr(llm, "model", None)
+        self.token_counter = TokenCounter(provider=provider, model=model)
         self.block_cutter = BlockCutter(storage, self.token_counter, self.max_tokens_per_block)
         self._plan_cache: dict[str, BlockTreePlan] = {}
+        self._precomputed_tree_id: str = ""
 
     def retrieve(
         self,
@@ -81,8 +85,10 @@ class BlockRetriever(BaseRetriever):
         if not root_id:
             return self._empty_result()
 
-        self.token_counter.clear_cache()
-        self.token_counter.precompute_tree_tokens(self.storage, tree_id)
+        if tree_id != self._precomputed_tree_id:
+            self.token_counter.clear_cache()
+            self.token_counter.precompute_tree_tokens(self.storage, tree_id)
+            self._precomputed_tree_id = tree_id
 
         plan = self._get_or_create_plan(tree_id)
         if not plan.blocks:
@@ -102,12 +108,80 @@ class BlockRetriever(BaseRetriever):
         k = beam_size if beam_size else select_k
         max_calls = max_turns if max_turns else len(plan.blocks)
 
+        h_group_map: dict[str, str] = {}
+        h_groups: dict[str, list[Block]] = {}
+        for hg in plan.horizontal_groups:
+            h_groups[hg.group_id] = hg.blocks
+            for hb in hg.blocks:
+                h_group_map[hb.block_id] = hg.group_id
+
+        done = False
+        processed_groups: set[str] = set()
         for block in plan.blocks:
-            if total_llm_calls >= max_calls:
+            if total_llm_calls >= max_calls or done:
                 break
 
             if total_llm_calls > 0 and not self._beams_have_children(tree_id, beams):
                 break
+
+            group_id = h_group_map.get(block.block_id)
+
+            if group_id and group_id not in processed_groups:
+                processed_groups.add(group_id)
+                group_blocks = h_groups[group_id]
+
+                group_results = self._process_horizontal_group(
+                    group_blocks, tree_id, query, beams, previous_selected, k,
+                )
+
+                for result, llm_called, cache_metrics, blk in group_results:
+                    total_llm_calls += llm_called
+                    cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
+                    cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
+                    blocks_processed += 1
+
+                    for node_id in result.selected_node_ids:
+                        if node_id not in selected:
+                            selected.append(node_id)
+
+                    block_traces.append({
+                        "type": "horizontal",
+                        "block_id": blk.block_id,
+                        "depth_range": f"{blk.depth_start}-{blk.depth_end}",
+                        "nodes": len(blk.node_ids),
+                        "tokens": blk.total_tokens,
+                    })
+
+                all_ranked = []
+                for result, _, _, _ in group_results:
+                    all_ranked.extend(result.ranked_node_ids)
+                seen = set()
+                merged_ranked = []
+                for nid in all_ranked:
+                    if nid not in seen:
+                        seen.add(nid)
+                        merged_ranked.append(nid)
+
+                previous_selected = merged_ranked[:max(1, k)]
+                for nid in previous_selected:
+                    if nid not in selected:
+                        selected.append(nid)
+                beams = self._update_beams(merged_ranked, tree_id, beam_size)
+
+                trace.append({
+                    "turn": len(trace),
+                    "group_id": group_id,
+                    "h_blocks": len(group_blocks),
+                    "candidates": sum(len(r.ranked_node_ids) for r, _, _, _ in group_results),
+                    "kept": len(merged_ranked),
+                    "done": any(r.done for r, _, _, _ in group_results),
+                })
+                if any(r.done for r, _, _, _ in group_results):
+                    done = True
+                continue
+
+            if group_id and group_id in processed_groups:
+                continue
 
             allowed_node_ids = self._collect_allowed_node_ids(tree_id, block, beams)
             if not allowed_node_ids:
@@ -134,7 +208,7 @@ class BlockRetriever(BaseRetriever):
             beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
 
             block_traces.append({
-                "type": "plan_block",
+                "type": "vertical",
                 "block_id": block.block_id,
                 "depth_range": f"{block.depth_start}-{block.depth_end}",
                 "nodes": len(block.node_ids),
@@ -165,6 +239,39 @@ class BlockRetriever(BaseRetriever):
             cache_creation_tokens=cache_creation_tokens,
             block_traces=block_traces,
         )
+
+    def _process_horizontal_group(self, group_blocks, tree_id, query, beams, previous_selected, k):
+        """Process all blocks in a horizontal group concurrently."""
+        tasks = []
+        for blk in group_blocks:
+            allowed = self._collect_allowed_node_ids(tree_id, blk, beams)
+            if allowed:
+                tasks.append((blk, allowed))
+
+        if not tasks:
+            return []
+
+        if len(tasks) == 1:
+            blk, allowed = tasks[0]
+            result, llm_called, cache_metrics = self._process_block(
+                blk, query, beams, previous_selected, allowed, k,
+            )
+            return [(result, llm_called, cache_metrics, blk)]
+
+        results = []
+        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {
+                pool.submit(
+                    self._process_block, blk, query, beams, previous_selected, allowed, k,
+                ): blk
+                for blk, allowed in tasks
+            }
+            for future in as_completed(futures):
+                blk = futures[future]
+                result, llm_called, cache_metrics = future.result()
+                results.append((result, llm_called, cache_metrics, blk))
+
+        return results
 
     # ---- LLM interaction ----
 

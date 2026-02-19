@@ -44,18 +44,63 @@ class TokenEstimateConfig:
 
 
 class TiktokenCounter:
-    """Exact token counter using tiktoken (optional dependency)."""
+    """Tiktoken-based counter (OpenAI models)."""
 
-    def __init__(self, model: str = "cl100k_base"):
+    def __init__(self, encoding: str = "cl100k_base"):
         try:
             import tiktoken
 
-            self.encoding = tiktoken.get_encoding(model)
+            self.encoding = tiktoken.get_encoding(encoding)
         except ImportError:
-            raise ImportError("tiktoken required for exact counting: pip install tiktoken")
+            raise ImportError("tiktoken required: pip install tiktoken")
 
     def count_tokens(self, text: str) -> int:
         return len(self.encoding.encode(text))
+
+
+class AnthropicTokenCounter:
+    """Anthropic token counter. Uses cl100k_base when available, else char estimation."""
+
+    def __init__(self, model: str = "claude-sonnet-4-20250514"):
+        self._counter = None
+        try:
+            import tiktoken
+            self._counter = tiktoken.get_encoding("cl100k_base")
+        except ImportError:
+            pass
+
+    def count_tokens(self, text: str) -> int:
+        if self._counter:
+            return len(self._counter.encode(text))
+        return int(len(text) * 0.28)
+
+
+class CharEstimateCounter:
+    """Character-based token estimation fallback."""
+
+    def __init__(self, tokens_per_char: float = 0.25):
+        self.tokens_per_char = tokens_per_char
+
+    def count_tokens(self, text: str) -> int:
+        return int(len(text) * self.tokens_per_char)
+
+
+def make_tokenizer(provider: str = None, model: str = None) -> TokenizerProtocol:
+    """Create a tokenizer for the given provider."""
+    if provider == "openai":
+        encoding = "o200k_base" if model and "4o" in model else "cl100k_base"
+        try:
+            return TiktokenCounter(encoding)
+        except ImportError:
+            pass
+
+    if provider == "anthropic":
+        try:
+            return AnthropicTokenCounter(model or "claude-sonnet-4-20250514")
+        except ImportError:
+            pass
+
+    return CharEstimateCounter()
 
 
 class TokenCounter:
@@ -65,10 +110,12 @@ class TokenCounter:
         self,
         tokenizer: Optional[TokenizerProtocol] = None,
         config: Optional[TokenEstimateConfig] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
     ):
-        self.tokenizer = tokenizer
+        self.tokenizer = tokenizer or (make_tokenizer(provider, model) if provider else None)
         self.config = config or TokenEstimateConfig()
-        self._cache: dict[str, int] = {}  # node_id -> token count
+        self._cache: dict[str, int] = {}
 
     def count_text_tokens(self, text: str) -> int:
         """Count tokens for a text string."""

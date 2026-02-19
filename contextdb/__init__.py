@@ -4,7 +4,7 @@ from contextdb.api.condb import ConDB, ConDBError, LLMNotConfiguredError, QueryR
 from contextdb.api.condb import open  # noqa: A004
 from contextdb.core.storage import Entity, Node, StorageProtocol, TreeDB
 from contextdb.llm import LLMClient, LLMProtocol
-from contextdb.retriever import AdaptiveRetriever, BeamRetriever, BlockRetriever, ManualRetriever, RetrievalResult
+from contextdb.retriever import BeamRetriever, BlockRetriever, ManualRetriever, RetrievalResult
 
 __all__ = [
     "open",
@@ -19,7 +19,6 @@ __all__ = [
     "Entity",
     "BeamRetriever",
     "BlockRetriever",
-    "AdaptiveRetriever",
     "ManualRetriever",
     "RetrievalResult",
     "LLMClient",

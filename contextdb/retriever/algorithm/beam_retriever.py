@@ -37,6 +37,7 @@ class BeamRetriever(BaseRetriever):
         super().__init__(storage, llm)
         # llm must follow LLMProtocol.chat(messages, tools=...)
         self._entity_cache: dict[str, dict[str, Any]] = {}
+        self._cached_tree_id: str = ""
 
     def retrieve(
         self, tree_id: str, query: str, beam_size: int = None, max_turns: int = None, select_k: int = 1
@@ -51,8 +52,9 @@ class BeamRetriever(BaseRetriever):
         if not root_id:
             return RetrievalResult([], [], [], 0)
 
-        # Clear cache to prevent memory leak across multiple retrieve calls
-        self._entity_cache.clear()
+        if tree_id != self._cached_tree_id:
+            self._entity_cache.clear()
+            self._cached_tree_id = tree_id
 
         if max_turns is None:
             max_turns = self._tree_max_depth(tree_id)

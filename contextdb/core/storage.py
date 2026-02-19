@@ -198,10 +198,10 @@ class TreeDB:
             """
             SELECT * FROM nodes WHERE tree_id = ? AND node_id = ?
             UNION ALL
-            SELECT * FROM nodes WHERE tree_id = ? AND path LIKE ? || '/%%' AND depth <= ?
+            SELECT * FROM nodes WHERE tree_id = ? AND path > ? AND path < ? AND depth <= ?
             ORDER BY path
         """,
-            (tree_id, node_id, tree_id, root_path, root_depth + max_depth),
+            (tree_id, node_id, tree_id, root_path + "/", root_path + "/\x7f", root_depth + max_depth),
         )
 
         nodes = [Node(**dict(row)) for row in cursor.fetchall()]
