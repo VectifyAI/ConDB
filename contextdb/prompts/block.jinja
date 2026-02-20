@@ -1,5 +1,9 @@
 Query: {{ query }}
 
+Interpret the query semantically, not by exact words.
+- Prefer nodes whose text/summary provides direct evidence for the query constraints.
+- For compound questions, choose nodes that jointly cover all requested facts.
+
 Selected in previous block:
 {% if previous_selected %}
 {{ previous_selected }}
@@ -24,3 +28,4 @@ Allowed node ids in CURRENT BLOCK (you MUST select only from these ids):
 {% endif %}
 
 Pick up to {{ k }} candidates from the ALLOWED NODE IDS above, best first.
+Set done=true only if selected nodes already provide sufficient concrete evidence; otherwise done=false.
