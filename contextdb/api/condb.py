@@ -113,7 +113,6 @@ class ConDB:
             retriever = self._make_retriever(
                 tree_id, resolved_llm, strategy,
                 max_tokens_per_block=max_tokens_per_block,
-                cache_enabled=cache_enabled,
             )
 
         result = retriever.retrieve(tree_id, question,
@@ -135,8 +134,7 @@ class ConDB:
             return BeamRetriever(self.storage, llm)
         if strategy == "block":
             return BlockRetriever(self.storage, llm,
-                                  max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000),
-                                  cache_enabled=kwargs.get("cache_enabled", True))
+                                  max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000))
         raise ValueError(f"Unknown strategy: {strategy!r}")
 
     def _pick_strategy(self, tree_id: str) -> str:
