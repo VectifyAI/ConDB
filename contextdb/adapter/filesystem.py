@@ -17,17 +17,6 @@ DEFAULT_IGNORE_PATTERNS = [
     "dist", "dist/**", "build", "build/**",
 ]
 
-_BINARY_EXTENSIONS = frozenset({
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
-    ".mp3", ".mp4", ".avi", ".mov", ".wav", ".flac", ".ogg",
-    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".so", ".dylib", ".dll", ".exe", ".o", ".a", ".bin",
-    ".woff", ".woff2", ".ttf", ".otf", ".eot",
-    ".sqlite", ".db", ".pickle", ".pkl",
-})
-
-
 def _parse_gitignore(gitignore_path: Path) -> list[str]:
     patterns = []
     try:
