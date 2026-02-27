@@ -67,3 +67,5 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+bench/repos
+bench/results

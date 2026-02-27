@@ -1,4 +1,4 @@
-"""Beam search retriever - keep top-k paths instead of a single path."""
+"""Beam search retriever — keep top-k paths instead of a single path."""
 
 import json
 from pathlib import Path
@@ -14,6 +14,7 @@ log = get_logger(__name__)
 
 # Prompt template for LLM ranking (kept in prompts/ for easy editing).
 PROMPT = Template((Path(__file__).parent.parent.parent / "prompts/beam.jinja").read_text())
+PROMPT_FS = Template((Path(__file__).parent.parent.parent / "prompts/beam_fs.jinja").read_text())
 
 # Tool schema: LLM returns ranked node ids and can signal "done".
 TOOLS = [
@@ -32,10 +33,9 @@ TOOLS = [
 class BeamRetriever(BaseRetriever):
     """Beam search over the tree with LLM as the ranking judge."""
 
-    def __init__(self, storage, llm):
-        # storage must provide get_root_id/get_children/get_entity
+    def __init__(self, storage, llm, mode: str = "document"):
         super().__init__(storage, llm)
-        # llm must follow LLMProtocol.chat(messages, tools=...)
+        self.mode = mode
         self._entity_cache: dict[str, dict[str, Any]] = {}
         self._cached_tree_id: str = ""
 
@@ -59,7 +59,7 @@ class BeamRetriever(BaseRetriever):
         if max_turns is None:
             max_turns = self._tree_max_depth(tree_id)
 
-        log.debug("start beam_size=%s max_turns=%s query=%s", beam_size, max_turns, query[:50])
+        log.debug("start beam_size=%s max_turns=%s select_k=%s query=%s", beam_size, max_turns, select_k, query[:50])
 
         beams = [{"node_id": root_id, "titles": [], "parent_summary": ""}]
         selected: list[str] = []
@@ -121,7 +121,9 @@ class BeamRetriever(BaseRetriever):
                     log.debug("  #%d [%s] %s", i + 1, nid[:8], c["title"])
 
             # Pick top candidates as "selected" (answers).
-            for node_id in ranked_ids[: max(1, select_k)]:
+            # In fs mode when done, keep all ranked files (not just top-k)
+            keep_n = len(ranked_ids) if (self.mode == "filesystem" and done) else max(1, select_k)
+            for node_id in ranked_ids[:keep_n]:
                 if node_id not in selected:
                     selected.append(node_id)
 
@@ -163,6 +165,21 @@ class BeamRetriever(BaseRetriever):
                 log.debug("turn %d: done=True, stopping", turn)
                 break
 
+        # In filesystem mode, filter directories and keep only files
+        if self.mode == "filesystem":
+            file_selected = []
+            for node_id in selected:
+                node = self.storage.get_node(tree_id, node_id)
+                if node and node.attrs_json:
+                    try:
+                        attrs = json.loads(node.attrs_json)
+                    except json.JSONDecodeError:
+                        attrs = {}
+                    if attrs.get("is_dir", False):
+                        continue
+                file_selected.append(node_id)
+            selected = file_selected if file_selected else selected
+
         # Final results
         contents = []
         log.debug("=== retrieval complete: %d nodes selected ===", len(selected))
@@ -184,7 +201,8 @@ class BeamRetriever(BaseRetriever):
         Ask the LLM to rank candidates. Returns (ranked_ids, done).
         This is the core "LLM as judge" step.
         """
-        prompt = PROMPT.render(query=query, candidates=candidates, selected=selected, k=k)
+        tmpl = PROMPT_FS if self.mode == "filesystem" else PROMPT
+        prompt = tmpl.render(query=query, candidates=candidates, selected=selected, k=k)
         resp = self.llm.chat([{"role": "user", "content": prompt}], tools=TOOLS)
         for block in resp.get("content", []):
             if block.get("type") != "tool_use":
@@ -208,7 +226,7 @@ class BeamRetriever(BaseRetriever):
         summary = attrs.get("summary") or ""
         text = self._node_text(tree_id, child.node_id)
         path_titles = parent_titles + ([title] if title else [])
-        return {
+        cand = {
             "node_id": child.node_id,
             "title": title,
             "summary": summary,
@@ -221,6 +239,13 @@ class BeamRetriever(BaseRetriever):
             "path_titles": path_titles,
             "is_leaf": is_leaf,
         }
+        if self.mode == "filesystem":
+            cand["rel_path"] = attrs.get("rel_path", "")
+            cand["tag"] = attrs.get("tag", "")
+            cand["is_dir"] = attrs.get("is_dir", False)
+            if not summary:
+                cand["summary"] = text[:200] if text else ""
+        return cand
 
     def _candidate_from_node(
         self, tree_id: str, node_id: str, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False

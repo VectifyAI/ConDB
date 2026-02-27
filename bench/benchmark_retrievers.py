@@ -3,15 +3,18 @@
 Unified Benchmark for Retriever Comparison
 ==========================================
 
-Automatically discovers and benchmarks all retrievers in contextdb/retriever/algorithm/
-(excluding base_retriever.py).
+Supports document mode and filesystem mode.
 
 Usage:
-    python bench/benchmark_retrievers.py --doc <document.json> --config <queries.json>
+    Document mode:
+        python bench/benchmark_retrievers.py --mode doc --doc <document.json> --config <queries.json>
+
+    Filesystem mode:
+        python bench/benchmark_retrievers.py --mode fs --repo-dir <path> --queries-config <queries.json>
 
 Examples:
-    python bench/benchmark_retrievers.py --doc examples/large_doc.json --config bench/queries.json
-    python bench/benchmark_retrievers.py -d examples/large_doc.json -c bench/queries.json --output json
+    python bench/benchmark_retrievers.py --mode doc --doc examples/large_doc.json --config bench/queries.json
+    python bench/benchmark_retrievers.py --mode fs --repo-dir . --queries-config bench/fs_queries.json
 """
 
 import argparse
@@ -22,7 +25,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -38,6 +41,7 @@ EXCLUDED_FILES = {"base_retriever.py", "block_cutter.py", "block_types.py", "__i
 def discover_retrievers() -> dict[str, type]:
     """Discover all retriever classes in the algorithm directory."""
     retrievers = {}
+    seen_classes = set()
 
     for py_file in ALGORITHM_DIR.glob("*.py"):
         if py_file.name in EXCLUDED_FILES or py_file.name.startswith("_"):
@@ -53,13 +57,18 @@ def discover_retrievers() -> dict[str, type]:
                     issubclass(obj, BaseRetriever)
                     and obj is not BaseRetriever
                     and obj.__module__ == module.__name__
+                    and obj not in seen_classes
                 ):
                     short_name = name.replace("Retriever", "")
                     retrievers[short_name] = obj
+                    seen_classes.add(obj)
         except Exception as e:
             print(f"Warning: Failed to load {module_name}: {e}")
 
     return retrievers
+
+
+# ── Data Classes ────────────────────────────────────────────────────
 
 
 @dataclass
@@ -77,6 +86,10 @@ class RetrieverMetrics:
     nodes_pruned: int = 0
     blocks_processed: int = 0
     error: Optional[str] = None
+    # FS-specific
+    retrieved_files: Optional[list[str]] = None
+    hit_at: Optional[dict[int, bool]] = None
+    mrr: Optional[float] = None
 
 
 @dataclass
@@ -92,14 +105,11 @@ class BenchmarkResult:
     document_path: str
     document_sections: int
     tree_id: str
+    mode: str = "doc"
     retriever_names: list[str] = field(default_factory=list)
     queries: list[QueryResult] = field(default_factory=list)
 
     def summary(self) -> dict:
-        """Generate summary statistics."""
-        def avg(items, attr):
-            return sum(getattr(i, attr) for i in items) / len(items) if items else 0
-
         def total(items, attr):
             return sum(getattr(i, attr) for i in items) if items else 0
 
@@ -117,11 +127,10 @@ class BenchmarkResult:
             total_cache_read = total(valid, "cache_read_tokens")
             total_cache_write = total(valid, "cache_creation_tokens")
 
-            # Claude pricing: input $3/M, output $15/M, cache write $3.75/M, cache read $0.30/M
             cost = (total_input * 3 + total_output * 15 + total_cache_write * 3.75 + total_cache_read * 0.30) / 1_000_000
 
             n = len(valid) if valid else 1
-            summary[name] = {
+            s = {
                 "avg_time": total(valid, "time_seconds") / n,
                 "avg_llm_calls": total(valid, "llm_calls") / n,
                 "avg_input_tokens": total_input / n,
@@ -132,11 +141,23 @@ class BenchmarkResult:
                 "successful_queries": len(valid),
             }
 
+            # FS hit metrics
+            if self.mode == "fs":
+                for k in [1, 3, 5, 10]:
+                    hits = [r for r in valid if r.hit_at and k in r.hit_at]
+                    s[f"hit@{k}"] = sum(1 for r in hits if r.hit_at[k]) / len(hits) if hits else 0
+                mrr_vals = [r.mrr for r in valid if r.mrr is not None]
+                s["mrr"] = sum(mrr_vals) / len(mrr_vals) if mrr_vals else 0
+
+            summary[name] = s
+
         return summary
 
 
+# ── Document Mode Helpers ───────────────────────────────────────────
+
+
 def convert_flat_to_tree(flat_list: list) -> dict:
-    """Convert flat list with levels to nested tree structure."""
     if not flat_list:
         return {"type": "object", "children": {}}
 
@@ -167,7 +188,6 @@ def convert_flat_to_tree(flat_list: list) -> dict:
 
 
 def build_entities(flat_list: list) -> dict:
-    """Build entities dict from flat list."""
     entities = {}
     for i, item in enumerate(flat_list):
         node_id = f"node_{i}"
@@ -180,6 +200,50 @@ def build_entities(flat_list: list) -> dict:
     return entities
 
 
+# ── FS Mode Helpers ─────────────────────────────────────────────────
+
+
+def compute_fs_metrics(retrieved_files: list[str], ground_truth: list[str]) -> tuple[dict[int, bool], float]:
+    """Returns (hit_at_k_dict, mrr)."""
+    gt_set = set(ground_truth)
+    hit_at = {}
+    first_hit_rank = None
+
+    for i, f in enumerate(retrieved_files):
+        if f in gt_set and first_hit_rank is None:
+            first_hit_rank = i + 1
+        for k in [1, 3, 5, 10]:
+            if i < k and f in gt_set:
+                hit_at.setdefault(k, False)
+                hit_at[k] = True
+
+    for k in [1, 3, 5, 10]:
+        hit_at.setdefault(k, False)
+
+    mrr = 1.0 / first_hit_rank if first_hit_rank else 0.0
+    return hit_at, mrr
+
+
+def extract_file_paths(db: TreeDB, tree_id: str, node_ids: list[str]) -> list[str]:
+    """Extract rel_path from retrieved nodes."""
+    paths = []
+    for nid in node_ids:
+        node = db.get_node(tree_id, nid)
+        if not node or not node.attrs_json:
+            continue
+        try:
+            attrs = json.loads(node.attrs_json)
+        except json.JSONDecodeError:
+            continue
+        rel_path = attrs.get("rel_path")
+        if rel_path and rel_path != ".":
+            paths.append(rel_path)
+    return paths
+
+
+# ── Runner ──────────────────────────────────────────────────────────
+
+
 def run_retriever(
     retriever,
     name: str,
@@ -188,8 +252,11 @@ def run_retriever(
     llm: "LLMWithStats",
     beam_size: int = 3,
     max_turns: int = 10,
+    *,
+    mode: str = "doc",
+    db: TreeDB = None,
+    ground_truth: list[str] = None,
 ) -> RetrieverMetrics:
-    """Run a single retriever and collect metrics."""
     fresh_recorder = StatisticsRecorder()
     llm.recorder = fresh_recorder
 
@@ -198,7 +265,7 @@ def run_retriever(
         result = retriever.retrieve(tree_id, query, beam_size=beam_size, max_turns=max_turns)
         elapsed = time.time() - start_time
 
-        return RetrieverMetrics(
+        metrics = RetrieverMetrics(
             name=name,
             time_seconds=elapsed,
             turns=result.turns,
@@ -208,9 +275,17 @@ def run_retriever(
             output_tokens=fresh_recorder.output_tokens,
             cache_read_tokens=fresh_recorder.cache_read_tokens,
             cache_creation_tokens=fresh_recorder.cache_creation_tokens,
-            nodes_pruned=getattr(result, "nodes_pruned", 0),
             blocks_processed=getattr(result, "blocks_processed", 0),
         )
+
+        if mode == "fs" and db and ground_truth:
+            retrieved_files = extract_file_paths(db, tree_id, result.nodes)
+            hit_at, mrr = compute_fs_metrics(retrieved_files, ground_truth)
+            metrics.retrieved_files = retrieved_files
+            metrics.hit_at = hit_at
+            metrics.mrr = mrr
+
+        return metrics
     except Exception as e:
         elapsed = time.time() - start_time
         return RetrieverMetrics(
@@ -227,143 +302,164 @@ def run_retriever(
         )
 
 
+# ── Benchmark Orchestration ────────────────────────────────────────
+
+
 def run_benchmark(
-    doc_path: Path,
-    queries: list[str],
+    *,
+    mode: str = "doc",
+    doc_path: Path = None,
+    repo_dir: Path = None,
+    query_list: list = None,
+    queries_with_gt: list[dict] = None,
     beam_size: int = 3,
     max_turns: int = 10,
     clear_cache: bool = False,
 ) -> BenchmarkResult:
-    """Run full benchmark on a document."""
-    # Discover retrievers
     retriever_classes = discover_retrievers()
     print(f"\nDiscovered retrievers: {', '.join(retriever_classes.keys())}")
 
-    # Load document
-    with open(doc_path) as f:
-        flat_data = json.load(f)
-
-    tree_structure = convert_flat_to_tree(flat_data)
-    entities = build_entities(flat_data)
-
-    # Create database
-    db = TreeDB(":memory:")
-    tree_id = db.ingest_tree(tree_structure, entities=entities)
-
-    # Create LLM client with stats
     llm = Config.get_llm_client()
     llm_with_stats = LLMWithStats(llm, StatisticsRecorder())
 
-    # Instantiate retrievers
-    retrievers = {}
-    for name, cls in retriever_classes.items():
-        try:
-            retrievers[name] = cls(db, llm_with_stats)
-        except Exception as e:
-            print(f"Warning: Failed to instantiate {name}: {e}")
+    if mode == "doc":
+        with open(doc_path) as f:
+            flat_data = json.load(f)
+        tree_structure = convert_flat_to_tree(flat_data)
+        entities = build_entities(flat_data)
+        queries = query_list
+        ground_truths = [None] * len(queries)
+        doc_info = str(doc_path)
+        sections_count = len(entities)
+
+        def make_tree(db):
+            return db.ingest_tree(tree_structure, entities=entities)
+
+    elif mode == "fs":
+        from contextdb.adapter.filesystem import FileSystemAdapter
+        adapter = FileSystemAdapter(str(repo_dir))
+        tree_structure, entities = adapter.convert()
+        queries = [q["query"] for q in queries_with_gt]
+        ground_truths = [q["ground_truth"] for q in queries_with_gt]
+        doc_info = str(repo_dir)
+        sections_count = len(entities)
+
+        def make_tree(db):
+            return db.ingest_tree(tree_structure, entities=entities)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
 
     result = BenchmarkResult(
-        document_path=str(doc_path),
-        document_sections=len(entities),
-        tree_id=tree_id,
-        retriever_names=list(retrievers.keys()),
+        document_path=doc_info,
+        document_sections=sections_count,
+        tree_id="(per-retriever)",
+        mode=mode,
+        retriever_names=list(retriever_classes.keys()),
     )
 
-    # Initialize query results
     query_results = {q: QueryResult(query=q) for q in queries}
 
-    # Run each retriever on all queries (to test cross-query cache reuse)
-    for name, retriever in retrievers.items():
+    for name, cls in retriever_classes.items():
         print(f"\n{'='*70}")
         print(f"[{name}Retriever] Running {len(queries)} queries...")
         print("=" * 70)
 
-        # Clear cache at start of each retriever (isolate between retrievers)
-        if hasattr(retriever, "clear_cache"):
-            retriever.clear_cache()
+        # Fresh DB + tree per retriever for fair comparison
+        db = TreeDB(":memory:")
+        tree_id = make_tree(db)
+
+        # Instantiate retriever (pass mode if supported)
+        try:
+            sig = inspect.signature(cls.__init__)
+            kwargs = {}
+            if 'mode' in sig.parameters:
+                kwargs['mode'] = "filesystem" if mode == "fs" else "document"
+            retriever = cls(db, llm_with_stats, **kwargs)
+        except Exception as e:
+            print(f"Warning: Failed to instantiate {name}: {e}")
+            db.close()
+            continue
 
         for i, query in enumerate(queries):
-            print(f"\n  Query {i+1}: {query[:50]}...")
+            print(f"\n  Query {i+1}: {query[:60]}...")
 
-            # Optionally clear cache between queries (default: reuse)
             if clear_cache and i > 0 and hasattr(retriever, "clear_cache"):
                 retriever.clear_cache()
 
+            gt = ground_truths[i]
             metrics = run_retriever(
-                retriever, name, tree_id, query, llm_with_stats, beam_size, max_turns
+                retriever, name, tree_id, query, llm_with_stats,
+                beam_size, max_turns,
+                mode=mode, db=db, ground_truth=gt,
             )
             query_results[query].results[name] = metrics
 
             if metrics.error:
                 print(f"    ERROR: {metrics.error}")
             else:
-                print(f"    Time: {metrics.time_seconds:.2f}s, LLM: {metrics.llm_calls}, Input: {metrics.input_tokens:,}", end="")
+                parts = [f"Time: {metrics.time_seconds:.2f}s, LLM: {metrics.llm_calls}"]
+                parts.append(f"Input: {metrics.input_tokens:,}")
                 if metrics.cache_read_tokens > 0:
-                    print(f", Cache read: {metrics.cache_read_tokens:,}", end="")
-                print()
+                    parts.append(f"Cache read: {metrics.cache_read_tokens:,}")
+                if mode == "fs" and metrics.hit_at:
+                    parts.append(f"Hit@1: {metrics.hit_at.get(1, False)}")
+                    parts.append(f"MRR: {metrics.mrr:.3f}")
+                    if metrics.retrieved_files:
+                        parts.append(f"Files: {metrics.retrieved_files[:5]}")
+                print(f"    {', '.join(parts)}")
 
-    # Collect results in query order
+        db.close()
+
     for query in queries:
         result.queries.append(query_results[query])
 
-    db.close()
     return result
 
 
+# ── Summary Printing ────────────────────────────────────────────────
+
+
 def print_summary(result: BenchmarkResult):
-    """Print human-readable summary."""
     summary = result.summary()
 
     print("\n" + "=" * 70)
-    print("BENCHMARK SUMMARY")
+    title = "FILESYSTEM BENCHMARK SUMMARY" if result.mode == "fs" else "BENCHMARK SUMMARY"
+    print(title)
     print("=" * 70)
     print(f"\nModel: {Config.LLM_PROVIDER}/{Config.LLM_MODEL}")
-    print(f"Document: {result.document_path}")
-    print(f"Sections: {result.document_sections}")
+    print(f"{'Repository' if result.mode == 'fs' else 'Document'}: {result.document_path}")
+    print(f"Entities: {result.document_sections}")
     print(f"Queries: {summary['queries_run']}")
     print(f"Retrievers: {', '.join(result.retriever_names)}")
 
-    # Build table
     headers = ["Metric"] + result.retriever_names
     rows = []
 
-    # Time row (avg per query)
-    time_row = ["Time (s)"]
-    for name in result.retriever_names:
-        time_row.append(f"{summary[name]['avg_time']:.2f}")
-    rows.append(time_row)
+    for label, key, fmt in [
+        ("Time (s)", "avg_time", "{:.2f}"),
+        ("LLM Calls", "avg_llm_calls", "{:.1f}"),
+        ("Input Tokens", "avg_input_tokens", "{:,.0f}"),
+        ("Cache Write", "avg_cache_write", "{:,.0f}"),
+        ("Cache Read", "avg_cache_read", "{:,.0f}"),
+        ("Cost ($)", "total_cost", "{:.4f}"),
+    ]:
+        row = [label]
+        for name in result.retriever_names:
+            row.append(fmt.format(summary[name][key]))
+        rows.append(row)
 
-    # LLM calls row (avg per query)
-    calls_row = ["LLM Calls"]
-    for name in result.retriever_names:
-        calls_row.append(f"{summary[name]['avg_llm_calls']:.1f}")
-    rows.append(calls_row)
+    if result.mode == "fs":
+        for k in [1, 3, 5, 10]:
+            row = [f"Hit@{k}"]
+            for name in result.retriever_names:
+                val = summary[name].get(f"hit@{k}", 0)
+                row.append(f"{val:.1%}")
+            rows.append(row)
+        mrr_row = ["MRR"]
+        for name in result.retriever_names:
+            mrr_row.append(f"{summary[name].get('mrr', 0):.3f}")
+        rows.append(mrr_row)
 
-    # Input tokens row (avg per query)
-    tokens_row = ["Input Tokens"]
-    for name in result.retriever_names:
-        tokens_row.append(f"{summary[name]['avg_input_tokens']:,.0f}")
-    rows.append(tokens_row)
-
-    # Cache write row (avg per query)
-    cache_write_row = ["Cache Write"]
-    for name in result.retriever_names:
-        cache_write_row.append(f"{summary[name]['avg_cache_write']:,.0f}")
-    rows.append(cache_write_row)
-
-    # Cache read row (avg per query)
-    cache_read_row = ["Cache Read"]
-    for name in result.retriever_names:
-        cache_read_row.append(f"{summary[name]['avg_cache_read']:,.0f}")
-    rows.append(cache_read_row)
-
-    # Cost row
-    cost_row = ["Cost ($)"]
-    for name in result.retriever_names:
-        cost_row.append(f"{summary[name]['total_cost']:.4f}")
-    rows.append(cost_row)
-
-    # Print table
     col_widths = [max(len(str(row[i])) for row in [headers] + rows) for i in range(len(headers))]
     header_line = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
     print(f"\n{header_line}")
@@ -375,9 +471,11 @@ def print_summary(result: BenchmarkResult):
 
 
 def load_config(config_path: Path) -> dict:
-    """Load benchmark configuration from JSON file."""
     with open(config_path) as f:
         return json.load(f)
+
+
+# ── Main ────────────────────────────────────────────────────────────
 
 
 def main():
@@ -386,106 +484,83 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument(
-        "--doc", "-d",
-        type=Path,
-        required=True,
-        help="Path to document JSON file",
-    )
-    parser.add_argument(
-        "--config", "-c",
-        type=Path,
-        required=True,
-        help="Path to queries config JSON file",
-    )
-    parser.add_argument(
-        "--output", "-o",
-        choices=["text", "json"],
-        default="text",
-        help="Output format",
-    )
-    parser.add_argument(
-        "--beam-size", "-b",
-        type=int,
-        default=3,
-        help="Beam size for search",
-    )
-    parser.add_argument(
-        "--max-turns", "-t",
-        type=int,
-        default=10,
-        help="Maximum LLM turns",
-    )
-    parser.add_argument(
-        "--clear-cache",
-        action="store_true",
-        help="Clear cache before each query (default: reuse cache across queries)",
-    )
+    parser.add_argument("--mode", choices=["doc", "fs"], default="doc",
+                        help="Benchmark mode: doc (document) or fs (filesystem)")
+    parser.add_argument("--doc", "-d", type=Path,
+                        help="Path to document JSON file (doc mode)")
+    parser.add_argument("--config", "-c", type=Path,
+                        help="Path to queries config JSON (doc mode)")
+    parser.add_argument("--repo-dir", type=Path,
+                        help="Path to repository directory (fs mode)")
+    parser.add_argument("--queries-config", type=Path,
+                        help="Path to queries+ground_truth JSON (fs mode)")
+    parser.add_argument("--output", "-o", choices=["text", "json"], default="text")
+    parser.add_argument("--beam-size", "-b", type=int, default=3)
+    parser.add_argument("--max-turns", "-t", type=int, default=10)
+    parser.add_argument("--clear-cache", action="store_true")
 
     args = parser.parse_args()
 
-    # Validate LLM config
     try:
         Config.validate()
     except ValueError as e:
         print(f"ERROR: {e}")
-        print("Please set ANTHROPIC_API_KEY environment variable")
         sys.exit(1)
 
-    # Check document exists
-    if not args.doc.exists():
-        print(f"ERROR: Document not found: {args.doc}")
-        sys.exit(1)
+    if args.mode == "doc":
+        if not args.doc or not args.doc.exists():
+            print("ERROR: --doc required and must exist for doc mode")
+            sys.exit(1)
+        if not args.config or not args.config.exists():
+            print("ERROR: --config required and must exist for doc mode")
+            sys.exit(1)
+        config = load_config(args.config)
+        queries = config.get("queries", [])
+        if not queries:
+            print("ERROR: No queries in config"); sys.exit(1)
 
-    # Load config file
-    if not args.config.exists():
-        print(f"ERROR: Config file not found: {args.config}")
-        print("Create a queries config file. See bench/queries.json for example.")
-        sys.exit(1)
+        print("=" * 70)
+        print("Retriever Benchmark (DOC mode)")
+        print("=" * 70)
+        result = run_benchmark(
+            mode="doc", doc_path=args.doc, query_list=queries,
+            beam_size=args.beam_size, max_turns=args.max_turns,
+            clear_cache=args.clear_cache,
+        )
 
-    config = load_config(args.config)
-    queries = config.get("queries", [])
-    if not queries:
-        print("ERROR: No queries found in config file")
-        print("Add queries to the 'queries' array in your config file.")
-        sys.exit(1)
+    elif args.mode == "fs":
+        if not args.repo_dir or not args.repo_dir.exists():
+            print("ERROR: --repo-dir required and must exist for fs mode")
+            sys.exit(1)
+        if not args.queries_config or not args.queries_config.exists():
+            print("ERROR: --queries-config required and must exist for fs mode")
+            sys.exit(1)
+        config = load_config(args.queries_config)
+        queries_with_gt = config.get("queries", [])
+        if not queries_with_gt:
+            print("ERROR: No queries in config"); sys.exit(1)
 
-    print("=" * 70)
-    print("Retriever Benchmark")
-    print("=" * 70)
-    print(f"\nDocument: {args.doc}")
-    print(f"Queries: {len(queries)}")
-    print(f"Beam size: {args.beam_size}")
-    print(f"Max turns: {args.max_turns}")
-    print(f"Cache reuse: {'disabled' if args.clear_cache else 'enabled'}")
-
-    result = run_benchmark(
-        args.doc,
-        queries,
-        beam_size=args.beam_size,
-        max_turns=args.max_turns,
-        clear_cache=args.clear_cache,
-    )
+        print("=" * 70)
+        print("Retriever Benchmark (FS mode)")
+        print("=" * 70)
+        result = run_benchmark(
+            mode="fs", repo_dir=args.repo_dir, queries_with_gt=queries_with_gt,
+            beam_size=args.beam_size, max_turns=args.max_turns,
+            clear_cache=args.clear_cache,
+        )
 
     if args.output == "json":
-        output = {
+        print(json.dumps({
+            "mode": args.mode,
             "document_path": result.document_path,
             "document_sections": result.document_sections,
-            "tree_id": result.tree_id,
             "retrievers": result.retriever_names,
             "queries": [
-                {
-                    "query": q.query,
-                    "results": {
-                        name: asdict(metrics)
-                        for name, metrics in q.results.items()
-                    },
-                }
+                {"query": q.query, "results": {n: asdict(m) for n, m in q.results.items()}}
                 for q in result.queries
             ],
             "summary": result.summary(),
-        }
-        print(json.dumps(output, indent=2))
+        }, indent=2))
     else:
         print_summary(result)
 

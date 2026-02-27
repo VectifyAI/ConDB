@@ -1,0 +1,31 @@
+Query: {{ query }}
+
+Selected so far:
+{% if previous_selected %}
+{% for s in previous_selected %}
+- {{ s }}
+{% endfor %}
+{% else %}
+(none)
+{% endif %}
+
+{% if input_beams %}
+Current exploration path:
+{% for beam in input_beams %}
+- {{ beam.node_id }}: {{ beam.title }} ({{ beam.path }})
+{% endfor %}
+{% endif %}
+
+You MUST select ONLY from the following node ids. Match each id against the REPOSITORY DIRECTORY TREE above to see its path, tag, and summary.
+
+Allowed node ids:
+{% if allowed_node_ids %}
+{% for node_id in allowed_node_ids %}
+- {{ node_id }}
+{% endfor %}
+{% else %}
+(none)
+{% endif %}
+
+Pick up to {{ k }} candidates most relevant to the query, best first.
+IMPORTANT: Prefer [src] files/directories. Avoid [test] unless the query specifically asks about tests.

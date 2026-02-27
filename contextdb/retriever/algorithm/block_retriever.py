@@ -1,11 +1,12 @@
 """Block-level beam search retriever with fixed-block prefix caching."""
 
+import hashlib
 import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from jinja2 import Template
 
@@ -18,6 +19,7 @@ from contextdb.retriever.algorithm.block_types import (
     BlockResult,
     BlockRetrievalResult,
     BlockTreePlan,
+    BlockType,
 )
 from contextdb.utils.token_counter import TokenCounter
 
@@ -28,6 +30,8 @@ _DEFAULT_CONFIG = get_retriever_config("block")
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
 BLOCK_CACHE_PREFIX_PROMPT = Template((_PROMPTS_DIR / "block_cache_prefix.jinja").read_text(encoding="utf-8"))
+BLOCK_FS_PROMPT = Template((_PROMPTS_DIR / "block_fs.jinja").read_text(encoding="utf-8"))
+BLOCK_FS_CACHE_PREFIX_PROMPT = Template((_PROMPTS_DIR / "block_fs_cache_prefix.jinja").read_text(encoding="utf-8"))
 
 TOOLS = [
     {
@@ -52,8 +56,10 @@ class BlockRetriever(BaseRetriever):
         storage,
         llm,
         max_tokens_per_block: int = None,
+        mode: str = "document",
     ):
         super().__init__(storage, llm)
+        self.mode = mode
 
         self.max_tokens_per_block = (
             max_tokens_per_block if max_tokens_per_block is not None
@@ -74,6 +80,297 @@ class BlockRetriever(BaseRetriever):
         beam_size: int = None,
         max_turns: int = None,
         select_k: int = 1,
+    ) -> BlockRetrievalResult:
+        if self.mode == "filesystem":
+            return self._retrieve_fs(tree_id, query, beam_size, max_turns, select_k)
+        return self._retrieve_doc(tree_id, query, beam_size, max_turns, select_k)
+
+    # ── Filesystem mode: subtree-driven (like Legacy) ───────────────
+
+    def _retrieve_fs(
+        self, tree_id: str, query: str, beam_size: int, max_turns: int, select_k: int,
+    ) -> BlockRetrievalResult:
+        """Subtree-driven retrieval for filesystem navigation.
+
+        1. Process top block (shallow layers) → select beams
+        2. Dynamically build subtree blocks from beam nodes → repeat
+        """
+        root_id = self.storage.get_root_id(tree_id)
+        if not root_id:
+            return self._empty_result()
+
+        if tree_id != self._precomputed_tree_id:
+            self.token_counter.clear_cache()
+            self.token_counter.precompute_tree_tokens(self.storage, tree_id)
+            self._precomputed_tree_id = tree_id
+
+        plan = self._get_or_create_plan(tree_id)
+        if not plan.blocks:
+            return self._empty_result()
+
+        top_block = plan.blocks[0]
+
+        # Regenerate top block content with fs-aware format
+        top_nodes = self._get_nodes_by_ids(tree_id, top_block.node_ids)
+        if top_nodes:
+            fs_content = self._generate_fs_block_content(top_nodes)
+            top_block = Block(
+                block_id=top_block.block_id,
+                block_type=top_block.block_type,
+                tree_id=top_block.tree_id,
+                depth_start=top_block.depth_start,
+                depth_end=top_block.depth_end,
+                node_ids=top_block.node_ids,
+                total_tokens=top_block.total_tokens,
+                max_tokens=top_block.max_tokens,
+                cached_content=fs_content,
+                content_hash=hashlib.md5(fs_content.encode()).hexdigest(),
+            )
+
+        beams = [{"node_id": root_id, "title": "root", "path": "root"}]
+        selected: list[str] = []
+        previous_selected: list[str] = []
+        trace: list[dict[str, Any]] = []
+        block_traces: list[dict[str, Any]] = []
+
+        total_llm_calls = 0
+        cache_read_tokens = 0
+        cache_creation_tokens = 0
+        blocks_processed = 0
+
+        k = beam_size if beam_size else select_k
+        max_calls = max_turns if max_turns else 20
+
+        # Step 1: Process top block
+        allowed_top = [nid for nid in top_block.node_ids if nid != root_id]
+        if not allowed_top:
+            allowed_top = top_block.node_ids
+
+        result, llm_called, cache_metrics = self._process_block(
+            block=top_block, query=query, input_beams=beams,
+            previous_selected=previous_selected, allowed_node_ids=allowed_top, k=k,
+        )
+        total_llm_calls += llm_called
+        cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
+        cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
+        blocks_processed += 1
+
+        beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
+        for nid in result.selected_node_ids:
+            if nid not in selected:
+                selected.append(nid)
+        previous_selected = list(result.selected_node_ids)
+
+        block_traces.append({
+            "type": "top", "block_id": top_block.block_id,
+            "depth_range": f"{top_block.depth_start}-{top_block.depth_end}",
+            "nodes": len(top_block.node_ids), "allowed": len(allowed_top),
+        })
+        trace.append({
+            "turn": 0, "block_id": top_block.block_id,
+            "candidates": len(allowed_top),
+            "kept": len(result.ranked_node_ids), "done": result.done,
+        })
+
+        result = self._override_done_if_dirs(result, tree_id, beams)
+
+        # Step 2: Iteratively process subtree blocks
+        turn = 1
+        while not result.done and total_llm_calls < max_calls:
+            if not self._beams_have_children(tree_id, beams):
+                break
+
+            beam_ids = [b["node_id"] for b in beams if b["node_id"]]
+            subtree_block = self._create_subtree_block_fs(tree_id, beam_ids)
+            if subtree_block is None:
+                break
+
+            allowed_sub = [nid for nid in subtree_block.node_ids if nid not in set(beam_ids)]
+            if not allowed_sub:
+                allowed_sub = subtree_block.node_ids
+
+            result, llm_called, cache_metrics = self._process_block(
+                block=subtree_block, query=query, input_beams=beams,
+                previous_selected=previous_selected, allowed_node_ids=allowed_sub, k=k,
+            )
+            total_llm_calls += llm_called
+            cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
+            cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
+            blocks_processed += 1
+
+            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
+            for nid in result.selected_node_ids:
+                if nid not in selected:
+                    selected.append(nid)
+            previous_selected = list(result.selected_node_ids)
+
+            result = self._override_done_if_dirs(result, tree_id, beams)
+
+            block_traces.append({
+                "type": "subtree", "block_id": subtree_block.block_id,
+                "nodes": len(subtree_block.node_ids),
+                "allowed": len(allowed_sub),
+                "tokens": subtree_block.total_tokens,
+            })
+            trace.append({
+                "turn": turn, "block_id": subtree_block.block_id,
+                "candidates": len(allowed_sub),
+                "kept": len(result.ranked_node_ids), "done": result.done,
+            })
+            turn += 1
+
+        # Filter out directory nodes — only return files
+        file_selected = []
+        for nid in selected:
+            node = self.storage.get_node(tree_id, nid)
+            if node and node.attrs_json:
+                try:
+                    attrs = json.loads(node.attrs_json)
+                except json.JSONDecodeError:
+                    attrs = {}
+                if attrs.get("is_dir", False):
+                    continue
+            file_selected.append(nid)
+        selected = file_selected if file_selected else selected
+
+        contents = self._gather_contents(tree_id, selected)
+        return BlockRetrievalResult(
+            nodes=selected, contents=contents, trace=trace, turns=len(trace),
+            blocks_processed=blocks_processed, total_llm_calls=total_llm_calls,
+            cache_read_tokens=cache_read_tokens, cache_creation_tokens=cache_creation_tokens,
+            block_traces=block_traces,
+        )
+
+    def _create_subtree_block_fs(self, tree_id: str, beam_node_ids: list[str]) -> Optional[Block]:
+        """Create a subtree block from children of beam nodes."""
+        all_children = []
+        for nid in beam_node_ids:
+            all_children.extend(self._get_direct_children_nodes(tree_id, nid))
+
+        if not all_children:
+            return None
+
+        def _count(node):
+            return self.token_counter.get_cached_count(node["node_id"]) or self.token_counter.count_node_tokens(node)
+
+        total_tokens = sum(_count(c) for c in all_children)
+
+        # If all children fit, use them all; otherwise pack greedily
+        if total_tokens <= self.max_tokens_per_block:
+            nodes_to_pack = all_children
+        else:
+            nodes_to_pack = []
+            packed_tokens = 0
+            for child in all_children:
+                ct = _count(child)
+                if packed_tokens + ct <= self.max_tokens_per_block:
+                    nodes_to_pack.append(child)
+                    packed_tokens += ct
+                elif not nodes_to_pack:
+                    nodes_to_pack.append(child)
+                    break
+            total_tokens = sum(_count(c) for c in nodes_to_pack)
+
+        if not nodes_to_pack:
+            return None
+
+        content = self._generate_fs_block_content(nodes_to_pack)
+        node_ids = [c["node_id"] for c in nodes_to_pack]
+        depths = [c.get("depth", 0) for c in nodes_to_pack]
+        block_id = f"fs_sub_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}"
+        return Block(
+            block_id=block_id,
+            block_type=BlockType.VERTICAL,
+            tree_id=tree_id,
+            depth_start=min(depths) if depths else 0,
+            depth_end=max(depths) if depths else 0,
+            node_ids=node_ids,
+            total_tokens=total_tokens,
+            max_tokens=self.max_tokens_per_block,
+            cached_content=content,
+            content_hash=hashlib.md5(content.encode()).hexdigest(),
+        )
+
+    def _generate_fs_block_content(self, nodes: list[dict]) -> str:
+        """Generate fs-aware block content with rel_path and tags."""
+        lines = []
+        for node in nodes:
+            attrs = node.get("attrs") or {}
+            if isinstance(attrs, str):
+                try:
+                    attrs = json.loads(attrs)
+                except json.JSONDecodeError:
+                    attrs = {}
+
+            nid = node["node_id"]
+            rel_path = attrs.get("rel_path", "")
+            is_dir = attrs.get("is_dir", False)
+            tag = attrs.get("tag", "")
+
+            lines.append(f"- id: {nid}")
+            if rel_path:
+                lines.append(f"  path: {rel_path}")
+            if is_dir:
+                lines.append(f"  type: directory")
+            else:
+                lines.append(f"  type: file")
+            if tag:
+                lines.append(f"  tag: {tag}")
+
+            # Get summary from entity (directory listing)
+            entity = node.get("entity", {})
+            payload = entity.get("payload", {}) if isinstance(entity, dict) else {}
+            summary = payload.get("summary", "")
+            if summary:
+                lines.append(f"  summary: {summary[:200]}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _row_to_node_dict(row) -> dict:
+        node = {
+            "node_id": row["node_id"],
+            "parent_id": row["parent_id"],
+            "depth": row["depth"],
+            "path": row["path"],
+            "attrs_json": row["attrs_json"],
+        }
+        if row["attrs_json"]:
+            node["attrs"] = json.loads(row["attrs_json"])
+        if row["payload_json"]:
+            node["entity"] = {"payload": json.loads(row["payload_json"])}
+        return node
+
+    _NODE_QUERY = """SELECT n.node_id, n.parent_id, n.depth, n.path, n.attrs_json, e.payload_json
+                     FROM nodes n LEFT JOIN entities e ON n.entity_id = e.entity_id"""
+
+    def _get_nodes_by_ids(self, tree_id: str, node_ids: list[str]) -> list[dict]:
+        if not node_ids:
+            return []
+        cursor = self.storage.conn.cursor()
+        results = []
+        for i in range(0, len(node_ids), 500):
+            chunk = node_ids[i:i + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(
+                f"{self._NODE_QUERY} WHERE n.tree_id = ? AND n.node_id IN ({placeholders}) ORDER BY n.path",
+                (tree_id, *chunk),
+            )
+            results.extend(self._row_to_node_dict(row) for row in cursor.fetchall())
+        return results
+
+    def _get_direct_children_nodes(self, tree_id: str, node_id: str) -> list[dict]:
+        cursor = self.storage.conn.cursor()
+        cursor.execute(
+            f"{self._NODE_QUERY} WHERE n.tree_id = ? AND n.parent_id = ? ORDER BY n.path",
+            (tree_id, node_id),
+        )
+        return [self._row_to_node_dict(row) for row in cursor.fetchall()]
+
+    # ── Document mode: fixed-block depth-slice (original) ───────────
+
+    def _retrieve_doc(
+        self, tree_id: str, query: str, beam_size: int, max_turns: int, select_k: int,
     ) -> BlockRetrievalResult:
         """
         Fixed-block beam retrieval:
@@ -282,14 +579,24 @@ class BlockRetriever(BaseRetriever):
             return BlockResult(block_id=block.block_id, ranked_node_ids=[], selected_node_ids=[], done=False), 0, empty_metrics
 
         cache_key = self._build_block_cache_key(block)
-        cache_part = BLOCK_CACHE_PREFIX_PROMPT.render(block_content=block.cached_content or "")
-        dynamic_prompt = BLOCK_PROMPT.render(
-            query=query,
-            previous_selected=previous_selected,
-            input_beams=input_beams,
-            allowed_node_ids=allowed_node_ids,
-            k=k,
-        )
+        if self.mode == "filesystem":
+            cache_part = BLOCK_FS_CACHE_PREFIX_PROMPT.render(block_content=block.cached_content or "")
+            dynamic_prompt = BLOCK_FS_PROMPT.render(
+                query=query,
+                previous_selected=previous_selected,
+                input_beams=input_beams,
+                allowed_node_ids=allowed_node_ids,
+                k=k,
+            )
+        else:
+            cache_part = BLOCK_CACHE_PREFIX_PROMPT.render(block_content=block.cached_content or "")
+            dynamic_prompt = BLOCK_PROMPT.render(
+                query=query,
+                previous_selected=previous_selected,
+                input_beams=input_beams,
+                allowed_node_ids=allowed_node_ids,
+                k=k,
+            )
         prefix_tokens = self.token_counter.count_text_tokens(cache_part)
         dynamic_tokens = self.token_counter.count_text_tokens(dynamic_prompt)
         est_total_tokens = prefix_tokens + dynamic_tokens
@@ -427,6 +734,18 @@ class BlockRetriever(BaseRetriever):
             if node_id and self.storage.get_children(tree_id, node_id):
                 return True
         return False
+
+    def _override_done_if_dirs(self, result: BlockResult, tree_id: str, beams: list[dict]) -> BlockResult:
+        """In fs mode, force-continue if beams still point to directories."""
+        if result.done and self._beams_have_children(tree_id, beams):
+            return BlockResult(
+                block_id=result.block_id,
+                ranked_node_ids=result.ranked_node_ids,
+                selected_node_ids=result.selected_node_ids,
+                done=False,
+                usage=result.usage,
+            )
+        return result
 
     # ---- allowed node filtering (dynamic, but content stays fixed) ----
 
