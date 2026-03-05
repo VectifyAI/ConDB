@@ -1,0 +1,10 @@
+# Ignore everything in this directory by default
+*
+
+# Keep ignore rules
+!.gitignore
+
+# Keep only tracked artifacts
+!build_filesystem.py
+!filesystem_blueprint.json
+!filesystem.json

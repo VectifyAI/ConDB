@@ -1,0 +1,512 @@
+{
+  "name": "arxiv-cs-papers",
+  "type": "directory",
+  "children": [
+    {
+      "name": "databases",
+      "type": "directory",
+      "children": [
+        {
+          "name": "indexing",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2412.01940v3.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2412.01940v3.pdf"
+            },
+            {
+              "name": "1908.04517v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/1908.04517v1.pdf"
+            },
+            {
+              "name": "2507.17647v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2507.17647v1.pdf"
+            }
+          ]
+        },
+        {
+          "name": "query-optimization",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2102.02440v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2102.02440v1.pdf"
+            },
+            {
+              "name": "2005.03328v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2005.03328v1.pdf"
+            },
+            {
+              "name": "cs_0202035v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/cs/0202035v1.pdf"
+            }
+          ]
+        },
+        {
+          "name": "transactions",
+          "type": "directory",
+          "children": [
+            {
+              "name": "1603.00542v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/1603.00542v1.pdf"
+            },
+            {
+              "name": "1704.01355v2.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/1704.01355v2.pdf"
+            },
+            {
+              "name": "2002.12664v4.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2002.12664v4.pdf"
+            }
+          ]
+        },
+        {
+          "name": "storage-engines",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2202.04522v2.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2202.04522v2.pdf"
+            },
+            {
+              "name": "2307.16693v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2307.16693v1.pdf"
+            },
+            {
+              "name": "2411.11091v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2411.11091v1.pdf"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "information-retrieval",
+      "type": "directory",
+      "children": [
+        {
+          "name": "dense-retrieval",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2602.00899v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2602.00899v1.pdf"
+            },
+            {
+              "name": "2108.10341v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2108.10341v1.pdf"
+            },
+            {
+              "name": "2402.12774v2.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2402.12774v2.pdf"
+            }
+          ]
+        },
+        {
+          "name": "rag",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2601.05264v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2601.05264v1.pdf"
+            },
+            {
+              "name": "2510.22344v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2510.22344v1.pdf"
+            },
+            {
+              "name": "2411.18583v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2411.18583v1.pdf"
+            }
+          ]
+        },
+        {
+          "name": "ranking",
+          "type": "directory",
+          "children": [
+            {
+              "name": "2311.01864v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2311.01864v1.pdf"
+            },
+            {
+              "name": "2306.10979v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2306.10979v1.pdf"
+            },
+            {
+              "name": "2210.10695v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2210.10695v1.pdf"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ai",
+      "type": "directory",
+      "children": [
+        {
+          "name": "nlp",
+          "type": "directory",
+          "children": [
+            {
+              "name": "transformers",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2002.00741v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2002.00741v1.pdf"
+                },
+                {
+                  "name": "2103.05103v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2103.05103v1.pdf"
+                },
+                {
+                  "name": "2410.15578v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2410.15578v1.pdf"
+                }
+              ]
+            },
+            {
+              "name": "llm",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2304.03277v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2304.03277v1.pdf"
+                },
+                {
+                  "name": "2312.10793v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2312.10793v3.pdf"
+                },
+                {
+                  "name": "2402.11690v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2402.11690v1.pdf"
+                }
+              ]
+            },
+            {
+              "name": "tokenization",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2410.03258v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2410.03258v1.pdf"
+                },
+                {
+                  "name": "1910.13267v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1910.13267v2.pdf"
+                },
+                {
+                  "name": "2504.10335v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2504.10335v2.pdf"
+                }
+              ]
+            },
+            {
+              "name": "reasoning",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2410.03595v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2410.03595v1.pdf"
+                },
+                {
+                  "name": "2507.16746v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2507.16746v2.pdf"
+                },
+                {
+                  "name": "2601.03559v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2601.03559v1.pdf"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "cv",
+          "type": "directory",
+          "children": [
+            {
+              "name": "detection",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2509.21696v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2509.21696v1.pdf"
+                },
+                {
+                  "name": "2211.06588v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2211.06588v3.pdf"
+                },
+                {
+                  "name": "2404.03507v6.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2404.03507v6.pdf"
+                }
+              ]
+            },
+            {
+              "name": "segmentation",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2207.05518v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2207.05518v2.pdf"
+                },
+                {
+                  "name": "2303.10100v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2303.10100v1.pdf"
+                },
+                {
+                  "name": "2312.12198v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2312.12198v2.pdf"
+                }
+              ]
+            },
+            {
+              "name": "vision-language",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2503.06312v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2503.06312v2.pdf"
+                },
+                {
+                  "name": "2601.05059v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2601.05059v1.pdf"
+                },
+                {
+                  "name": "2201.05729v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2201.05729v3.pdf"
+                }
+              ]
+            },
+            {
+              "name": "diffusion",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2303.07909v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2303.07909v3.pdf"
+                },
+                {
+                  "name": "2406.01388v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2406.01388v3.pdf"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "ml",
+          "type": "directory",
+          "children": [
+            {
+              "name": "optimization",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2306.16361v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2306.16361v2.pdf"
+                },
+                {
+                  "name": "2205.15142v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2205.15142v2.pdf"
+                },
+                {
+                  "name": "2311.15051v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2311.15051v3.pdf"
+                }
+              ]
+            },
+            {
+              "name": "generalization",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2308.01421v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2308.01421v2.pdf"
+                },
+                {
+                  "name": "1505.03469v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1505.03469v1.pdf"
+                },
+                {
+                  "name": "2205.11744v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2205.11744v1.pdf"
+                }
+              ]
+            },
+            {
+              "name": "graph-neural",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2509.01170v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2509.01170v1.pdf"
+                },
+                {
+                  "name": "2308.16470v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2308.16470v2.pdf"
+                },
+                {
+                  "name": "2009.03717v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2009.03717v3.pdf"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "systems",
+      "type": "directory",
+      "children": [
+        {
+          "name": "distributed",
+          "type": "directory",
+          "children": [
+            {
+              "name": "consensus",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2004.05074v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2004.05074v2.pdf"
+                },
+                {
+                  "name": "1905.10786v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1905.10786v1.pdf"
+                },
+                {
+                  "name": "1708.07575v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1708.07575v3.pdf"
+                }
+              ]
+            },
+            {
+              "name": "replication",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "2212.10387v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2212.10387v1.pdf"
+                },
+                {
+                  "name": "1911.04078v3.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1911.04078v3.pdf"
+                },
+                {
+                  "name": "2003.07760v2.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2003.07760v2.pdf"
+                }
+              ]
+            },
+            {
+              "name": "scheduling",
+              "type": "directory",
+              "children": [
+                {
+                  "name": "cs_0605060v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/cs/0605060v1.pdf"
+                },
+                {
+                  "name": "1806.03124v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/1806.03124v1.pdf"
+                },
+                {
+                  "name": "2406.08115v1.pdf",
+                  "type": "file",
+                  "url": "https://arxiv.org/pdf/2406.08115v1.pdf"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "misc",
+      "type": "directory",
+      "children": [
+        {
+          "name": "from-pdfs",
+          "type": "directory",
+          "children": [
+            {
+              "name": "1809.03261v1.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/1809.03261v1.pdf"
+            },
+            {
+              "name": "2101.06801v2.pdf",
+              "type": "file",
+              "url": "https://arxiv.org/pdf/2101.06801v2.pdf"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
