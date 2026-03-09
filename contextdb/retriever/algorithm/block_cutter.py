@@ -25,10 +25,12 @@ class BlockCutter:
         storage: StorageProtocol,
         token_counter: TokenCounter,
         max_tokens_per_block: int = 16000,
+        min_tokens_per_block: int = 0,
     ):
         self.storage = storage
         self.token_counter = token_counter
         self.max_tokens = max_tokens_per_block
+        self.min_tokens = max(0, min(min_tokens_per_block, max_tokens_per_block))
 
     def cut_tree(self, tree_id: str) -> BlockTreePlan:
         """Generate complete block cutting plan for a tree."""
@@ -49,11 +51,13 @@ class BlockCutter:
         )
 
         log.debug(
-            "BlockCutter: tree %s has %d tokens across %d nodes, max_depth=%d",
+            "BlockCutter: tree %s has %d tokens across %d nodes, max_depth=%d, block_range=[%d,%d]",
             tree_id[:8],
             tree_info.total_tokens,
             tree_info.node_count,
             tree_info.max_depth,
+            self.min_tokens,
+            self.max_tokens,
         )
 
         # Greedy vertical merging: start from depth 0, keep adding deeper
@@ -189,36 +193,27 @@ class BlockCutter:
                 parent_groups[parent_id] = []
             parent_groups[parent_id].append(node)
 
-        # Create blocks by filling up to max_tokens
-        blocks = []
-        current_nodes = []
-        current_tokens = 0
-        block_index = 0
+        ordered_nodes: list[dict] = []
+        node_tokens: list[int] = []
+        token_by_id: dict[str, int] = {}
 
-        for parent_id, children in parent_groups.items():
+        for children in parent_groups.values():
             for node in children:
-                node_tokens = self.token_counter.get_cached_count(node["node_id"]) or self.token_counter.count_node_tokens(
-                    node
+                tokens = self.token_counter.get_cached_count(node["node_id"]) or self.token_counter.count_node_tokens(node)
+                ordered_nodes.append(node)
+                node_tokens.append(tokens)
+                token_by_id[node["node_id"]] = tokens
+
+        packs = self._pack_horizontal_nodes(ordered_nodes, node_tokens)
+        packs = self._rebalance_small_tail_pack(packs, token_by_id)
+
+        blocks = []
+        for block_index, pack in enumerate(packs):
+            blocks.append(
+                self._create_horizontal_block(
+                    tree_id, depth_start, depth_end, pack["nodes"], group_id, block_index
                 )
-
-                # Check if adding this node exceeds limit
-                if current_tokens + node_tokens > self.max_tokens and current_nodes:
-                    # Create block with current nodes
-                    block = self._create_horizontal_block(
-                        tree_id, depth_start, depth_end, current_nodes, group_id, block_index
-                    )
-                    blocks.append(block)
-                    block_index += 1
-                    current_nodes = []
-                    current_tokens = 0
-
-                current_nodes.append(node)
-                current_tokens += node_tokens
-
-        # Don't forget the last block
-        if current_nodes:
-            block = self._create_horizontal_block(tree_id, depth_start, depth_end, current_nodes, group_id, block_index)
-            blocks.append(block)
+            )
 
         return HorizontalBlockGroup(
             group_id=group_id,
@@ -227,6 +222,70 @@ class BlockCutter:
             blocks=blocks,
             parent_node_ids=[p for p in parent_groups.keys() if p is not None],
         )
+
+    def _pack_horizontal_nodes(self, nodes: list[dict], node_tokens: list[int]) -> list[dict[str, object]]:
+        """Greedy pack nodes up to the max token budget."""
+        if not nodes:
+            return []
+
+        packs: list[dict[str, object]] = []
+        current_nodes: list[dict] = []
+        current_tokens = 0
+        i = 0
+
+        while i < len(nodes):
+            node = nodes[i]
+            tokens = node_tokens[i]
+
+            if current_nodes and current_tokens + tokens > self.max_tokens:
+                packs.append({"nodes": current_nodes, "tokens": current_tokens})
+                current_nodes = []
+                current_tokens = 0
+                continue
+
+            current_nodes.append(node)
+            current_tokens += tokens
+            i += 1
+
+        if current_nodes:
+            packs.append({"nodes": current_nodes, "tokens": current_tokens})
+
+        return packs
+
+    def _rebalance_small_tail_pack(
+        self, packs: list[dict[str, object]], token_by_id: dict[str, int]
+    ) -> list[dict[str, object]]:
+        """Rebalance the final two packs when the tail pack is too small."""
+        if self.min_tokens <= 0 or len(packs) < 2:
+            return packs
+
+        last = packs[-1]
+        prev = packs[-2]
+        last_tokens = int(last["tokens"])
+        prev_tokens = int(prev["tokens"])
+        if last_tokens >= self.min_tokens:
+            return packs
+
+        prev_nodes = list(prev["nodes"])
+        last_nodes = list(last["nodes"])
+
+        while last_tokens < self.min_tokens and prev_nodes:
+            candidate = prev_nodes[-1]
+            candidate_tokens = token_by_id.get(candidate["node_id"], 0)
+            if candidate_tokens <= 0:
+                break
+            if prev_tokens - candidate_tokens < self.min_tokens:
+                break
+            prev_nodes.pop()
+            last_nodes.insert(0, candidate)
+            prev_tokens -= candidate_tokens
+            last_tokens += candidate_tokens
+
+        prev["nodes"] = prev_nodes
+        prev["tokens"] = prev_tokens
+        last["nodes"] = last_nodes
+        last["tokens"] = last_tokens
+        return packs
 
     def _create_horizontal_block(
         self,

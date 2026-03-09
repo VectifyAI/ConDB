@@ -90,9 +90,15 @@ class LegacyBlockRetriever(BaseRetriever):
             max_tokens_per_block if max_tokens_per_block is not None
             else _DEFAULT_CONFIG.get("max_tokens_per_block", 16000)
         )
+        self.min_tokens_per_block = _DEFAULT_CONFIG.get("min_tokens_per_block", 0)
 
         self.token_counter = TokenCounter()
-        self.block_cutter = BlockCutter(storage, self.token_counter, self.max_tokens_per_block)
+        self.block_cutter = BlockCutter(
+            storage,
+            self.token_counter,
+            self.max_tokens_per_block,
+            self.min_tokens_per_block,
+        )
 
         self._plan_cache: dict[str, BlockTreePlan] = {}
 

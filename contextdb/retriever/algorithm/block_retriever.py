@@ -65,11 +65,17 @@ class BlockRetriever(BaseRetriever):
             max_tokens_per_block if max_tokens_per_block is not None
             else _DEFAULT_CONFIG.get("max_tokens_per_block", 16000)
         )
+        self.min_tokens_per_block = _DEFAULT_CONFIG.get("min_tokens_per_block", 0)
 
         provider = getattr(llm, "provider", None)
         model = getattr(llm, "model", None)
         self.token_counter = TokenCounter(provider=provider, model=model)
-        self.block_cutter = BlockCutter(storage, self.token_counter, self.max_tokens_per_block)
+        self.block_cutter = BlockCutter(
+            storage,
+            self.token_counter,
+            self.max_tokens_per_block,
+            self.min_tokens_per_block,
+        )
         self._plan_cache: dict[str, BlockTreePlan] = {}
         self._precomputed_tree_id: str = ""
 
