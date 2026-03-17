@@ -14,7 +14,9 @@ Usage:
 
 Examples:
     python bench/benchmark_retrievers.py --mode doc --doc examples/large_doc.json --config bench/queries.json
-    python bench/benchmark_retrievers.py --mode fs --repo-dir . --queries-config bench/fs_queries.json
+    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/repo --queries-config bench/filesystem/repo/queries.json
+    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/arxiv --queries-config bench/filesystem/arxiv/queries.json
+    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/context7 --queries-config bench/filesystem/context7/queries.json
 """
 
 import argparse
@@ -312,6 +314,7 @@ def run_benchmark(
     repo_dir: Path = None,
     query_list: list = None,
     queries_with_gt: list[dict] = None,
+    queries_config_path: Path = None,
     beam_size: int = 3,
     max_turns: int = 10,
     clear_cache: bool = False,
@@ -336,8 +339,23 @@ def run_benchmark(
             return db.ingest_tree(tree_structure, entities=entities)
 
     elif mode == "fs":
-        from contextdb.adapter.filesystem import FileSystemAdapter
-        adapter = FileSystemAdapter(str(repo_dir))
+        from contextdb.adapter.filesystem import DEFAULT_IGNORE_PATTERNS, FileSystemAdapter
+
+        ignore_patterns = list(DEFAULT_IGNORE_PATTERNS)
+        effective_queries_config = queries_config_path
+        if effective_queries_config is None:
+            default_queries = repo_dir / "queries.json"
+            if default_queries.exists():
+                effective_queries_config = default_queries
+
+        if effective_queries_config is not None:
+            try:
+                rel_cfg = str(effective_queries_config.resolve().relative_to(repo_dir.resolve())).replace("\\", "/")
+                ignore_patterns.append(rel_cfg)
+            except ValueError:
+                pass
+
+        adapter = FileSystemAdapter(str(repo_dir), ignore_patterns=ignore_patterns)
         tree_structure, entities = adapter.convert()
         queries = [q["query"] for q in queries_with_gt]
         ground_truths = [q["ground_truth"] for q in queries_with_gt]
@@ -545,6 +563,7 @@ def main():
         print("=" * 70)
         result = run_benchmark(
             mode="fs", repo_dir=args.repo_dir, queries_with_gt=queries_with_gt,
+            queries_config_path=args.queries_config,
             beam_size=args.beam_size, max_turns=args.max_turns,
             clear_cache=args.clear_cache,
         )
