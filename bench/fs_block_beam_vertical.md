@@ -10,17 +10,6 @@ Run setup: `fs_query_order=prefix`, `beam_size=3`, `max_turns=10`, total `11` qu
 
 ## Overall (11 queries)
 
-| Retriever | Avg Time (s) | Avg LLM Calls | Total Cost (USD) | Hit@1 | 
-|---|---:|---:|---:|---:|---:|
-| Block | 6.1855 | 1.1818 | 1.1650 | 1.0000 | 
-| Beam | 22.4204 | 4.0909 | 0.2843 | 0.6364 | 
-| Vertical | 11.7249 | 1.7273 | 1.9536 | 1.0000 | 
-
-Conclusion (accuracy + latency priority): `Block` is best.  
-Conclusion (cost-only priority): `Beam` is cheapest, but with clear accuracy drop.
-
-## Per Scenario
-
 | Scenario | Retriever | Avg Time (s) | Avg LLM Calls | Cost (USD) | Hit@1 | 
 |---|---|---:|---:|---:|---:|
 | context7 | Block | 5.4698 | 1.0000 | 0.0762 | 1.0000 | 
