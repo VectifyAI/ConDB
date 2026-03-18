@@ -31,7 +31,7 @@ class LLMWithCacheProtocol(Protocol):
         messages: list[dict],
         system: str = "",
         tools: list[dict] = None,
-        cache_content: str = None,
+        cache_content: str | list[str] = None,
         non_cached_content: str = None,
         cache_key: str = None,
     ) -> dict[str, Any]:
@@ -75,7 +75,7 @@ class LLMClient:
         messages: list[dict],
         system: str = "",
         tools: list[dict] = None,
-        cache_content: str = None,
+        cache_content: str | list[str] = None,
         non_cached_content: str = None,
         cache_key: str = None,
     ) -> dict[str, Any]:
@@ -101,7 +101,10 @@ class LLMClient:
             # OpenAI doesn't have native prompt caching, fall back to regular chat
             parts = []
             if cache_content:
-                parts.append(cache_content)
+                if isinstance(cache_content, list):
+                    parts.extend([p for p in cache_content if p])
+                else:
+                    parts.append(cache_content)
             if non_cached_content:
                 parts.append(non_cached_content)
             if parts:
@@ -134,7 +137,7 @@ class LLMClient:
 
     def _chat_anthropic_with_cache(
         self, messages: list[dict], system: str, tools: list[dict],
-        cache_content: str, non_cached_content: str = None,
+        cache_content: str | list[str], non_cached_content: str = None,
     ) -> dict[str, Any]:
         """
         Anthropic chat with prompt caching.
@@ -146,6 +149,21 @@ class LLMClient:
 
         See: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
         """
+        if isinstance(cache_content, list):
+            segments = [s for s in cache_content if s]
+            if segments:
+                max_cache_controls = max(
+                    1,
+                    int(os.getenv("CONDB_ANTHROPIC_MAX_CACHE_CONTROL_BLOCKS", "4") or 4),
+                )
+                reserved_controls = (1 if system else 0) + (1 if tools else 0)
+                allowed_segments = max(1, max_cache_controls - reserved_controls)
+                if len(segments) > allowed_segments:
+                    merge_count = len(segments) - allowed_segments + 1
+                    merged_head = "\n\n".join(segments[:merge_count])
+                    segments = [merged_head, *segments[merge_count:]]
+                cache_content = segments
+
         # Build messages with selective cache control
         cached_messages = []
         for i, msg in enumerate(messages):
@@ -155,11 +173,21 @@ class LLMClient:
 
                 # Cached prefix (reusable across queries)
                 if cache_content:
-                    content_blocks.append({
-                        "type": "text",
-                        "text": cache_content,
-                        "cache_control": {"type": "ephemeral"},
-                    })
+                    if isinstance(cache_content, list):
+                        for segment in cache_content:
+                            if not segment:
+                                continue
+                            content_blocks.append({
+                                "type": "text",
+                                "text": segment,
+                                "cache_control": {"type": "ephemeral"},
+                            })
+                    else:
+                        content_blocks.append({
+                            "type": "text",
+                            "text": cache_content,
+                            "cache_control": {"type": "ephemeral"},
+                        })
 
                 # Non-cached content (one-time, no cache overhead)
                 if non_cached_content:

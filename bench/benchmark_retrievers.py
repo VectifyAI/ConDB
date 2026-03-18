@@ -243,6 +243,23 @@ def extract_file_paths(db: TreeDB, tree_id: str, node_ids: list[str]) -> list[st
     return paths
 
 
+def _fs_prefix_key(ground_truth: list[str]) -> str:
+    """Build a coarse prefix key from first ground-truth path."""
+    if not ground_truth:
+        return ""
+    first = str(ground_truth[0]).strip().lstrip("/")
+    if not first:
+        return ""
+    return first.split("/", 1)[0]
+
+
+def reorder_fs_queries_by_prefix(queries_with_gt: list[dict]) -> list[dict]:
+    """Group filesystem queries by shared ground-truth top-level prefix."""
+    indexed = list(enumerate(queries_with_gt))
+    indexed.sort(key=lambda x: (_fs_prefix_key(x[1].get("ground_truth", [])), x[0]))
+    return [item for _, item in indexed]
+
+
 # ── Runner ──────────────────────────────────────────────────────────
 
 
@@ -318,9 +335,30 @@ def run_benchmark(
     beam_size: int = 3,
     max_turns: int = 10,
     clear_cache: bool = False,
+    fs_query_order: str = "original",
+    retrievers: list[str] | None = None,
 ) -> BenchmarkResult:
     retriever_classes = discover_retrievers()
-    print(f"\nDiscovered retrievers: {', '.join(retriever_classes.keys())}")
+    discovered = list(retriever_classes.keys())
+    print(f"\nDiscovered retrievers: {', '.join(discovered)}")
+    if retrievers:
+        selected: dict[str, type] = {}
+        unknown: list[str] = []
+        for name in retrievers:
+            key = name.strip()
+            if not key:
+                continue
+            cls = retriever_classes.get(key)
+            if cls is None:
+                unknown.append(key)
+                continue
+            selected[key] = cls
+        if unknown:
+            print(f"Warning: Unknown retrievers ignored: {', '.join(unknown)}")
+        if not selected:
+            raise ValueError("No valid retrievers selected")
+        retriever_classes = selected
+        print(f"Selected retrievers: {', '.join(retriever_classes.keys())}")
 
     llm = Config.get_llm_client()
     llm_with_stats = LLMWithStats(llm, StatisticsRecorder())
@@ -354,6 +392,9 @@ def run_benchmark(
                 ignore_patterns.append(rel_cfg)
             except ValueError:
                 pass
+
+        if fs_query_order == "prefix":
+            queries_with_gt = reorder_fs_queries_by_prefix(queries_with_gt)
 
         adapter = FileSystemAdapter(str(repo_dir), ignore_patterns=ignore_patterns)
         tree_structure, entities = adapter.convert()
@@ -516,8 +557,21 @@ def main():
     parser.add_argument("--beam-size", "-b", type=int, default=3)
     parser.add_argument("--max-turns", "-t", type=int, default=10)
     parser.add_argument("--clear-cache", action="store_true")
+    parser.add_argument(
+        "--retrievers",
+        type=str,
+        default="",
+        help="Comma-separated retriever names to run, e.g. Block,Beam,Vertical",
+    )
+    parser.add_argument(
+        "--fs-query-order",
+        choices=["original", "prefix"],
+        default="original",
+        help="FS mode query order: original or grouped by ground-truth prefix",
+    )
 
     args = parser.parse_args()
+    selected_retrievers = [x.strip() for x in args.retrievers.split(",") if x.strip()]
 
     try:
         Config.validate()
@@ -544,6 +598,8 @@ def main():
             mode="doc", doc_path=args.doc, query_list=queries,
             beam_size=args.beam_size, max_turns=args.max_turns,
             clear_cache=args.clear_cache,
+            fs_query_order=args.fs_query_order,
+            retrievers=selected_retrievers or None,
         )
 
     elif args.mode == "fs":
@@ -566,6 +622,8 @@ def main():
             queries_config_path=args.queries_config,
             beam_size=args.beam_size, max_turns=args.max_turns,
             clear_cache=args.clear_cache,
+            fs_query_order=args.fs_query_order,
+            retrievers=selected_retrievers or None,
         )
 
     if args.output == "json":
