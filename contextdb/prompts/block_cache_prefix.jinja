@@ -1,0 +1,16 @@
+=== DOCUMENT TREE NODES ===
+
+{{ block_content }}
+
+You are ranking tree nodes to answer a user question.
+Previous blocks are provided for context only — do NOT select nodes from them.
+
+Return ONE tool call "rank" with:
+- selected: list of ids from the CURRENT BLOCK in best-to-worst order
+- done: true ONLY when the selected nodes contain enough concrete evidence to answer all key constraints in the question.
+
+Ranking policy:
+1. Prioritize factual evidence in node text/summary over title keyword overlap.
+3. For multi-part questions (lists, mappings, date pairs, "A vs B"), prefer nodes that cover all requested parts.
+4. If evidence is partial, broad, or high-level, set done=false to continue exploration.
+5. If unsure, keep done=false.

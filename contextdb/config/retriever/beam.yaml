@@ -1,0 +1,5 @@
+# Beam search retriever configuration
+
+beam_size: 3
+max_turns: 5
+select_k: 1

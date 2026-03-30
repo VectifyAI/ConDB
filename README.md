@@ -1,257 +1,204 @@
-# ConDB v0.1 - Context Tree Database
+<div align="center">
 
-A lightweight, SQLite-based database for storing and navigating **Context Trees** — hierarchical representations of contextual information organized from coarse-grained abstractions to fine-grained details.
+# ConDB
 
-## What is a Context Tree?
+<p align="center"><b>Context Database for Hierarchical Document Trees</b></p>
 
-A **Context Tree** is a structured abstraction for context reasoning. Rather than treating context as flat text or isolated chunks, a Context Tree encodes hierarchy and abstraction directly into the representation, enabling:
+<p align="center">
+  Store, navigate, and query hierarchical document structures with LLM-powered reasoning retrieval.
+</p>
 
-- **Hierarchical Coherence**: All contextual units are explicitly situated within a global hierarchy
-- **Traceability**: Any conclusion can be traced through the tree to its source content
-- **Abstraction Control**: Explicit control over how much context is exposed at each reasoning step
-- **Explainability**: Reasoning paths correspond directly to traversal paths in the tree
+</div>
 
-ConDB provides the storage layer for Context Trees, making them persistent, queryable, and navigable.
+---
 
-## Core Concepts
+## What is ConDB?
 
-### Context Node
+**ConDB** stores hierarchical document trees in a SQLite database and provides LLM-powered **reasoning-based retrieval** to query them — no vector DB, no chunking. It accepts pageindex-compatible trees, chat trees, and custom hierarchical JSON without taking a runtime code dependency on PageIndex itself.
 
-Each node in a Context Tree is defined as:
+**Key capabilities:**
 
-- **Summary** (`attrs_json`): A navigational abstraction sufficient for reasoning without expansion
-- **Content Reference** (`entity_type`, `entity_id`): Reference to underlying content (text spans, documents, raw data)
-- **Metadata**: Category labels, timestamps, provenance information
+- **Hierarchical storage** — store document trees, chat trees, and custom hierarchical JSON in SQLite
+- **Reasoning-based retrieval** — LLM navigates the tree to find relevant content, like a human expert
+- **Multiple retrieval strategies** — beam search for small trees, block retrieval for large documents
+- **Multi-provider LLM support** — works with Anthropic (Claude) and OpenAI (GPT) out of the box
+- **Extensible** — plug in custom storage backends, LLM providers, or retrieval strategies
 
-A node is **self-contained** when its summary is sufficient to support reasoning without requiring expansion into its children.
-
-### Refinement Relation
-
-For any parent-child relationship in the tree:
-- The child is a **refinement** of the parent
-- Child content is scoped within parent content
-- Traversing downward increases specificity; upward increases abstraction
-
-### Leaf Nodes
-
-Leaf nodes contain raw or minimally processed content and serve as the **factual grounding** of the Context Tree.
-
-## Context Consumption Model
-
-ConDB supports the procedural context consumption model:
-
-| Operation | Description | ConDB Method |
-|-----------|-------------|--------------|
-| **Select** | Choose a node based on relevance | `get_node()` |
-| **Expand** | Include children for more detail | `get_children()`, `get_subtree()` |
-| **Collapse** | Reason using only node summary | Access `attrs_json` only |
-| **Traverse** | Move between abstraction levels | Navigate via `parent_id` or `path` |
-
-## Architecture
-
-### Schema
-
-**trees** - Context Tree registry
-- `tree_id`: UUID primary key
-- `root_node_id`: Reference to root context node
-- `meta_json`: Tree-level metadata (source, version, domain)
-- Timestamps: `created_at`, `updated_at`
-
-**nodes** - Context Node storage
-- Composite key: `(tree_id, node_id)`
-- `parent_id`: Parent node (refinement source)
-- `slot`: Semantic key or position index
-- `node_type`: 0=object, 1=array, 2=leaf
-- `depth`: Abstraction level (higher = more detailed)
-- `path`: Materialized path for efficient subtree queries
-- `entity_type`, `entity_id`: Content reference (optional)
-- `attrs_json`: Node summary and metadata
-
-**entities** - Content storage
-- `entity_id`: UUID primary key
-- `entity_type`: Content type label
-- `payload_json`: Underlying content payload
-
-### Key Indexes
-
-- `nodes_path_idx`: Fast subtree prefix scans (Expand operation)
-- `nodes_parent_idx`: Fast children traversal
-- `nodes_entity_idx`: Content reverse lookup
-
-## Installation
-
-No external dependencies — uses Python standard library only.
-
-```bash
-# Copy to your project
-cp condb.py /your/project/
-```
+---
 
 ## Quick Start
 
-```python
-from condb import ConDB
+### Install
 
-# Initialize database
-db = ConDB("context.sqlite")
-
-# Create a new Context Tree
-tree_id, root_id = db.create_tree(meta={"domain": "legal", "source": "contract_v2"})
-
-# Select a node
-node = db.get_node(tree_id, root_id)
-
-# Expand: get children for more detail
-children = db.get_children(tree_id, root_id)
-
-# Expand: get full subtree with depth control
-subtree = db.get_subtree(tree_id, root_id, max_depth=3)
-
-# Expand with content dereferencing
-subtree_with_content = db.get_subtree(
-    tree_id, root_id,
-    max_depth=5,
-    with_entities=True  # Include underlying content
-)
-
-db.close()
+```bash
+pip install -r requirements.txt
 ```
 
-## Ingesting Context Trees
-
-Build hierarchical context structures with content references:
+### Basic Usage
 
 ```python
-# Define Context Tree structure
-context_tree = {
-    "type": "object",
-    "attrs": {"summary": "Q3 2024 Financial Report - Overview of company performance"},
-    "entity_type": "document",
-    "entity_id": "report_001",
-    "children": {
-        "executive_summary": {
-            "type": "leaf",
-            "attrs": {"summary": "Key highlights: Revenue up 15%, new market expansion"},
-            "entity_type": "section",
-            "entity_id": "section_001"
-        },
-        "financial_details": {
-            "type": "object",
-            "attrs": {"summary": "Detailed financial breakdown by segment"},
-            "children": {
-                "revenue": {
-                    "type": "leaf",
-                    "attrs": {"summary": "Revenue analysis by product line"},
-                    "entity_type": "section",
-                    "entity_id": "section_002"
-                },
-                "expenses": {
-                    "type": "leaf",
-                    "attrs": {"summary": "Operating expenses and cost optimization"},
-                    "entity_type": "section",
-                    "entity_id": "section_003"
-                }
-            }
-        }
-    }
-}
+import contextdb
 
-# Define underlying content
-content = {
-    "report_001": {"title": "Q3 2024 Report", "pages": 45},
-    "section_001": {"text": "This quarter showed strong performance..."},
-    "section_002": {"text": "Product line A generated $2.3M...", "figures": [...]},
-    "section_003": {"text": "Operating expenses decreased by 8%..."}
-}
+# Open database
+db = contextdb.open("my_docs.sqlite")
 
-# Ingest the Context Tree
-tree_id = db.ingest_tree(context_tree, entities=content)
+# Configure LLM
+db.set_llm(provider="anthropic", model="claude-sonnet-4-20250514")
+
+# Store a document tree
+tree_id = db.store(document_tree_json, format="document")
+
+# Query with LLM reasoning
+result = db.query(tree_id, "What are the key findings?")
+print(result.contents)
 ```
 
-## API Reference
+### Index from files with an external tree builder
 
-### ConDB Class
+```python
+from contextdb import ContextTree
 
-#### `create_tree(meta: Optional[Dict] = None) -> Tuple[str, str]`
-Create a new Context Tree. Returns `(tree_id, root_node_id)`.
+def build_markdown_tree(path: str) -> dict:
+    ...
 
-#### `get_node(tree_id: str, node_id: str) -> Optional[Node]`
-**Select** operation — fetch a single context node.
+ct = ContextTree("context.sqlite")
 
-#### `get_children(tree_id: str, node_id: str) -> List[Node]`
-**Expand** operation — get direct refinements of a node.
+tree_id = ct.index_markdown_file("doc.md", tree_builder=build_markdown_tree)
 
-#### `get_subtree(tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False) -> List[Dict]`
-**Expand** operation — get entire subtree with abstraction level control.
-- `max_depth`: Control how many refinement levels to include
-- `with_entities`: Include dereferenced content in results
+# You can also generate a tree out of process and call:
+# tree_id = ct.index_document_tree(document_tree_json)
 
-#### `get_entity(tree_id: str, node_id: str) -> Optional[Entity]`
-Get underlying content referenced by a node.
-
-#### `ingest_tree(tree_structure: Dict, entities: Optional[Dict] = None, meta: Optional[Dict] = None) -> str`
-Ingest a complete Context Tree with content. Returns `tree_id`.
-
-## Use Cases
-
-ConDB is designed for systems that implement the Context Tree abstraction:
-
-- **PageIndex**: Document context — hierarchical representation of documents, papers, reports
-- **ChatIndex**: Conversational context — structured conversation history with topic hierarchy
-- **AgentFS**: Agent context — filesystem-like context navigation for AI agents
-- **Legal/Compliance**: Navigable policy and regulatory document structures
-- **Research**: Hierarchical literature review with traceable citations
-
-## Data Model
-
-### Node Types
-- `OBJECT` (0): Named children (semantic slots like "introduction", "methodology")
-- `ARRAY` (1): Ordered children (sequential refinements)
-- `LEAF` (2): Terminal node with content reference (factual grounding)
-
-### Abstraction Levels
-The `depth` field represents abstraction level:
-- `depth=0`: Root — highest abstraction (e.g., "entire document")
-- `depth=1`: First refinement (e.g., "major sections")
-- `depth=N`: N-th refinement level (increasing specificity)
-
-### Path Encoding
-Paths enable efficient subtree queries:
-```
-/r/<root_id>                      # Root node
-/r/<root_id>/<child_id>           # First refinement
-/r/<root_id>/<child_id>/<...>     # Deeper refinements
+ct.close()
 ```
 
-## Performance
+---
 
-### Optimized Operations
-- **Select**: O(1) primary key lookup
-- **Expand (children)**: Indexed parent scan
-- **Expand (subtree)**: Indexed path prefix scan with depth filter
+## Configuration
 
-### SQLite Configuration
-```sql
-PRAGMA journal_mode = WAL;      -- Concurrent access
-PRAGMA synchronous = NORMAL;    -- Balanced durability
-PRAGMA foreign_keys = ON;       -- Referential integrity
+Create a `.env` file:
+
+```
+ANTHROPIC_API_KEY=sk-...
+OPENAI_API_KEY=sk-...
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-sonnet-4-20250514
 ```
 
-## Limitations (MVP)
+Or configure programmatically:
 
-- Single SQLite file (no distributed storage)
-- No built-in versioning or temporal queries
-- Simple key-value content storage
-- No access control layer
+```python
+from contextdb.config import Config
+llm = Config.get_llm_client()
+```
 
-## Future Directions
+---
 
-- Tree diff and merge for context evolution
-- Incremental updates (node add/remove/move)
-- Content schema validation
-- Compression for large content payloads
-- Multi-tree linking for cross-reference
+## Retrieval Strategies
+
+ConDB automatically selects the best retrieval strategy based on tree size:
+
+| Strategy | Best for | How it works |
+|----------|----------|--------------|
+| **Beam** | Small trees (< 50 nodes) | LLM evaluates and selects promising branches at each depth level |
+| **Block** | Large documents (50+ nodes) | Splits tree into token-bounded blocks, LLM reasons over each block |
+
+You can also specify a strategy explicitly:
+
+```python
+result = db.query(tree_id, "question", strategy="block", beam_size=3)
+```
+
+---
+
+## Benchmark Snapshot
+
+Current filesystem benchmark summary lives in [bench/fs_block_beam_vertical.md](bench/fs_block_beam_vertical.md).
+
+Run setup for the snapshot below: `beam_size=3`, `max_turns=10`, `5` filesystem queries on `context7` only.
+
+### Block vs Beam vs Vertical
+
+| Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
+|---|---:|---:|---:|---:|---:|
+| **Block** | 5.47 | 1.00 | 1.00 | 1.00 | 0.0762 |
+| **Vertical** | 7.31 | 1.60 | 1.00 | 1.00 | 0.1486 |
+| **Beam** | 20.18 | 4.60 | 0.60 | 0.80 | 0.1328 |
+
+`Block` is the best default on this `context7` snapshot: same retrieval quality as `Vertical`, with lower latency and fewer model calls. `Beam` is still workable, but it trails clearly on retrieval accuracy.
+
+These numbers are benchmark snapshots, not hard guarantees; exact cost and latency will vary with model choice, provider pricing, prompt-cache behavior, and corpus shape.
+
+---
+
+## Architecture
+
+```
+contextdb/
+├── api/
+│   ├── condb.py          # ConDB — main entry point
+│   └── context_tree.py   # ContextTree — tree indexing + query API
+├── core/
+│   └── storage.py        # TreeDB (SQLite), StorageProtocol
+├── adapter/
+│   └── base.py           # DocumentTree, ChatIndex, Generic adapters
+├── retriever/
+│   ├── base.py           # Retriever protocols
+│   └── algorithm/        # Beam, Block retrieval strategies
+├── llm.py                # LLMClient (Anthropic, OpenAI)
+├── config/               # YAML configs for retrievers
+└── prompts/              # Jinja2 prompt templates
+```
+
+---
+
+## Extending
+
+<details>
+<summary><b>Custom Storage Backend</b></summary>
+
+```python
+from contextdb import StorageProtocol
+
+class MyStorage:
+    def get_node(self, tree_id, node_id): ...
+    def get_children(self, tree_id, node_id): ...
+    # implement StorageProtocol methods
+
+ct = ContextTree(storage=MyStorage())
+```
+</details>
+
+<details>
+<summary><b>Custom LLM Provider</b></summary>
+
+```python
+from contextdb import LLMProtocol
+
+class MyLLM:
+    def chat(self, messages, system="", tools=None):
+        return {"content": [...], "stop_reason": "..."}
+
+ct = ContextTree("db.sqlite", llm=MyLLM())
+```
+</details>
+
+---
+
+## Testing
+
+```bash
+./run_tests.sh all
+```
+
+---
+
+## Related Projects
+
+- [**PageIndex**](https://github.com/VectifyAI/PageIndex) — one possible external producer of pageindex-compatible document trees
+- [**AgentFS**](https://github.com/anthropics/agentfs) — filesystem for AI agents
+
+---
 
 ## License
 
-MIT
+Apache-2.0

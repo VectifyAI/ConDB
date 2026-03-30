@@ -1,0 +1,35 @@
+Query: {{ query }}
+
+Selected so far:
+{% if previous_selected %}
+{% for ref in previous_selected %}
+- {{ ref }}
+{% endfor %}
+{% else %}
+(none)
+{% endif %}
+
+{% if input_beams %}
+Current exploration path:
+{% for beam in input_beams %}
+- {{ beam }}
+{% endfor %}
+{% endif %}
+
+The LAST BLOCK above is the CURRENT BLOCK. IDs in each block are local to that block. Return only ids from the CURRENT BLOCK.
+{% if selection_mode == "all" %}
+All ids in the CURRENT BLOCK are selectable.
+{% elif selection_mode == "all_except" %}
+All ids in the CURRENT BLOCK are selectable except:
+{% for alias in selection_aliases %}
+- {{ alias }}
+{% endfor %}
+{% else %}
+Selectable ids in the CURRENT BLOCK:
+{% for alias in selection_aliases %}
+- {{ alias }}
+{% endfor %}
+{% endif %}
+
+Pick up to {{ k }} candidates most relevant to the query, best first.
+IMPORTANT: Prefer [src] files/directories. Avoid [test] unless the query specifically asks about tests.
