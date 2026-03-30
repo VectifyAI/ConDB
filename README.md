@@ -199,18 +199,6 @@ ct = ContextTree("db.sqlite", llm=MyLLM())
 
 ---
 
-<div align="center">
-
 ## License
 
 Apache-2.0
-
-<br/>
-
-<p>Built by <a href="https://vectify.ai">Vectify AI</a></p>
-
-[![Twitter](https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/VectifyAI)&nbsp;
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/company/vectify-ai/)&nbsp;
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/VuXuf29EUj)
-
-</div>
