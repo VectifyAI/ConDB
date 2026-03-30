@@ -8,6 +8,10 @@ version = "0.2.0"
 description = "Context Tree Database"
 readme = "README.md"
 requires-python = ">=3.9"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     "jinja2>=3.0.0",
     "litellm>=1.82.0,<1.82.7",
@@ -18,6 +22,7 @@ dependencies = [
 dev = ["pytest>=7.0.0", "ruff>=0.4.0"]
 
 [tool.setuptools]
+license-files = ["LICENSE"]
 packages = ["contextdb", "contextdb.core", "contextdb.adapter", "contextdb.retriever", "contextdb.retriever.algorithm", "contextdb.api", "contextdb.metrics"]
 
 [tool.ruff]
