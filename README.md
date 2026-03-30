@@ -6,10 +6,8 @@
 
 # ConDB: The KV-Cache Native Context Database
 
-<p align="center">
-  A new type of database optimized for reasoning-driven tree search.<br/>
-  Fast, context-aware retrieval at scale with up to 70% less token cost.
-</p>
+<h4 align="center"><i>A new context database for reasoning-driven tree search.<br/>
+Fast, context-aware retrieval at scale with up to 70% less token cost.</i></h4>
 
 </div>
 
