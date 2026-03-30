@@ -117,8 +117,8 @@ ConDB automatically selects the best retrieval strategy based on tree size:
 
 | Strategy | Best for | How it works |
 |----------|----------|--------------|
-| **Beam** | Small trees (< 50 nodes) | LLM evaluates and selects promising branches at each depth level |
-| **Block** | Large documents (50+ nodes) | Splits tree into token-bounded blocks, LLM reasons over each block. KV-cache native — caches intermediate block results to cut token usage by up to 70% |
+| **Beam** | Small trees <br/> (< 50 nodes) | LLM evaluates and selects promising branches at each depth level |
+| **Block** | Large documents <br/> (50+ nodes) | Splits tree into token-bounded blocks, LLM reasons over each block. KV-cache native — caches intermediate block results to cut token usage by up to 70% |
 
 You can also specify a strategy explicitly:
 
