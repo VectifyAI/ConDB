@@ -1,11 +1,11 @@
 """ConDB public API — store hierarchical JSON, query with LLM."""
 
 import json
-import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from contextdb.adapter.base import ChatIndexAdapter, GenericAdapter, PageIndexAdapter
+from contextdb.adapter.base import ChatIndexAdapter, DocumentTreeAdapter, GenericAdapter
+from contextdb.api._shared import build_strategy_retriever, namespace_entities
 from contextdb.core.storage import TreeDB
 from contextdb.llm import LLMClient, LLMProtocol
 from contextdb.retriever import (
@@ -14,7 +14,6 @@ from contextdb.retriever import (
     BlockRetriever,
     TreeFormatter,
 )
-
 
 # ── Errors ──────────────────────────────────────────────────────────
 
@@ -44,8 +43,11 @@ class QueryResult:
 
 # ── Adapters ────────────────────────────────────────────────────────
 
+_DOCUMENT_ADAPTER = DocumentTreeAdapter()
+
 _ADAPTERS = {
-    "pageindex": PageIndexAdapter(),
+    "document": _DOCUMENT_ADAPTER,
+    "pageindex": _DOCUMENT_ADAPTER,
     "chatindex": ChatIndexAdapter(),
     "generic": GenericAdapter(),
 }
@@ -68,7 +70,7 @@ class ConDB:
         if adapter is None:
             raise ValueError(f"Unknown format: {format!r}. Use: {list(_ADAPTERS)}")
         tree, entities = adapter.convert(data)
-        tree, entities = _namespace_entities(tree, entities)
+        tree, entities = namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities, meta=meta)
 
     # ── LLM ─────────────────────────────────────────────────────────
@@ -104,6 +106,7 @@ class ConDB:
         select_k: int = 1,
         max_tokens_per_block: int = 16000,
         cache_enabled: bool = True,
+        max_parallel_blocks: int = None,
         retriever: BaseRetriever = None,
     ) -> QueryResult:
         self._check_tree(tree_id)
@@ -113,6 +116,8 @@ class ConDB:
             retriever = self._make_retriever(
                 tree_id, resolved_llm, strategy,
                 max_tokens_per_block=max_tokens_per_block,
+                cache_enabled=cache_enabled,
+                max_parallel_blocks=max_parallel_blocks,
             )
 
         result = retriever.retrieve(tree_id, question,
@@ -130,12 +135,16 @@ class ConDB:
     def _make_retriever(self, tree_id, llm, strategy, **kwargs) -> BaseRetriever:
         if strategy == "auto":
             strategy = self._pick_strategy(tree_id)
-        if strategy == "beam":
-            return BeamRetriever(self.storage, llm)
-        if strategy == "block":
-            return BlockRetriever(self.storage, llm,
-                                  max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000))
-        raise ValueError(f"Unknown strategy: {strategy!r}")
+        return build_strategy_retriever(
+            self.storage,
+            llm,
+            strategy,
+            beam_cls=BeamRetriever,
+            block_cls=BlockRetriever,
+            max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000),
+            cache_enabled=kwargs.get("cache_enabled", True),
+            max_parallel_blocks=kwargs.get("max_parallel_blocks"),
+        )
 
     def _pick_strategy(self, tree_id: str) -> str:
         cur = self.storage.conn.cursor()
@@ -221,27 +230,9 @@ class ConDB:
         if not self.has_tree(tree_id):
             raise TreeNotFoundError(f"Tree not found: {tree_id}")
 
-
 def _namespace_entities(tree, entities):
-    """Prefix entity IDs with UUID to avoid collision across trees."""
-    if not entities:
-        return tree, entities
-    ns = uuid.uuid4().hex
-    mapping = {eid: f"{ns}:{eid}" for eid in entities}
-
-    def remap(node):
-        if node.get("entity_id") in mapping:
-            node["entity_id"] = mapping[node["entity_id"]]
-        children = node.get("children")
-        if isinstance(children, dict):
-            for child in children.values():
-                remap(child)
-        elif isinstance(children, list):
-            for child in children:
-                remap(child)
-
-    remap(tree)
-    return tree, {mapping[eid]: payload for eid, payload in entities.items()}
+    """Backward-compatible wrapper around the shared namespacing helper."""
+    return namespace_entities(tree, entities)
 
 
 # ── Module-level convenience ────────────────────────────────────────

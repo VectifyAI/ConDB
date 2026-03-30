@@ -1,13 +1,12 @@
 """Block-level beam search retriever with fixed-block prefix caching."""
 
-from collections import deque
-import hashlib
 import json
 import os
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from jinja2 import Template
 
@@ -15,12 +14,20 @@ from contextdb.config import get_llm_config, get_retriever_config
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 from contextdb.retriever.algorithm.block_cutter import BlockCutter
+from contextdb.retriever.algorithm.block_retriever_filesystem import (
+    BlockRetrieverFilesystemSupport,
+    FilesystemRenderOptions,
+)
+from contextdb.retriever.algorithm.block_retriever_prompt_cache import (
+    DOC_CACHE_STATIC_SEGMENT,
+    FS_CACHE_STATIC_SEGMENT,
+    BlockRetrieverPromptCacheSupport,
+)
 from contextdb.retriever.algorithm.block_types import (
     Block,
     BlockResult,
     BlockRetrievalResult,
     BlockTreePlan,
-    BlockType,
 )
 from contextdb.utils.token_counter import TokenCounter
 
@@ -31,21 +38,6 @@ _DEFAULT_CONFIG = get_retriever_config("block")
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
 BLOCK_FS_PROMPT = Template((_PROMPTS_DIR / "block_fs.jinja").read_text(encoding="utf-8"))
-BLOCK_CURRENT_BLOCK_PROMPT = Template((_PROMPTS_DIR / "block_current_block.jinja").read_text(encoding="utf-8"))
-
-DOC_CACHE_STATIC_SEGMENT = (
-    "You are ranking tree nodes to answer a user question.\n"
-    "Previous blocks are provided for context only — do NOT select nodes from them.\n"
-)
-
-FS_CACHE_STATIC_SEGMENT = (
-    "You are navigating a source code repository's directory tree to find files relevant to a query.\n"
-    "Previous blocks are provided for context only.\n"
-    "RULES:\n"
-    "- STRONGLY prefer [src] tagged files/directories over [test], [doc], or [config]\n"
-    "- Select directories to drill deeper into, or files if they directly match the query\n"
-    "- set done=false unless ALL your selections are leaf files (not directories)\n"
-)
 
 TOOLS = [
     {
@@ -62,6 +54,16 @@ TOOLS = [
     }
 ]
 
+__all__ = [
+    "BlockRetriever",
+    "DOC_CACHE_STATIC_SEGMENT",
+    "FS_CACHE_STATIC_SEGMENT",
+    "FilesystemRenderOptions",
+    "FsRenderOptions",
+]
+
+FsRenderOptions = FilesystemRenderOptions
+
 
 class BlockRetriever(BaseRetriever):
 
@@ -72,10 +74,13 @@ class BlockRetriever(BaseRetriever):
         max_tokens_per_block: int = None,
         cache_current_block: bool = None,
         cache_subtree_block: bool = None,
+        cache_enabled: bool = True,
+        max_parallel_blocks: int = None,
         mode: str = "document",
     ):
         super().__init__(storage, llm)
         self.mode = mode
+        self.cache_enabled = bool(cache_enabled)
 
         self.max_tokens_per_block = (
             max_tokens_per_block if max_tokens_per_block is not None
@@ -95,8 +100,15 @@ class BlockRetriever(BaseRetriever):
         model = getattr(llm, "model", None)
         llm_config = get_llm_config(provider, model) if provider and model else {}
         context_limit = int(llm_config.get("context_limit", 100000))
+        llm_max_concurrent = max(1, int(llm_config.get("max_concurrent", 10) or 10))
         reserve_tokens = int(_DEFAULT_CONFIG.get("cache_window_reserve_tokens", 4096))
         configured_window = int(_DEFAULT_CONFIG.get("cache_window_tokens", 0) or 0)
+        configured_parallel = (
+            max_parallel_blocks
+            if max_parallel_blocks is not None
+            else int(_DEFAULT_CONFIG.get("max_parallel_blocks", 4) or 4)
+        )
+        self.max_parallel_blocks = max(1, min(int(configured_parallel), llm_max_concurrent))
         if configured_window > 0:
             self.cache_window_tokens = configured_window
         else:
@@ -111,8 +123,22 @@ class BlockRetriever(BaseRetriever):
             self.max_tokens_per_block,
             self.min_tokens_per_block,
         )
+        self._filesystem_support = BlockRetrieverFilesystemSupport(self)
+        self._prompt_cache_support = BlockRetrieverPromptCacheSupport(self)
         self._plan_cache: dict[str, BlockTreePlan] = {}
         self._precomputed_tree_id: str = ""
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+
+        for support_name in ("_filesystem_support", "_prompt_cache_support"):
+            support = self.__dict__.get(support_name)
+            if support is None:
+                continue
+            if hasattr(type(support), name):
+                return getattr(support, name)
+        raise AttributeError(f"{type(self).__name__!s} object has no attribute {name!r}")
 
     def retrieve(
         self,
@@ -145,30 +171,10 @@ class BlockRetriever(BaseRetriever):
             self.token_counter.precompute_tree_tokens(self.storage, tree_id)
             self._precomputed_tree_id = tree_id
 
-        plan = self._get_or_create_plan(tree_id)
-        if not plan.blocks:
-            return self._empty_result()
-
-        top_block = plan.blocks[0]
-
-        # Regenerate top block content with fs-aware format
-        top_nodes = self._get_nodes_by_ids(tree_id, top_block.node_ids)
-        if top_nodes:
-            fs_content = self._generate_fs_block_content(top_nodes)
-            top_block = Block(
-                block_id=top_block.block_id,
-                block_type=top_block.block_type,
-                tree_id=top_block.tree_id,
-                depth_start=top_block.depth_start,
-                depth_end=top_block.depth_end,
-                node_ids=top_block.node_ids,
-                total_tokens=top_block.total_tokens,
-                max_tokens=top_block.max_tokens,
-                cached_content=fs_content,
-                content_hash=hashlib.md5(fs_content.encode()).hexdigest(),
-            )
-
-        beams = [{"node_id": root_id, "title": "root", "path": "root"}]
+        beams = self._collapse_fs_beams(
+            tree_id,
+            [{"node_id": root_id, "title": "root", "path": "root"}],
+        )
         selected: list[str] = []
         previous_selected: list[str] = []
         trace: list[dict[str, Any]] = []
@@ -182,92 +188,134 @@ class BlockRetriever(BaseRetriever):
         cache_window_tokens = 0
 
         k = beam_size if beam_size else select_k
-        max_calls = max_turns if max_turns else 20
+        max_rounds = max(1, max_turns) if max_turns else 20
 
-        # Step 1: Process top block
-        allowed_top = [nid for nid in top_block.node_ids if nid != root_id]
-        if not allowed_top:
-            allowed_top = top_block.node_ids
+        result = BlockResult(block_id="", ranked_node_ids=[], selected_node_ids=[], done=False)
 
-        top_cache_segments = self._build_cache_segments(cache_window)
-        result, llm_called, cache_metrics = self._process_block(
-            block=top_block, query=query, input_beams=beams,
-            previous_selected=previous_selected, allowed_node_ids=allowed_top, k=k,
-            cache_segments=top_cache_segments, current_block_content=top_block.cached_content or "",
-            cache_current_block=self.cache_current_block,
-        )
-        total_llm_calls += llm_called
-        cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
-        cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
-        blocks_processed += 1
-        cache_window_tokens = self._append_to_cache_window(cache_window, cache_window_tokens, top_block)
-
-        beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
-        for nid in result.selected_node_ids:
-            if nid not in selected:
-                selected.append(nid)
-        previous_selected = list(result.selected_node_ids)
-
-        block_traces.append({
-            "type": "top", "block_id": top_block.block_id,
-            "depth_range": f"{top_block.depth_start}-{top_block.depth_end}",
-            "nodes": len(top_block.node_ids), "allowed": len(allowed_top),
-        })
-        trace.append({
-            "turn": 0, "block_id": top_block.block_id,
-            "candidates": len(allowed_top),
-            "kept": len(result.ranked_node_ids), "done": result.done,
-        })
-
-        result = self._override_done_if_dirs(result, tree_id, beams)
-
-        # Step 2: Iteratively process subtree blocks
-        turn = 1
-        while not result.done and total_llm_calls < max_calls:
-            if not self._beams_have_children(tree_id, beams):
+        turn = 0
+        while not result.done and turn < max_rounds:
+            if turn > 0 and not self._beams_have_children(tree_id, beams):
                 break
 
-            beam_ids = [b["node_id"] for b in beams if b["node_id"]]
-            subtree_block = self._create_subtree_block_fs(tree_id, beam_ids)
-            if subtree_block is None:
-                break
-
-            allowed_sub = [nid for nid in subtree_block.node_ids if nid not in set(beam_ids)]
-            if not allowed_sub:
-                allowed_sub = subtree_block.node_ids
-
-            sub_cache_segments = self._build_cache_segments(cache_window)
-            result, llm_called, cache_metrics = self._process_block(
-                block=subtree_block, query=query, input_beams=beams,
-                previous_selected=previous_selected, allowed_node_ids=allowed_sub, k=k,
-                cache_segments=sub_cache_segments, current_block_content=subtree_block.cached_content or "",
-                cache_current_block=self.cache_subtree_block,
+            round_label = "top" if turn == 0 else "subtree"
+            block_specs = (
+                self._create_top_block_specs_fs(tree_id, beams[0])
+                if turn == 0
+                else self._create_subtree_block_specs_fs(tree_id, beams)
             )
-            total_llm_calls += llm_called
-            cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
-            cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
-            blocks_processed += 1
-            cache_window_tokens = self._append_to_cache_window(cache_window, cache_window_tokens, subtree_block)
+            if not block_specs:
+                break
 
-            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
-            for nid in result.selected_node_ids:
+            cache_segments = self._build_cache_segments(cache_window)
+            local_k = k if len(block_specs) <= 1 else max(k, 2)
+            cache_current_block = self.cache_current_block if turn == 0 else self.cache_subtree_block
+            block_rows = self._process_fs_block_specs(
+                subtree_specs=block_specs,
+                query=query,
+                previous_selected=previous_selected,
+                k=local_k,
+                cache_segments=cache_segments,
+                cache_current_block=cache_current_block,
+            )
+            if not block_rows:
+                break
+
+            merged_ranked: list[str] = []
+            candidate_count = 0
+
+            for spec, block_result, llm_called, cache_metrics in block_rows:
+                block = spec["block"]
+                total_llm_calls += llm_called
+                cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
+                cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
+                blocks_processed += 1
+
+                candidate_count += len(block.node_ids)
+                merged_ranked.extend(block_result.ranked_node_ids)
+
+                block_trace = {
+                    "type": f"{round_label}_horizontal" if spec["block_count"] > 1 else round_label,
+                    "block_id": block.block_id,
+                    "block_index": spec["block_index"],
+                    "block_count": spec["block_count"],
+                    "nodes": len(block.node_ids),
+                    "allowed": len(block.node_ids),
+                    "tokens": block.total_tokens,
+                }
+                if round_label == "subtree":
+                    block_trace["beam_id"] = spec["beam"]["node_id"]
+                block_traces.append(block_trace)
+
+            merged_ranked = self._merge_unique_ids(merged_ranked)
+            result = BlockResult(
+                block_id=f"fs_{round_label}_{turn}",
+                ranked_node_ids=merged_ranked,
+                selected_node_ids=merged_ranked[:max(1, k)],
+                done=(not merged_ranked) or all(block_result.done for _, block_result, _, _ in block_rows),
+            )
+
+            if len(block_rows) > 1 and len(merged_ranked) > 1:
+                rerank_cache_segments = self._build_cache_segments(cache_window)
+                rerank_block, rerank_allowed_ids = self._build_fs_candidate_block(
+                    tree_id=tree_id,
+                    node_ids=merged_ranked,
+                    block_id=f"fs_{round_label}_rerank_t{turn}",
+                )
+                result, llm_called, cache_metrics = self._process_block(
+                    block=rerank_block,
+                    query=query,
+                    input_beams=beams,
+                    previous_selected=previous_selected,
+                    allowed_node_ids=rerank_allowed_ids,
+                    k=k,
+                    cache_segments=rerank_cache_segments,
+                    current_block_content=rerank_block.cached_content or "",
+                    cache_current_block=False,
+                )
+                total_llm_calls += llm_called
+                cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
+                cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
+                blocks_processed += 1
+
+                block_traces.append({
+                    "type": f"{round_label}_global",
+                    "block_id": rerank_block.block_id,
+                    "nodes": len(rerank_block.node_ids),
+                    "allowed": len(rerank_allowed_ids),
+                    "tokens": rerank_block.total_tokens,
+                })
+
+            previous_selected = list(result.selected_node_ids)
+            for nid in previous_selected:
                 if nid not in selected:
                     selected.append(nid)
-            previous_selected = list(result.selected_node_ids)
-
+            beams = self._collapse_fs_beams(
+                tree_id,
+                self._update_beams(result.ranked_node_ids, tree_id, beam_size),
+            )
+            cache_window_tokens = self._append_fs_selected_blocks(
+                cache_window=cache_window,
+                total_tokens=cache_window_tokens,
+                block_rows=block_rows,
+                beams=beams,
+                cache_block=cache_current_block,
+                pin_block=(turn == 0),
+            )
             result = self._override_done_if_dirs(result, tree_id, beams)
 
-            block_traces.append({
-                "type": "subtree", "block_id": subtree_block.block_id,
-                "nodes": len(subtree_block.node_ids),
-                "allowed": len(allowed_sub),
-                "tokens": subtree_block.total_tokens,
-            })
-            trace.append({
-                "turn": turn, "block_id": subtree_block.block_id,
-                "candidates": len(allowed_sub),
-                "kept": len(result.ranked_node_ids), "done": result.done,
-            })
+            trace_entry = {
+                "turn": turn,
+                "type": f"{round_label}_split" if len(block_rows) > 1 else round_label,
+                "candidates": candidate_count,
+                "reranked_candidates": len(merged_ranked),
+                "kept": len(result.ranked_node_ids),
+                "done": result.done,
+            }
+            if len(block_rows) > 1:
+                trace_entry["blocks"] = len(block_rows)
+            else:
+                trace_entry["block_id"] = block_rows[0][0]["block"].block_id
+            trace.append(trace_entry)
             turn += 1
 
         # Filter out directory nodes — only return files
@@ -291,132 +339,6 @@ class BlockRetriever(BaseRetriever):
             cache_read_tokens=cache_read_tokens, cache_creation_tokens=cache_creation_tokens,
             block_traces=block_traces,
         )
-
-    def _create_subtree_block_fs(self, tree_id: str, beam_node_ids: list[str]) -> Optional[Block]:
-        """Create a subtree block from children of beam nodes."""
-        all_children = []
-        for nid in beam_node_ids:
-            all_children.extend(self._get_direct_children_nodes(tree_id, nid))
-
-        if not all_children:
-            return None
-
-        def _count(node):
-            return self.token_counter.get_cached_count(node["node_id"]) or self.token_counter.count_node_tokens(node)
-
-        total_tokens = sum(_count(c) for c in all_children)
-
-        # If all children fit, use them all; otherwise pack greedily
-        if total_tokens <= self.max_tokens_per_block:
-            nodes_to_pack = all_children
-        else:
-            nodes_to_pack = []
-            packed_tokens = 0
-            for child in all_children:
-                ct = _count(child)
-                if packed_tokens + ct <= self.max_tokens_per_block:
-                    nodes_to_pack.append(child)
-                    packed_tokens += ct
-                elif not nodes_to_pack:
-                    nodes_to_pack.append(child)
-                    break
-            total_tokens = sum(_count(c) for c in nodes_to_pack)
-
-        if not nodes_to_pack:
-            return None
-
-        content = self._generate_fs_block_content(nodes_to_pack)
-        node_ids = [c["node_id"] for c in nodes_to_pack]
-        depths = [c.get("depth", 0) for c in nodes_to_pack]
-        block_id = f"fs_sub_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}"
-        return Block(
-            block_id=block_id,
-            block_type=BlockType.VERTICAL,
-            tree_id=tree_id,
-            depth_start=min(depths) if depths else 0,
-            depth_end=max(depths) if depths else 0,
-            node_ids=node_ids,
-            total_tokens=total_tokens,
-            max_tokens=self.max_tokens_per_block,
-            cached_content=content,
-            content_hash=hashlib.md5(content.encode()).hexdigest(),
-        )
-
-    def _generate_fs_block_content(self, nodes: list[dict]) -> str:
-        """Generate fs-aware block content with rel_path and tags."""
-        lines = []
-        for node in nodes:
-            attrs = node.get("attrs") or {}
-            if isinstance(attrs, str):
-                try:
-                    attrs = json.loads(attrs)
-                except json.JSONDecodeError:
-                    attrs = {}
-
-            nid = node["node_id"]
-            rel_path = attrs.get("rel_path", "")
-            is_dir = attrs.get("is_dir", False)
-            tag = attrs.get("tag", "")
-
-            lines.append(f"- id: {nid}")
-            if rel_path:
-                lines.append(f"  path: {rel_path}")
-            if is_dir:
-                lines.append(f"  type: directory")
-            else:
-                lines.append(f"  type: file")
-            if tag:
-                lines.append(f"  tag: {tag}")
-
-            # Get summary from entity (directory listing)
-            entity = node.get("entity", {})
-            payload = entity.get("payload", {}) if isinstance(entity, dict) else {}
-            summary = payload.get("summary", "")
-            if summary:
-                lines.append(f"  summary: {summary[:200]}")
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def _row_to_node_dict(row) -> dict:
-        node = {
-            "node_id": row["node_id"],
-            "parent_id": row["parent_id"],
-            "depth": row["depth"],
-            "path": row["path"],
-            "attrs_json": row["attrs_json"],
-        }
-        if row["attrs_json"]:
-            node["attrs"] = json.loads(row["attrs_json"])
-        if row["payload_json"]:
-            node["entity"] = {"payload": json.loads(row["payload_json"])}
-        return node
-
-    _NODE_QUERY = """SELECT n.node_id, n.parent_id, n.depth, n.path, n.attrs_json, e.payload_json
-                     FROM nodes n LEFT JOIN entities e ON n.entity_id = e.entity_id"""
-
-    def _get_nodes_by_ids(self, tree_id: str, node_ids: list[str]) -> list[dict]:
-        if not node_ids:
-            return []
-        cursor = self.storage.conn.cursor()
-        results = []
-        for i in range(0, len(node_ids), 500):
-            chunk = node_ids[i:i + 500]
-            placeholders = ",".join("?" for _ in chunk)
-            cursor.execute(
-                f"{self._NODE_QUERY} WHERE n.tree_id = ? AND n.node_id IN ({placeholders}) ORDER BY n.path",
-                (tree_id, *chunk),
-            )
-            results.extend(self._row_to_node_dict(row) for row in cursor.fetchall())
-        return results
-
-    def _get_direct_children_nodes(self, tree_id: str, node_id: str) -> list[dict]:
-        cursor = self.storage.conn.cursor()
-        cursor.execute(
-            f"{self._NODE_QUERY} WHERE n.tree_id = ? AND n.parent_id = ? ORDER BY n.path",
-            (tree_id, node_id),
-        )
-        return [self._row_to_node_dict(row) for row in cursor.fetchall()]
 
     # ── Document mode: fixed-block depth-slice (original) ───────────
 
@@ -536,7 +458,10 @@ class BlockRetriever(BaseRetriever):
                 for group_block in group_blocks:
                     if group_block.block_id in processed_ids:
                         cache_window_tokens = self._append_to_cache_window(
-                            cache_window, cache_window_tokens, group_block,
+                            cache_window,
+                            cache_window_tokens,
+                            group_block,
+                            cache_block=self.cache_current_block,
                         )
                 continue
 
@@ -563,7 +488,9 @@ class BlockRetriever(BaseRetriever):
             cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
             cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
             blocks_processed += 1
-            cache_window_tokens = self._append_to_cache_window(cache_window, cache_window_tokens, block)
+            cache_window_tokens = self._append_to_cache_window(
+                cache_window, cache_window_tokens, block, cache_block=self.cache_current_block,
+            )
 
             for node_id in result.selected_node_ids:
                 if node_id not in selected:
@@ -637,7 +564,8 @@ class BlockRetriever(BaseRetriever):
             return [(result, llm_called, cache_metrics, blk)]
 
         results = []
-        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        max_workers = self._max_parallel_workers(len(tasks))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
                 pool.submit(
                     self._process_block,
@@ -660,6 +588,9 @@ class BlockRetriever(BaseRetriever):
 
         return results
 
+    def _max_parallel_workers(self, task_count: int) -> int:
+        return max(1, min(task_count, self.max_parallel_blocks))
+
     # ---- LLM interaction ----
 
     def _process_block(
@@ -679,29 +610,46 @@ class BlockRetriever(BaseRetriever):
         if not allowed_node_ids:
             return BlockResult(block_id=block.block_id, ranked_node_ids=[], selected_node_ids=[], done=False), 0, empty_metrics
 
-        current_block_prompt = BLOCK_CURRENT_BLOCK_PROMPT.render(
-            block_content=current_block_content or block.cached_content or "",
+        current_block_prompt = self._render_block_cache_segment(
+            block.block_id,
+            current_block_content or block.cached_content or "",
         )
-        cache_segment_parts = list(cache_segments or [])
         non_cached_parts: list[str] = []
-        if current_block_prompt:
-            if cache_current_block:
-                cache_segment_parts.append(current_block_prompt)
-            else:
+        if self.cache_enabled:
+            cache_segment_parts = list(cache_segments or [])
+            if current_block_prompt:
+                if cache_current_block:
+                    cache_segment_parts.append(current_block_prompt)
+                else:
+                    non_cached_parts.append(current_block_prompt)
+            cache_payload = self._build_cache_payload(cache_segment_parts)
+            cache_key = self._build_block_cache_key(block, cache_payload)
+        else:
+            cache_payload = ""
+            cache_key = None
+            if current_block_prompt:
                 non_cached_parts.append(current_block_prompt)
-        cache_payload = self._build_cache_payload(cache_segment_parts)
-        cache_key = self._build_block_cache_key(block, cache_payload)
         non_cached_content = self._cache_payload_to_text(non_cached_parts)
         if not non_cached_content:
             non_cached_content = None
+        response_id_map: dict[str, str] | None = None
         if self.mode == "filesystem":
+            prompt_context = self._build_fs_prompt_context(
+                tree_id=block.tree_id,
+                block=block,
+                allowed_node_ids=allowed_node_ids,
+                input_beams=input_beams,
+                previous_selected=previous_selected,
+            )
             dynamic_prompt = BLOCK_FS_PROMPT.render(
                 query=query,
-                previous_selected=previous_selected,
-                input_beams=input_beams,
-                allowed_node_ids=allowed_node_ids,
+                previous_selected=prompt_context["previous_selected"],
+                input_beams=prompt_context["input_beams"],
+                selection_mode=prompt_context["selection_mode"],
+                selection_aliases=prompt_context["selection_aliases"],
                 k=k,
             )
+            response_id_map = prompt_context["alias_to_node_id"]
         else:
             dynamic_prompt = BLOCK_PROMPT.render(
                 query=query,
@@ -711,7 +659,7 @@ class BlockRetriever(BaseRetriever):
                 k=k,
             )
         prefix_tokens = self.token_counter.count_text_tokens(self._cache_payload_to_text(cache_payload))
-        current_tokens = 0 if cache_current_block else self.token_counter.count_text_tokens(current_block_prompt)
+        current_tokens = 0 if (self.cache_enabled and cache_current_block) else self.token_counter.count_text_tokens(current_block_prompt)
         dynamic_tokens = self.token_counter.count_text_tokens(dynamic_prompt)
         est_total_tokens = prefix_tokens + current_tokens + dynamic_tokens
         log.info(
@@ -724,7 +672,18 @@ class BlockRetriever(BaseRetriever):
             len(allowed_node_ids),
         )
 
-        if hasattr(self.llm, "chat_with_cache"):
+        if not self.cache_enabled:
+            call_started = time.perf_counter()
+            full_prompt_parts = []
+            if non_cached_content:
+                full_prompt_parts.append(non_cached_content)
+            full_prompt_parts.append(dynamic_prompt)
+            full_prompt = "\n\n".join(part for part in full_prompt_parts if part)
+            resp = self.llm.chat(
+                [{"role": "user", "content": full_prompt}],
+                tools=TOOLS,
+            )
+        elif hasattr(self.llm, "chat_with_cache"):
             call_started = time.perf_counter()
             cache_call_kwargs = {
                 "tools": TOOLS,
@@ -801,7 +760,11 @@ class BlockRetriever(BaseRetriever):
             int(output_tokens),
         )
 
-        ranked_ids, done = self._parse_llm_response(resp, allowed_node_ids)
+        ranked_ids, done = self._parse_llm_response(
+            resp,
+            allowed_node_ids,
+            response_id_map=response_id_map,
+        )
 
         result = BlockResult(
             block_id=block.block_id,
@@ -811,91 +774,6 @@ class BlockRetriever(BaseRetriever):
             usage=usage,
         )
         return result, 1, cache_metrics
-
-    def _build_block_cache_key(self, block: Block, cache_payload: str | list[str] = "") -> str:
-        cache_text = self._cache_payload_to_text(cache_payload)
-        identity = hashlib.md5(cache_text.encode()).hexdigest() if cache_text else (block.content_hash or block.block_id)
-        salt = os.getenv("CONDB_CACHE_KEY_SALT", "").strip()
-        suffix = f":{salt}" if salt else ""
-        return f"condb:block:{self.mode}:{identity}{suffix}"
-
-    def _build_cache_payload(self, cache_segments: list[str]) -> str | list[str]:
-        if not cache_segments:
-            return ""
-        # Anthropic supports block-level prompt cache checkpoints.
-        if getattr(self.llm, "provider", None) == "anthropic":
-            return cache_segments
-        # Other providers use a single flattened prefix string.
-        return self._cache_payload_to_text(cache_segments)
-
-    @staticmethod
-    def _cache_payload_to_text(cache_payload: str | list[str]) -> str:
-        if isinstance(cache_payload, list):
-            return "\n\n".join(s for s in cache_payload if s)
-        return cache_payload or ""
-
-    def _cache_static_segment(self) -> str:
-        return FS_CACHE_STATIC_SEGMENT if self.mode == "filesystem" else DOC_CACHE_STATIC_SEGMENT
-
-    def _build_cache_segments(self, cache_window: deque[dict[str, Any]]) -> list[str]:
-        static_segment = self._cache_static_segment()
-        entries = [entry["content"] for entry in cache_window if entry.get("content")]
-        if not entries:
-            return [static_segment]
-
-        max_checkpoints = max(1, self.cache_window_checkpoints)
-        max_entry_segments = max(0, max_checkpoints - 1)
-
-        if max_entry_segments == 0:
-            return [static_segment + "\n\n" + "\n\n".join(entries)]
-
-        if len(entries) <= max_entry_segments:
-            return [static_segment, *entries]
-
-        merge_count = len(entries) - max_entry_segments + 1
-        merged_head = "\n\n".join(entries[:merge_count])
-        tail = entries[merge_count:]
-        return [static_segment, merged_head, *tail]
-
-    def _append_to_cache_window(
-        self, cache_window: deque[dict[str, Any]], total_tokens: int, block: Block,
-    ) -> int:
-        if not block.cached_content:
-            return total_tokens
-
-        entry_content = f"=== BLOCK {block.block_id} ===\n\n{block.cached_content}"
-        entry_tokens = self.token_counter.count_text_tokens(entry_content)
-        cache_window.append({
-            "block_id": block.block_id,
-            "content": entry_content,
-            "tokens": entry_tokens,
-        })
-        total_tokens += entry_tokens
-
-        dropped: list[str] = []
-        while len(cache_window) > 1 and total_tokens > self.cache_window_tokens:
-            removed = cache_window.popleft()
-            total_tokens -= int(removed["tokens"])
-            dropped.append(removed["block_id"])
-
-        if dropped:
-            log.info(
-                "cache_window_trim dropped=%s remaining=%d total_tokens=%d limit=%d",
-                dropped,
-                len(cache_window),
-                total_tokens,
-                self.cache_window_tokens,
-            )
-        return total_tokens
-
-    def _parse_llm_response(self, resp, valid_node_ids):
-        valid_set = set(valid_node_ids)
-        for block in resp.get("content", []):
-            if block.get("type") == "tool_use" and block.get("name") == "rank":
-                ranked_ids = block.get("input", {}).get("selected", []) or []
-                done = bool(block.get("input", {}).get("done", False))
-                return [nid for nid in ranked_ids if nid in valid_set], done
-        raise ValueError("LLM did not return a rank tool call")
 
     # ---- beam management ----
 
@@ -910,10 +788,14 @@ class BlockRetriever(BaseRetriever):
                 except json.JSONDecodeError:
                     attrs = {}
 
+            if self.mode == "filesystem":
+                beam_path = attrs.get("rel_path", "")
+            else:
+                beam_path = node.path if node else ""
             new_beams.append({
                 "node_id": node_id,
                 "title": attrs.get("title", ""),
-                "path": node.path if node else "",
+                "path": beam_path,
             })
             if beam_size and len(new_beams) >= beam_size:
                 break

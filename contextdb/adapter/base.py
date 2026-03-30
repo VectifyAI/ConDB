@@ -11,8 +11,10 @@ class BaseAdapter(ABC):
         pass
 
 
-class PageIndexAdapter(BaseAdapter):
-    def convert(self, pageindex_json: dict[str, Any]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+class DocumentTreeAdapter(BaseAdapter):
+    """Adapter for pageindex-compatible hierarchical document trees."""
+
+    def convert(self, document_json: dict[str, Any]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         entities = {}
 
         def extract_node(node: dict[str, Any]) -> dict[str, Any]:
@@ -54,37 +56,59 @@ class PageIndexAdapter(BaseAdapter):
         root_entity_id = "__root__"
         entities[root_entity_id] = {
             "type": "document",
-            "title": pageindex_json.get("doc_name", "Document"),
-            "description": pageindex_json.get("doc_description", ""),
+            "title": document_json.get("doc_name", "Document"),
+            "description": document_json.get("doc_description", ""),
             "metadata": {
-                "doc_name": pageindex_json.get("doc_name"),
-                "doc_description": pageindex_json.get("doc_description"),
+                "doc_name": document_json.get("doc_name"),
+                "doc_description": document_json.get("doc_description"),
             },
         }
 
         tree_structure = {
             "type": "object",
             "attrs": {
-                "doc_name": pageindex_json.get("doc_name"),
-                "doc_description": pageindex_json.get("doc_description"),
+                "doc_name": document_json.get("doc_name"),
+                "doc_description": document_json.get("doc_description"),
             },
             "entity_id": root_entity_id,
-            "children": {n["node_id"]: extract_node(n) for n in pageindex_json.get("structure", [])},
+            "children": {n["node_id"]: extract_node(n) for n in document_json.get("structure", [])},
         }
 
         return tree_structure, entities
 
 
+# Backward-compatible alias for the existing schema name.
+PageIndexAdapter = DocumentTreeAdapter
+
+
 class ChatIndexAdapter(BaseAdapter):
     def convert(self, chatindex_json: dict[str, Any]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         entities = {}
+        root_entity_id = "__root__"
+        conversation_title = chatindex_json.get("conversation_id") or "Conversation"
+        entities[root_entity_id] = {
+            "type": "conversation",
+            "title": conversation_title,
+            "conversation_id": chatindex_json.get("conversation_id"),
+            "participants": chatindex_json.get("participants"),
+            "metadata": {
+                "conversation_id": chatindex_json.get("conversation_id"),
+                "participants": chatindex_json.get("participants"),
+            },
+        }
 
         def extract_topic(topic: dict[str, Any]) -> dict[str, Any]:
+            topic_id = topic.get("node_id")
             messages = topic.get("messages", [])
-            if messages:
-                for i, msg in enumerate(messages):
-                    msg_id = f"msg_{topic.get('node_id')}_{i}"
-                    entities[msg_id] = {"type": "message", "role": msg.get("role"), "content": msg.get("content")}
+
+            entities[topic_id] = {
+                "type": "topic",
+                "title": topic.get("title"),
+                "summary": topic.get("summary", ""),
+                "messages": messages,
+                "msg_start": topic.get("msg_start"),
+                "msg_end": topic.get("msg_end"),
+            }
 
             children = None
             subtopics = topic.get("subtopics", [])
@@ -93,22 +117,24 @@ class ChatIndexAdapter(BaseAdapter):
 
             return {
                 "type": "object" if children else "leaf",
-                "summary": topic.get("summary"),
                 "attrs": {
                     "title": topic.get("title"),
+                    "summary": topic.get("summary"),
                     "msg_start": topic.get("msg_start"),
                     "msg_end": topic.get("msg_end"),
                 },
-                "entity_id": topic.get("node_id"),
+                "entity_id": topic_id,
                 "children": children,
             }
 
         tree_structure = {
             "type": "object",
             "attrs": {
+                "title": conversation_title,
                 "conversation_id": chatindex_json.get("conversation_id"),
                 "participants": chatindex_json.get("participants"),
             },
+            "entity_id": root_entity_id,
             "children": {t["node_id"]: extract_topic(t) for t in chatindex_json.get("topics", [])},
         }
 

@@ -314,10 +314,38 @@ class TreeDB:
 
     def delete_tree(self, tree_id: str):
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM nodes WHERE tree_id = ?", (tree_id,))
-        cursor.execute("DELETE FROM trees WHERE tree_id = ?", (tree_id,))
-        self.conn.commit()
-        log.info(f"delete_tree: {tree_id[:8]}")
+        try:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT DISTINCT entity_id FROM nodes WHERE tree_id = ? AND entity_id IS NOT NULL",
+                (tree_id,),
+            )
+            entity_ids = [row["entity_id"] for row in cursor.fetchall()]
+
+            cursor.execute("DELETE FROM nodes WHERE tree_id = ?", (tree_id,))
+            cursor.execute("DELETE FROM trees WHERE tree_id = ?", (tree_id,))
+
+            for i in range(0, len(entity_ids), 500):
+                chunk = entity_ids[i:i + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                cursor.execute(
+                    f"""
+                    DELETE FROM entities
+                    WHERE entity_id IN ({placeholders})
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM nodes
+                          WHERE nodes.entity_id = entities.entity_id
+                      )
+                    """,
+                    chunk,
+                )
+
+            self.conn.commit()
+            log.info(f"delete_tree: {tree_id[:8]}")
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def close(self):
         self.conn.close()

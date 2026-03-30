@@ -1,22 +1,30 @@
 import asyncio
+import inspect
 import json
-import uuid
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from contextdb.adapter.base import ChatIndexAdapter, GenericAdapter, PageIndexAdapter
+from contextdb.adapter.base import ChatIndexAdapter, DocumentTreeAdapter, GenericAdapter
+from contextdb.api._shared import (
+    build_context_tree_block_retriever,
+    namespace_entities,
+    resolve_context_tree_query,
+)
 from contextdb.core.storage import StorageProtocol, TreeDB
 from contextdb.llm import LLMProtocol
 from contextdb.retriever import (
     BaseRetriever,
     BeamRetriever,
+    BlockRetrievalResult,
     BlockRetriever,
     LegacyBlockRetriever,
-    BlockRetrievalResult,
     ManualRetriever,
     RetrievalResult,
     TreeFormatter,
 )
+
+TreeBuilder = Callable[..., dict[str, Any] | Awaitable[dict[str, Any]]]
 
 
 class ContextTree:
@@ -24,60 +32,99 @@ class ContextTree:
         self.storage = storage or TreeDB(db_path)
         self.llm = llm
         self.formatter = TreeFormatter(self.storage)
-        self.adapters = {"pageindex": PageIndexAdapter(), "chatindex": ChatIndexAdapter(), "generic": GenericAdapter()}
+        document_adapter = DocumentTreeAdapter()
+        self.adapters = {
+            "document": document_adapter,
+            "pageindex": document_adapter,
+            "chatindex": ChatIndexAdapter(),
+            "generic": GenericAdapter(),
+        }
 
-    def index_markdown_file(self, md_path: str) -> str:
-        try:
-            from pageindex import md_to_tree
-        except ImportError as e:
-            raise ImportError("Install pageindex: pip install pageindex") from e
-
-        path = Path(md_path)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {md_path}")
-
-        result = asyncio.run(md_to_tree(str(path)))
-        return self.index_pageindex(result)
-
-    def index_pdf_file(self, pdf_path: str) -> str:
-        try:
-            from pageindex import page_index_main
-            from pageindex.utils import ConfigLoader
-        except ImportError as e:
-            raise ImportError("Install pageindex: pip install pageindex") from e
-
-        path = Path(pdf_path)
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {pdf_path}")
-
-        config = ConfigLoader().load(
-            {
-                "toc_check_page_num": 20,
-                "max_page_num_each_node": 10,
-                "max_token_num_each_node": 20000,
-                "if_add_node_id": "yes",
-                "if_add_node_summary": "yes",
-                "if_add_doc_description": "no",
-                "if_add_node_text": "no",
-            }
+    def index_markdown_file(self, md_path: str, *, tree_builder: Optional[TreeBuilder] = None, **builder_kwargs) -> str:
+        return self._index_source_file(
+            md_path,
+            source_type="markdown",
+            tree_builder=tree_builder,
+            builder_kwargs=builder_kwargs,
         )
-        result = page_index_main(str(path), config)
-        return self.index_pageindex(result)
+
+    def index_pdf_file(self, pdf_path: str, *, tree_builder: Optional[TreeBuilder] = None, **builder_kwargs) -> str:
+        return self._index_source_file(
+            pdf_path,
+            source_type="pdf",
+            tree_builder=tree_builder,
+            builder_kwargs=builder_kwargs,
+        )
+
+    def _index_source_file(
+        self,
+        file_path: str,
+        *,
+        source_type: str,
+        tree_builder: Optional[TreeBuilder],
+        builder_kwargs: Optional[dict[str, Any]] = None,
+    ) -> str:
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        document_tree = self._build_document_tree(
+            path,
+            source_type=source_type,
+            tree_builder=tree_builder,
+            builder_kwargs=builder_kwargs or {},
+        )
+        return self.index_document_tree(document_tree)
+
+    def _build_document_tree(
+        self,
+        path: Path,
+        *,
+        source_type: str,
+        tree_builder: Optional[TreeBuilder],
+        builder_kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        if tree_builder is None:
+            raise ValueError(
+                f"No {source_type} tree_builder provided. "
+                "ConDB does not import pageindex directly. "
+                "Generate a pageindex-compatible tree externally and call index_document_tree()/index_pageindex(), "
+                "or pass tree_builder=..."
+            )
+
+        result = tree_builder(str(path), **builder_kwargs)
+        if inspect.isawaitable(result):
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                result = asyncio.run(result)
+            else:
+                raise RuntimeError(
+                    "Cannot run an async tree_builder inside an active event loop. "
+                    "Await it yourself and pass the resulting tree to index_document_tree()."
+                )
+
+        if not isinstance(result, dict):
+            raise TypeError(f"{source_type} tree_builder must return a dict, got {type(result).__name__}")
+        return result
+
+    def index_document_tree(self, data: dict[str, Any]) -> str:
+        tree, entities = self.adapters["document"].convert(data)
+        tree, entities = namespace_entities(tree, entities)
+        return self.storage.ingest_tree(tree, entities=entities)
 
     def index_pageindex(self, data: dict[str, Any]) -> str:
-        tree, entities = self.adapters["pageindex"].convert(data)
-        tree, entities = self._namespace_entities(tree, entities)
-        return self.storage.ingest_tree(tree, entities=entities)
+        return self.index_document_tree(data)
 
     def index_chatindex(self, data: dict[str, Any]) -> str:
         tree, entities = self.adapters["chatindex"].convert(data)
-        tree, entities = self._namespace_entities(tree, entities)
+        tree, entities = namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
     def index_generic(self, data: dict[str, Any], adapter: str = "generic") -> str:
         adapter_instance = self.adapters.get(adapter, self.adapters["generic"])
         tree, entities = adapter_instance.convert(data)
-        tree, entities = self._namespace_entities(tree, entities)
+        tree, entities = namespace_entities(tree, entities)
         return self.storage.ingest_tree(tree, entities=entities)
 
     def query(
@@ -100,7 +147,8 @@ class ContextTree:
             use_legacy_block_retriever: Use LegacyBlockRetriever when use_block_retriever=True
             **kwargs: Additional arguments passed to retriever.retrieve()
                 For BeamRetriever: beam_size, max_turns, select_k
-                For BlockRetriever: beam_size, max_turns, select_k, max_tokens_per_block
+                For BlockRetriever: beam_size, max_turns, select_k, max_tokens_per_block,
+                    cache_enabled, max_parallel_blocks
 
         Returns:
             RetrievalResult or BlockRetrievalResult with selected nodes and contents
@@ -108,20 +156,18 @@ class ContextTree:
         if not self.llm:
             raise ValueError("LLM client not provided")
 
-        if retriever is None:
-            if use_block_retriever:
-                block_kwargs = {}
-                for key in ["max_tokens_per_block"]:
-                    if key in kwargs:
-                        block_kwargs[key] = kwargs.pop(key)
-                if use_legacy_block_retriever:
-                    retriever = LegacyBlockRetriever(self.storage, self.llm, **block_kwargs)
-                else:
-                    retriever = BlockRetriever(self.storage, self.llm, **block_kwargs)
-            else:
-                retriever = BeamRetriever(self.storage, self.llm)
-
-        return retriever.retrieve(tree_id, question, **kwargs)
+        retriever, query_kwargs = resolve_context_tree_query(
+            self.storage,
+            self.llm,
+            retriever=retriever,
+            use_block_retriever=use_block_retriever,
+            use_legacy_block_retriever=use_legacy_block_retriever,
+            beam_cls=BeamRetriever,
+            block_cls=BlockRetriever,
+            legacy_block_cls=LegacyBlockRetriever,
+            kwargs=kwargs,
+        )
+        return retriever.retrieve(tree_id, question, **query_kwargs)
 
     def query_with_blocks(
         self,
@@ -133,10 +179,14 @@ class ContextTree:
         if not self.llm:
             raise ValueError("LLM client not provided")
 
-        retriever = BlockRetriever(
+        kwargs.pop("view_depth", None)
+        retriever = build_context_tree_block_retriever(
             self.storage,
             self.llm,
             max_tokens_per_block=max_tokens_per_block,
+            cache_enabled=kwargs.pop("cache_enabled", True),
+            max_parallel_blocks=kwargs.pop("max_parallel_blocks", None),
+            block_cls=BlockRetriever,
         )
         return retriever.retrieve(tree_id, question, **kwargs)
 
@@ -150,10 +200,15 @@ class ContextTree:
         if not self.llm:
             raise ValueError("LLM client not provided")
 
-        retriever = LegacyBlockRetriever(
+        kwargs.pop("view_depth", None)
+        kwargs.pop("cache_enabled", None)
+        kwargs.pop("max_parallel_blocks", None)
+        retriever = build_context_tree_block_retriever(
             self.storage,
             self.llm,
             max_tokens_per_block=max_tokens_per_block,
+            legacy=True,
+            legacy_block_cls=LegacyBlockRetriever,
         )
         return retriever.retrieve(tree_id, question, **kwargs)
 
@@ -199,27 +254,7 @@ class ContextTree:
     def _namespace_entities(
         tree: dict[str, Any], entities: Optional[dict[str, dict[str, Any]]], namespace: Optional[str] = None
     ):
-        if not entities:
-            return tree, entities
-
-        ns = namespace or uuid.uuid4().hex
-        mapping = {eid: f"{ns}:{eid}" for eid in entities.keys()}
-
-        def remap(node: dict[str, Any]):
-            eid = node.get("entity_id")
-            if eid in mapping:
-                node["entity_id"] = mapping[eid]
-            children = node.get("children")
-            if isinstance(children, dict):
-                for child in children.values():
-                    remap(child)
-            elif isinstance(children, list):
-                for child in children:
-                    remap(child)
-
-        remap(tree)
-        new_entities = {mapping[eid]: payload for eid, payload in entities.items()}
-        return tree, new_entities
+        return namespace_entities(tree, entities, namespace=namespace)
 
     def __enter__(self):
         return self

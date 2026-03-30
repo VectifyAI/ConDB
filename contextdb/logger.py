@@ -34,7 +34,7 @@ logging.root.addHandler(handler)
 logging.root.setLevel(getattr(logging, LOG_LEVEL, logging.DEBUG))
 
 # Silence noisy third-party loggers
-for name in ["httpcore", "httpx", "openai", "anthropic", "urllib3"]:
+for name in ["LiteLLM", "anthropic", "asyncio", "httpcore", "httpx", "openai", "urllib3"]:
     logging.getLogger(name).setLevel(logging.WARNING)
 
 

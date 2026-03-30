@@ -1,3 +1,9 @@
-from contextdb.adapter.base import BaseAdapter, ChatIndexAdapter, GenericAdapter, PageIndexAdapter
+from contextdb.adapter.base import BaseAdapter, ChatIndexAdapter, DocumentTreeAdapter, GenericAdapter, PageIndexAdapter
 
-__all__ = ["BaseAdapter", "PageIndexAdapter", "ChatIndexAdapter", "GenericAdapter"]
+__all__ = [
+    "BaseAdapter",
+    "DocumentTreeAdapter",
+    "PageIndexAdapter",
+    "ChatIndexAdapter",
+    "GenericAdapter",
+]

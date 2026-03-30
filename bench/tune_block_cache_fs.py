@@ -4,11 +4,10 @@
 import argparse
 import json
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -204,7 +203,7 @@ def main():
     )
     parser.add_argument(
         "--scenarios",
-        default="context7,arxiv,repo",
+        default="context7",
         help="Comma-separated scenario names under bench/filesystem",
     )
     parser.add_argument(

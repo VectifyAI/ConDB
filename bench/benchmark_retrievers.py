@@ -10,13 +10,11 @@ Usage:
         python bench/benchmark_retrievers.py --mode doc --doc <document.json> --config <queries.json>
 
     Filesystem mode:
-        python bench/benchmark_retrievers.py --mode fs --repo-dir <path> --queries-config <queries.json>
+        python bench/benchmark_retrievers.py --mode fs --fs-root <path> --queries-config <queries.json>
 
 Examples:
     python bench/benchmark_retrievers.py --mode doc --doc examples/large_doc.json --config bench/queries.json
-    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/repo --queries-config bench/filesystem/repo/queries.json
-    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/arxiv --queries-config bench/filesystem/arxiv/queries.json
-    python bench/benchmark_retrievers.py --mode fs --repo-dir bench/filesystem/context7 --queries-config bench/filesystem/context7/queries.json
+    python bench/benchmark_retrievers.py --mode fs --fs-root bench/filesystem/context7 --queries-config bench/filesystem/context7/queries.json
 """
 
 import argparse
@@ -27,7 +25,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -38,6 +36,8 @@ from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 
 ALGORITHM_DIR = Path(__file__).parent.parent / "contextdb/retriever/algorithm"
 EXCLUDED_FILES = {"base_retriever.py", "block_cutter.py", "block_types.py", "__init__.py"}
+FS_HIT_LEVELS = (1, 3, 5, 10)
+FS_DISPLAY_HIT_LEVELS = (1, 10)
 
 
 def discover_retrievers() -> dict[str, type]:
@@ -91,7 +91,6 @@ class RetrieverMetrics:
     # FS-specific
     retrieved_files: Optional[list[str]] = None
     hit_at: Optional[dict[int, bool]] = None
-    mrr: Optional[float] = None
 
 
 @dataclass
@@ -145,11 +144,9 @@ class BenchmarkResult:
 
             # FS hit metrics
             if self.mode == "fs":
-                for k in [1, 3, 5, 10]:
+                for k in FS_HIT_LEVELS:
                     hits = [r for r in valid if r.hit_at and k in r.hit_at]
                     s[f"hit@{k}"] = sum(1 for r in hits if r.hit_at[k]) / len(hits) if hits else 0
-                mrr_vals = [r.mrr for r in valid if r.mrr is not None]
-                s["mrr"] = sum(mrr_vals) / len(mrr_vals) if mrr_vals else 0
 
             summary[name] = s
 
@@ -205,25 +202,21 @@ def build_entities(flat_list: list) -> dict:
 # ── FS Mode Helpers ─────────────────────────────────────────────────
 
 
-def compute_fs_metrics(retrieved_files: list[str], ground_truth: list[str]) -> tuple[dict[int, bool], float]:
-    """Returns (hit_at_k_dict, mrr)."""
+def compute_fs_metrics(retrieved_files: list[str], ground_truth: list[str]) -> dict[int, bool]:
+    """Returns hit-at-k booleans for the retrieved file list."""
     gt_set = set(ground_truth)
     hit_at = {}
-    first_hit_rank = None
 
     for i, f in enumerate(retrieved_files):
-        if f in gt_set and first_hit_rank is None:
-            first_hit_rank = i + 1
-        for k in [1, 3, 5, 10]:
+        for k in FS_HIT_LEVELS:
             if i < k and f in gt_set:
                 hit_at.setdefault(k, False)
                 hit_at[k] = True
 
-    for k in [1, 3, 5, 10]:
+    for k in FS_HIT_LEVELS:
         hit_at.setdefault(k, False)
 
-    mrr = 1.0 / first_hit_rank if first_hit_rank else 0.0
-    return hit_at, mrr
+    return hit_at
 
 
 def extract_file_paths(db: TreeDB, tree_id: str, node_ids: list[str]) -> list[str]:
@@ -299,10 +292,9 @@ def run_retriever(
 
         if mode == "fs" and db and ground_truth:
             retrieved_files = extract_file_paths(db, tree_id, result.nodes)
-            hit_at, mrr = compute_fs_metrics(retrieved_files, ground_truth)
+            hit_at = compute_fs_metrics(retrieved_files, ground_truth)
             metrics.retrieved_files = retrieved_files
             metrics.hit_at = hit_at
-            metrics.mrr = mrr
 
         return metrics
     except Exception as e:
@@ -328,7 +320,7 @@ def run_benchmark(
     *,
     mode: str = "doc",
     doc_path: Path = None,
-    repo_dir: Path = None,
+    fs_root: Path = None,
     query_list: list = None,
     queries_with_gt: list[dict] = None,
     queries_config_path: Path = None,
@@ -382,13 +374,13 @@ def run_benchmark(
         ignore_patterns = list(DEFAULT_IGNORE_PATTERNS)
         effective_queries_config = queries_config_path
         if effective_queries_config is None:
-            default_queries = repo_dir / "queries.json"
+            default_queries = fs_root / "queries.json"
             if default_queries.exists():
                 effective_queries_config = default_queries
 
         if effective_queries_config is not None:
             try:
-                rel_cfg = str(effective_queries_config.resolve().relative_to(repo_dir.resolve())).replace("\\", "/")
+                rel_cfg = str(effective_queries_config.resolve().relative_to(fs_root.resolve())).replace("\\", "/")
                 ignore_patterns.append(rel_cfg)
             except ValueError:
                 pass
@@ -396,11 +388,11 @@ def run_benchmark(
         if fs_query_order == "prefix":
             queries_with_gt = reorder_fs_queries_by_prefix(queries_with_gt)
 
-        adapter = FileSystemAdapter(str(repo_dir), ignore_patterns=ignore_patterns)
+        adapter = FileSystemAdapter(str(fs_root), ignore_patterns=ignore_patterns)
         tree_structure, entities = adapter.convert()
         queries = [q["query"] for q in queries_with_gt]
         ground_truths = [q["ground_truth"] for q in queries_with_gt]
-        doc_info = str(repo_dir)
+        doc_info = str(fs_root)
         sections_count = len(entities)
 
         def make_tree(db):
@@ -462,7 +454,7 @@ def run_benchmark(
                     parts.append(f"Cache read: {metrics.cache_read_tokens:,}")
                 if mode == "fs" and metrics.hit_at:
                     parts.append(f"Hit@1: {metrics.hit_at.get(1, False)}")
-                    parts.append(f"MRR: {metrics.mrr:.3f}")
+                    parts.append(f"Hit@10: {metrics.hit_at.get(10, False)}")
                     if metrics.retrieved_files:
                         parts.append(f"Files: {metrics.retrieved_files[:5]}")
                 print(f"    {', '.join(parts)}")
@@ -486,7 +478,7 @@ def print_summary(result: BenchmarkResult):
     print(title)
     print("=" * 70)
     print(f"\nModel: {Config.LLM_PROVIDER}/{Config.LLM_MODEL}")
-    print(f"{'Repository' if result.mode == 'fs' else 'Document'}: {result.document_path}")
+    print(f"{'Filesystem Root' if result.mode == 'fs' else 'Document'}: {result.document_path}")
     print(f"Entities: {result.document_sections}")
     print(f"Queries: {summary['queries_run']}")
     print(f"Retrievers: {', '.join(result.retriever_names)}")
@@ -508,16 +500,12 @@ def print_summary(result: BenchmarkResult):
         rows.append(row)
 
     if result.mode == "fs":
-        for k in [1, 3, 5, 10]:
+        for k in FS_DISPLAY_HIT_LEVELS:
             row = [f"Hit@{k}"]
             for name in result.retriever_names:
                 val = summary[name].get(f"hit@{k}", 0)
                 row.append(f"{val:.1%}")
             rows.append(row)
-        mrr_row = ["MRR"]
-        for name in result.retriever_names:
-            mrr_row.append(f"{summary[name].get('mrr', 0):.3f}")
-        rows.append(mrr_row)
 
     col_widths = [max(len(str(row[i])) for row in [headers] + rows) for i in range(len(headers))]
     header_line = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
@@ -549,8 +537,8 @@ def main():
                         help="Path to document JSON file (doc mode)")
     parser.add_argument("--config", "-c", type=Path,
                         help="Path to queries config JSON (doc mode)")
-    parser.add_argument("--repo-dir", type=Path,
-                        help="Path to repository directory (fs mode)")
+    parser.add_argument("--fs-root", type=Path,
+                        help="Path to filesystem root directory (fs mode)")
     parser.add_argument("--queries-config", type=Path,
                         help="Path to queries+ground_truth JSON (fs mode)")
     parser.add_argument("--output", "-o", choices=["text", "json"], default="text")
@@ -589,7 +577,8 @@ def main():
         config = load_config(args.config)
         queries = config.get("queries", [])
         if not queries:
-            print("ERROR: No queries in config"); sys.exit(1)
+            print("ERROR: No queries in config")
+            sys.exit(1)
 
         print("=" * 70)
         print("Retriever Benchmark (DOC mode)")
@@ -603,8 +592,8 @@ def main():
         )
 
     elif args.mode == "fs":
-        if not args.repo_dir or not args.repo_dir.exists():
-            print("ERROR: --repo-dir required and must exist for fs mode")
+        if not args.fs_root or not args.fs_root.exists():
+            print("ERROR: --fs-root required and must exist for fs mode")
             sys.exit(1)
         if not args.queries_config or not args.queries_config.exists():
             print("ERROR: --queries-config required and must exist for fs mode")
@@ -612,13 +601,14 @@ def main():
         config = load_config(args.queries_config)
         queries_with_gt = config.get("queries", [])
         if not queries_with_gt:
-            print("ERROR: No queries in config"); sys.exit(1)
+            print("ERROR: No queries in config")
+            sys.exit(1)
 
         print("=" * 70)
         print("Retriever Benchmark (FS mode)")
         print("=" * 70)
         result = run_benchmark(
-            mode="fs", repo_dir=args.repo_dir, queries_with_gt=queries_with_gt,
+            mode="fs", fs_root=args.fs_root, queries_with_gt=queries_with_gt,
             queries_config_path=args.queries_config,
             beam_size=args.beam_size, max_turns=args.max_turns,
             clear_cache=args.clear_cache,

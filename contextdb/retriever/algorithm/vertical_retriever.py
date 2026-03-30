@@ -7,12 +7,11 @@ This variant expands each beam independently in FS mode:
 """
 
 from collections import deque
-import hashlib
 import json
 from typing import Any
 
 from contextdb.retriever.algorithm.block_retriever import BlockRetriever
-from contextdb.retriever.algorithm.block_types import Block, BlockRetrievalResult
+from contextdb.retriever.algorithm.block_types import BlockRetrievalResult
 
 
 class VerticalRetriever(BlockRetriever):
@@ -30,28 +29,11 @@ class VerticalRetriever(BlockRetriever):
             self.token_counter.precompute_tree_tokens(self.storage, tree_id)
             self._precomputed_tree_id = tree_id
 
-        plan = self._get_or_create_plan(tree_id)
-        if not plan.blocks:
-            return self._empty_result()
-
-        top_block = plan.blocks[0]
-        top_nodes = self._get_nodes_by_ids(tree_id, top_block.node_ids)
-        if top_nodes:
-            fs_content = self._generate_fs_block_content(top_nodes)
-            top_block = Block(
-                block_id=top_block.block_id,
-                block_type=top_block.block_type,
-                tree_id=top_block.tree_id,
-                depth_start=top_block.depth_start,
-                depth_end=top_block.depth_end,
-                node_ids=top_block.node_ids,
-                total_tokens=top_block.total_tokens,
-                max_tokens=top_block.max_tokens,
-                cached_content=fs_content,
-                content_hash=hashlib.md5(fs_content.encode()).hexdigest(),
-            )
-
         beams = [{"node_id": root_id, "title": "root", "path": "root"}]
+        top_specs = self._create_top_block_specs_fs(tree_id, beams[0])
+        if not top_specs:
+            return self._empty_result()
+        top_block = top_specs[0]["block"]
         selected: list[str] = []
         previous_selected: list[str] = []
         trace: list[dict[str, Any]] = []
@@ -88,7 +70,13 @@ class VerticalRetriever(BlockRetriever):
         cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
         cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
         blocks_processed += 1
-        cache_window_tokens = self._append_to_cache_window(cache_window, cache_window_tokens, top_block)
+        cache_window_tokens = self._append_to_cache_window(
+            cache_window,
+            cache_window_tokens,
+            top_block,
+            cache_block=self.cache_current_block,
+            pin_block=True,
+        )
 
         beams = self._update_beams(top_result.ranked_node_ids, tree_id, beam_size)
         for nid in top_result.selected_node_ids:
@@ -150,7 +138,9 @@ class VerticalRetriever(BlockRetriever):
                 cache_read_tokens += branch_cache_metrics.get("cache_read_tokens", 0)
                 cache_creation_tokens += branch_cache_metrics.get("cache_creation_tokens", 0)
                 blocks_processed += 1
-                cache_window_tokens = self._append_to_cache_window(cache_window, cache_window_tokens, subtree_block)
+                cache_window_tokens = self._append_to_cache_window(
+                    cache_window, cache_window_tokens, subtree_block, cache_block=self.cache_subtree_block,
+                )
 
                 for nid in result.selected_node_ids:
                     if nid not in selected:

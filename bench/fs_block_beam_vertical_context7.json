@@ -1,0 +1,455 @@
+{
+  "scenario": "context7",
+  "mode": "fs",
+  "document_path": "bench/filesystem/context7",
+  "document_sections": 68,
+  "retrievers": [
+    "Block",
+    "Beam",
+    "Vertical"
+  ],
+  "queries": [
+    {
+      "query": "Where is the API guide for Context7?",
+      "results": {
+        "Block": {
+          "name": "Block",
+          "time_seconds": 4.373135089874268,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1957,
+          "output_tokens": 132,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 6938,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/api-guide.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Beam": {
+          "name": "Beam",
+          "time_seconds": 11.20660948753357,
+          "turns": 3,
+          "nodes_selected": 2,
+          "llm_calls": 3,
+          "input_tokens": 2538,
+          "output_tokens": 468,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 0,
+          "error": null,
+          "retrieved_files": [
+            "docs/api-guide.md",
+            "docs/overview.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Vertical": {
+          "name": "Vertical",
+          "time_seconds": 3.406346559524536,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1947,
+          "output_tokens": 137,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 6929,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/api-guide.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        }
+      }
+    },
+    {
+      "query": "Where is the overview page for Context7 agentic tools?",
+      "results": {
+        "Block": {
+          "name": "Block",
+          "time_seconds": 3.3875505924224854,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1962,
+          "output_tokens": 124,
+          "cache_read_tokens": 6938,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/overview.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Beam": {
+          "name": "Beam",
+          "time_seconds": 13.58223819732666,
+          "turns": 4,
+          "nodes_selected": 2,
+          "llm_calls": 4,
+          "input_tokens": 3385,
+          "output_tokens": 576,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 0,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/overview.md",
+            "docs/overview.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Vertical": {
+          "name": "Vertical",
+          "time_seconds": 4.840266466140747,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1952,
+          "output_tokens": 199,
+          "cache_read_tokens": 6929,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/overview.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        }
+      }
+    },
+    {
+      "query": "Where is the query-docs tool documented in AI SDK tools?",
+      "results": {
+        "Block": {
+          "name": "Block",
+          "time_seconds": 7.3591742515563965,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1961,
+          "output_tokens": 206,
+          "cache_read_tokens": 6938,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/ai-sdk/tools/query-docs.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Beam": {
+          "name": "Beam",
+          "time_seconds": 28.87551975250244,
+          "turns": 6,
+          "nodes_selected": 1,
+          "llm_calls": 6,
+          "input_tokens": 5832,
+          "output_tokens": 1364,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 0,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/ai-sdk/tools/query-docs.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Vertical": {
+          "name": "Vertical",
+          "time_seconds": 17.73633337020874,
+          "turns": 4,
+          "nodes_selected": 1,
+          "llm_calls": 4,
+          "input_tokens": 3741,
+          "output_tokens": 915,
+          "cache_read_tokens": 13863,
+          "cache_creation_tokens": 14504,
+          "nodes_pruned": 0,
+          "blocks_processed": 4,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/ai-sdk/tools/query-docs.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        }
+      }
+    },
+    {
+      "query": "Where is the resolve-library-id tool documented?",
+      "results": {
+        "Block": {
+          "name": "Block",
+          "time_seconds": 4.598644733428955,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1959,
+          "output_tokens": 134,
+          "cache_read_tokens": 6938,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/ai-sdk/tools/resolve-library-id.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Beam": {
+          "name": "Beam",
+          "time_seconds": 22.59258723258972,
+          "turns": 5,
+          "nodes_selected": 4,
+          "llm_calls": 5,
+          "input_tokens": 4747,
+          "output_tokens": 994,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 0,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/overview.md",
+            "docs/adding-libraries.md",
+            "docs/api-reference/add-library/add-a-bitbucket-repository.md",
+            "docs/api-reference/add-library/add-a-github-repository.md"
+          ],
+          "hit_at": {
+            "1": false,
+            "3": false,
+            "5": false,
+            "10": false
+          },
+          "mrr": 0.0
+        },
+        "Vertical": {
+          "name": "Vertical",
+          "time_seconds": 3.2729694843292236,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1949,
+          "output_tokens": 122,
+          "cache_read_tokens": 6929,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/agentic-tools/ai-sdk/tools/resolve-library-id.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        }
+      }
+    },
+    {
+      "query": "Where is the API reference for adding a GitHub repository?",
+      "results": {
+        "Block": {
+          "name": "Block",
+          "time_seconds": 7.630295276641846,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1959,
+          "output_tokens": 234,
+          "cache_read_tokens": 6938,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/api-reference/add-library/add-a-github-repository.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        },
+        "Beam": {
+          "name": "Beam",
+          "time_seconds": 24.641911268234253,
+          "turns": 5,
+          "nodes_selected": 5,
+          "llm_calls": 5,
+          "input_tokens": 4677,
+          "output_tokens": 1213,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 0,
+          "error": null,
+          "retrieved_files": [
+            "docs/adding-libraries.md",
+            "docs/api-guide.md",
+            "docs/api-reference/add-library/add-a-github-repository.md",
+            "docs/api-reference/add-library/add-a-bitbucket-repository.md",
+            "docs/api-reference/add-library/add-a-gitlab-repository.md"
+          ],
+          "hit_at": {
+            "3": true,
+            "5": true,
+            "10": true,
+            "1": false
+          },
+          "mrr": 0.3333333333333333
+        },
+        "Vertical": {
+          "name": "Vertical",
+          "time_seconds": 7.284228563308716,
+          "turns": 1,
+          "nodes_selected": 1,
+          "llm_calls": 1,
+          "input_tokens": 1949,
+          "output_tokens": 177,
+          "cache_read_tokens": 6929,
+          "cache_creation_tokens": 0,
+          "nodes_pruned": 0,
+          "blocks_processed": 1,
+          "error": null,
+          "retrieved_files": [
+            "docs/api-reference/add-library/add-a-github-repository.md"
+          ],
+          "hit_at": {
+            "1": true,
+            "3": true,
+            "5": true,
+            "10": true
+          },
+          "mrr": 1.0
+        }
+      }
+    }
+  ],
+  "summary": {
+    "queries_run": 5,
+    "Block": {
+      "avg_time": 5.46975998878479,
+      "avg_llm_calls": 1.0,
+      "avg_input_tokens": 1959.6,
+      "avg_output_tokens": 166.0,
+      "avg_cache_read": 5550.4,
+      "avg_cache_write": 1387.6,
+      "total_cost": 0.07618710000000001,
+      "successful_queries": 5,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "mrr": 1.0
+    },
+    "Beam": {
+      "avg_time": 20.17977318763733,
+      "avg_llm_calls": 4.6,
+      "avg_input_tokens": 4235.8,
+      "avg_output_tokens": 923.0,
+      "avg_cache_read": 0.0,
+      "avg_cache_write": 0.0,
+      "total_cost": 0.132762,
+      "successful_queries": 5,
+      "hit@1": 0.6,
+      "hit@3": 0.8,
+      "hit@5": 0.8,
+      "hit@10": 0.8,
+      "mrr": 0.6666666666666667
+    },
+    "Vertical": {
+      "avg_time": 7.308028888702393,
+      "avg_llm_calls": 1.6,
+      "avg_input_tokens": 2307.6,
+      "avg_output_tokens": 310.0,
+      "avg_cache_read": 6930.0,
+      "avg_cache_write": 4286.6,
+      "total_cost": 0.14863275,
+      "successful_queries": 5,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "mrr": 1.0
+    }
+  }
+}
