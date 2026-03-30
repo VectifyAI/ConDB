@@ -46,7 +46,7 @@ Evolving, runtime context — agent memory, long conversations (via [ChatIndex](
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Getting Started
 
 ### Install
 
@@ -91,9 +91,7 @@ tree_id = ct.index_markdown_file("doc.md", tree_builder=build_markdown_tree)
 ct.close()
 ```
 
----
-
-## ⚙️ Configuration
+### Configuration
 
 Create a `.env` file:
 
@@ -150,7 +148,9 @@ These numbers are benchmark snapshots, not hard guarantees; exact cost and laten
 
 ---
 
-## 🧩 Architecture
+## 🧩 Learn More
+
+### Architecture
 
 ```
 contextdb/
@@ -169,9 +169,7 @@ contextdb/
 └── prompts/              # Jinja2 prompt templates
 ```
 
----
-
-## 🔌 Extending
+### Extending
 
 <details>
 <summary><b>Custom Storage Backend</b></summary>
@@ -202,9 +200,7 @@ ct = ContextTree("db.sqlite", llm=MyLLM())
 ```
 </details>
 
----
-
-## 🧪 Testing
+### Testing
 
 ```bash
 ./run_tests.sh all
@@ -217,12 +213,6 @@ ct = ContextTree("db.sqlite", llm=MyLLM())
 - [**PageIndex**](https://github.com/VectifyAI/PageIndex) — vectorless, reasoning-based RAG that builds hierarchical tree indexes from long documents
 - [**ChatIndex**](https://github.com/VectifyAI/ChatIndex) — tree indexing for long conversations, enabling reasoning-based retrieval over chat histories
 - [**AgentFS**](https://github.com/anthropics/agentfs) — filesystem for AI agents
-
----
-
-## 📄 License
-
-Apache-2.0
 
 ---
 
