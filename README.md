@@ -221,4 +221,6 @@ ct = ContextTree("db.sqlite", llm=MyLLM())
 
 ---
 
-[Apache-2.0](LICENSE) · © 2026 [Vectify AI](https://vectify.ai)
+Licensed under [Apache 2.0](LICENSE).
+
+© 2026 [Vectify AI](https://vectify.ai)
