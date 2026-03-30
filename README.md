@@ -171,8 +171,7 @@ contextdb/
 
 ### Extending
 
-<details>
-<summary><b>Custom Storage Backend</b></summary>
+**Custom Storage Backend**
 
 ```python
 from contextdb import StorageProtocol
@@ -184,10 +183,8 @@ class MyStorage:
 
 ct = ContextTree(storage=MyStorage())
 ```
-</details>
 
-<details>
-<summary><b>Custom LLM Provider</b></summary>
+**Custom LLM Provider**
 
 ```python
 from contextdb import LLMProtocol
@@ -198,7 +195,6 @@ class MyLLM:
 
 ct = ContextTree("db.sqlite", llm=MyLLM())
 ```
-</details>
 
 ### Testing
 
@@ -208,25 +204,21 @@ ct = ContextTree("db.sqlite", llm=MyLLM())
 
 ---
 
-## 🧭 Related Projects
+## 💬 Community
+
+### Related Projects
 
 - [**PageIndex**](https://github.com/VectifyAI/PageIndex) — vectorless, reasoning-based RAG that builds hierarchical tree indexes from long documents
 - [**ChatIndex**](https://github.com/VectifyAI/ChatIndex) — tree indexing for long conversations, enabling reasoning-based retrieval over chat histories
 - [**AgentFS**](https://github.com/anthropics/agentfs) — filesystem for AI agents
 
----
-
 ### Connect with Us
-
-<div align="center">
 
 [![Twitter](https://img.shields.io/badge/Twitter-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/PageIndexAI)&ensp;
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/company/vectify-ai/)&ensp;
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/VuXuf29EUj)&ensp;
 [![Contact Us](https://img.shields.io/badge/Contact_Us-3B82F6?style=for-the-badge&logo=envelope&logoColor=white)](https://ii2abc2jejf.typeform.com/to/tK3AXl8T)
 
-</div>
-
 ---
 
-© 2026 [Vectify AI](https://vectify.ai)
+[Apache-2.0](LICENSE) · © 2026 [Vectify AI](https://vectify.ai)
