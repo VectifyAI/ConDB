@@ -180,7 +180,7 @@ def _build_messages(messages: list[dict], system: str = "") -> list[dict]:
 # ── Default models ────────────────────────────────────────────────
 
 _DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
+    "anthropic": "claude-sonnet-4-6",
     "openai": "gpt-4",
 }
 

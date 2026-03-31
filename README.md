@@ -63,7 +63,7 @@ import contextdb
 db = contextdb.open("my_docs.sqlite")
 
 # Configure LLM
-db.set_llm(provider="anthropic", model="claude-sonnet-4-20250514")
+db.set_llm(provider="anthropic", model="claude-sonnet-4-6")
 
 # Store a document tree
 tree_id = db.store(document_tree_json, format="document")
@@ -93,20 +93,31 @@ ct.close()
 
 ### Configuration
 
-Create a `.env` file:
+Create a `.env` file with your API keys:
 
 ```
 ANTHROPIC_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
-LLM_PROVIDER=anthropic
-LLM_MODEL=claude-sonnet-4-20250514
 ```
 
-Or configure programmatically:
+Model and provider settings live in `contextdb/config/config.yaml`:
 
-```python
-from contextdb.config import Config
-llm = Config.get_llm_client()
+```yaml
+llm:
+  provider: anthropic          # anthropic or openai
+  model: claude-sonnet-4-6     # any model the provider supports
+  context_limit: 100000
+  max_concurrent: 10
+
+retriever:
+  beam_size: 3
+  max_turns: 5
+```
+
+Override at runtime with environment variables:
+
+```bash
+LLM_MODEL=claude-opus-4-6 python your_script.py
 ```
 
 ---
@@ -132,17 +143,25 @@ result = db.query(tree_id, "question", strategy="block", beam_size=3)
 
 Current filesystem benchmark summary lives in [bench/fs_block_beam_vertical.md](bench/fs_block_beam_vertical.md).
 
-Run setup for the snapshot below: `beam_size=3`, `max_turns=10`, `5` filesystem queries on `context7` only.
+Run setup: `fs_query_order=prefix`, `beam_size=3`, `max_turns=10`, `5` filesystem queries on `context7` only.
 
-### Block vs Beam vs Vertical
+### Claude Opus 4.6
 
 | Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
 |---|---:|---:|---:|---:|---:|
-| **Block** | 5.47 | 1.00 | 1.00 | 1.00 | 0.0762 |
-| **Vertical** | 7.31 | 1.60 | 1.00 | 1.00 | 0.1486 |
-| **Beam** | 20.18 | 4.60 | 0.60 | 0.80 | 0.1328 |
+| **Block** | 9.27 | 2.6 | 1.00 | 1.00 | 0.1416 |
+| **Vertical** | 22.85 | 6.8 | 0.40 | 1.00 | 0.1682 |
+| **Beam** | 18.37 | 5.0 | 0.60 | 1.00 | 0.1331 |
 
-`Block` is the best default on this `context7` snapshot: same retrieval quality as `Vertical`, with lower latency and fewer model calls. `Beam` is still workable, but it trails clearly on retrieval accuracy.
+### Claude Sonnet 4.6
+
+| Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
+|---|---:|---:|---:|---:|---:|
+| **Block** | 7.95 | 2.8 | 1.00 | 1.00 | 0.1670 |
+| **Vertical** | 17.85 | 5.8 | 0.40 | 0.80 | 0.1438 |
+| **Beam** | 17.41 | 4.8 | 0.60 | 1.00 | 0.1338 |
+
+`Block` is the best default: perfect Hit@1 across both models. `Beam` and `Vertical` are sensitive to model version — `Block` is the most robust choice.
 
 These numbers are benchmark snapshots, not hard guarantees; exact cost and latency will vary with model choice, provider pricing, prompt-cache behavior, and corpus shape.
 
