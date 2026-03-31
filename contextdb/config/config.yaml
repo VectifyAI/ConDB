@@ -1,12 +1,11 @@
-# Default configuration
+# ConDB configuration
 
 llm:
   provider: anthropic
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   context_limit: 100000
   max_concurrent: 10
 
 retriever:
-  tokens_per_node: 300
   beam_size: 3
   max_turns: 5

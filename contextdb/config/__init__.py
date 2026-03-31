@@ -24,7 +24,7 @@ def _load_yaml(path: Path) -> dict:
 
 def get_defaults() -> dict:
     """Get default configuration."""
-    return _load_yaml(CONFIG_DIR / "defaults.yaml")
+    return _load_yaml(CONFIG_DIR / "config.yaml")
 
 
 def get_llm_config(provider: str, model: str) -> dict:
@@ -60,12 +60,16 @@ def get_retriever_config(retriever_type: str) -> dict:
 
 
 class Config:
-    """Configuration class for environment variables and LLM client."""
+    """Configuration: .env for keys, config.yaml for settings, env vars override."""
 
+    # Keys — from .env only
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
-    LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
+
+    # Settings — config.yaml, env vars override
+    _cfg = get_defaults().get("llm", {})
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER") or _cfg.get("provider", "anthropic")
+    LLM_MODEL = os.getenv("LLM_MODEL") or _cfg.get("model", "claude-sonnet-4-6")
     DB_PATH = os.getenv("DB_PATH", "context.sqlite")
 
     @classmethod

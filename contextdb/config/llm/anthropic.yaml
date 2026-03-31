@@ -1,25 +1,13 @@
 # Anthropic models configuration
 
-claude-sonnet-4-20250514:
+claude-opus-4-6:
   context_limit: 200000
   max_concurrent: 50
   rpm_limit: 4000
   tpm_limit: 400000
 
-claude-opus-4-20250514:
+claude-sonnet-4-6:
   context_limit: 200000
   max_concurrent: 50
-  rpm_limit: 4000
-  tpm_limit: 400000
-
-claude-3-5-sonnet-20241022:
-  context_limit: 200000
-  max_concurrent: 50
-  rpm_limit: 4000
-  tpm_limit: 400000
-
-claude-3-haiku-20240307:
-  context_limit: 200000
-  max_concurrent: 100
   rpm_limit: 4000
   tpm_limit: 400000
