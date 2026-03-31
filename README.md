@@ -131,19 +131,19 @@ Run setup: `fs_query_order=prefix`, `beam_size=3`, `max_turns=10`, `5` filesyste
 
 | Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
 |---|---:|---:|---:|---:|---:|
-| **Block** | 9.27 | 2.6 | 1.00 | 1.00 | 0.1416 |
-| **Vertical** | 22.85 | 6.8 | 0.40 | 1.00 | 0.1682 |
-| **Beam** | 18.37 | 5.0 | 0.60 | 1.00 | 0.1331 |
+| **Block** | 8.44 | 2.4 | 1.00 | 1.00 | 0.2166 |
+| **Vertical** | 28.18 | 6.8 | 0.40 | 1.00 | 0.2900 |
+| **Beam** | 18.36 | 4.8 | 0.60 | 1.00 | 0.2091 |
 
 ### Claude Sonnet 4.6
 
 | Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
 |---|---:|---:|---:|---:|---:|
-| **Block** | 7.95 | 2.8 | 1.00 | 1.00 | 0.1670 |
-| **Vertical** | 17.85 | 5.8 | 0.40 | 0.80 | 0.1438 |
-| **Beam** | 17.41 | 4.8 | 0.60 | 1.00 | 0.1338 |
+| **Block** | 8.42 | 3.4 | 1.00 | 1.00 | 0.0643 |
+| **Vertical** | 20.78 | 7.0 | 0.40 | 0.80 | 0.1712 |
+| **Beam** | 17.84 | 4.8 | 0.40 | 1.00 | 0.1335 |
 
-`Block` is the best default: perfect Hit@1 across both models. `Beam` and `Vertical` are sensitive to model version — `Block` is the most robust choice.
+`Block` is the best default: perfect Hit@1 across both models, lowest cost on Sonnet 4.6 (prompt caching cuts cost by ~60%), and fastest latency. `Beam` and `Vertical` are sensitive to model version — `Block` is the most robust choice.
 
 These numbers are benchmark snapshots, not hard guarantees; exact cost and latency will vary with model choice, provider pricing, prompt-cache behavior, and corpus shape.
 

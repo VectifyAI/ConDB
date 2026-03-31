@@ -30,7 +30,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from contextdb import TreeDB
-from contextdb.config import Config
+from contextdb.config import Config, get_llm_config
 from contextdb.metrics import LLMWithStats, StatisticsRecorder
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 
@@ -110,9 +110,15 @@ class BenchmarkResult:
     retriever_names: list[str] = field(default_factory=list)
     queries: list[QueryResult] = field(default_factory=list)
 
-    def summary(self) -> dict:
+    def summary(self, pricing: dict = None) -> dict:
         def total(items, attr):
             return sum(getattr(i, attr) for i in items) if items else 0
+
+        p = pricing or {}
+        pi = p.get("price_input", 3)
+        po = p.get("price_output", 15)
+        pcw = p.get("price_cache_write", 3.75)
+        pcr = p.get("price_cache_read", 0.30)
 
         summary = {"queries_run": len(self.queries)}
 
@@ -128,7 +134,9 @@ class BenchmarkResult:
             total_cache_read = total(valid, "cache_read_tokens")
             total_cache_write = total(valid, "cache_creation_tokens")
 
-            cost = (total_input * 3 + total_output * 15 + total_cache_write * 3.75 + total_cache_read * 0.30) / 1_000_000
+            # litellm: input_tokens includes cache_read + cache_creation + uncached
+            uncached_input = total_input - total_cache_read - total_cache_write
+            cost = (uncached_input * pi + total_output * po + total_cache_write * pcw + total_cache_read * pcr) / 1_000_000
 
             n = len(valid) if valid else 1
             s = {
@@ -471,7 +479,8 @@ def run_benchmark(
 
 
 def print_summary(result: BenchmarkResult):
-    summary = result.summary()
+    pricing = get_llm_config(Config.LLM_PROVIDER, Config.LLM_MODEL)
+    summary = result.summary(pricing)
 
     print("\n" + "=" * 70)
     title = "FILESYSTEM BENCHMARK SUMMARY" if result.mode == "fs" else "BENCHMARK SUMMARY"
@@ -626,7 +635,7 @@ def main():
                 {"query": q.query, "results": {n: asdict(m) for n, m in q.results.items()}}
                 for q in result.queries
             ],
-            "summary": result.summary(),
+            "summary": result.summary(get_llm_config(Config.LLM_PROVIDER, Config.LLM_MODEL)),
         }, indent=2))
     else:
         print_summary(result)
