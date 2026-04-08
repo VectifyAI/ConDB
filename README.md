@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="ConDB Banner" />
+<img src="https://docs.pageindex.ai/images/condb.png" alt="ConDB Banner" />
 
 <br/>
 
