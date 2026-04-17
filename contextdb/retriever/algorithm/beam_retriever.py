@@ -224,7 +224,7 @@ class BeamRetriever(BaseRetriever):
         attrs = self._node_attrs(child)
         title = attrs.get("title") or ""
         summary = attrs.get("summary") or ""
-        text = self._node_text(tree_id, child.node_id)
+        text = "" if self.mode == "filesystem" else self._node_text(tree_id, child.node_id)
         path_titles = parent_titles + ([title] if title else [])
         cand = {
             "node_id": child.node_id,
@@ -243,8 +243,8 @@ class BeamRetriever(BaseRetriever):
             cand["rel_path"] = attrs.get("rel_path", "")
             cand["tag"] = attrs.get("tag", "")
             cand["is_dir"] = attrs.get("is_dir", False)
-            if not summary:
-                cand["summary"] = text[:200] if text else ""
+            if not cand["is_dir"]:
+                cand["summary"] = ""
         return cand
 
     def _candidate_from_node(

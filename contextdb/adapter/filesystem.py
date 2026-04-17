@@ -281,13 +281,12 @@ class FileSystemAdapter(BaseAdapter):
         ext = Path(rel_path).suffix.lower()
         name = Path(rel_path).name or title
         tag = self._get_file_tag(rel_path, ext, name)
-        summary = " ".join(text.split())[:300]
 
         entity_id = str(uuid.uuid4())
         entities[entity_id] = {
             "type": "file",
             "title": title,
-            "summary": summary,
+            "summary": "",
             "text": text,
         }
         return {
@@ -444,13 +443,12 @@ class FileSystemAdapter(BaseAdapter):
                     )
                 else:
                     text = entry["content"]
-                    summary = " ".join(text.split())[:300]
 
                     file_entity_id = str(uuid.uuid4())
                     entities[file_entity_id] = {
                         "type": "file",
                         "title": entry["title"],
-                        "summary": summary,
+                        "summary": "",
                         "text": text,
                     }
 
