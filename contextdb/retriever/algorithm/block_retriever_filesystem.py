@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ class _RetrieverSupportBase:
 @dataclass(frozen=True)
 class FilesystemRenderOptions:
     include_dir_summaries: bool = True
-    include_file_summaries: bool = True
+    include_file_summaries: bool = False
     summary_max_chars: int = 200
 
 
@@ -36,7 +37,12 @@ _FS_VIRTUAL_TOP_RENDER_OPTIONS = FilesystemRenderOptions(
 class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
     """Filesystem-specific support methods for BlockRetriever."""
 
-    def _create_top_block_specs_fs(self, tree_id: str, root_beam: dict[str, str]) -> list[dict[str, Any]]:
+    def _create_top_block_specs_fs(
+        self,
+        tree_id: str,
+        root_beam: dict[str, str],
+        query: str = "",
+    ) -> list[dict[str, Any]]:
         root_id = root_beam.get("node_id")
         if not root_id:
             return []
@@ -47,6 +53,7 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             if is_virtual_root
             else self._get_direct_children_nodes(tree_id, root_id)
         )
+        nodes = self._order_fs_nodes_for_query(nodes, query)
         render_options = self._get_fs_top_render_options(is_virtual_root)
         return self._build_fs_block_specs(
             tree_id=tree_id,
@@ -97,14 +104,22 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
     def _get_fs_top_render_options(is_virtual_root: bool) -> FilesystemRenderOptions:
         return _FS_VIRTUAL_TOP_RENDER_OPTIONS if is_virtual_root else _FS_DEFAULT_RENDER_OPTIONS
 
-    def _create_subtree_block_specs_fs(self, tree_id: str, beams: list[dict[str, str]]) -> list[dict[str, Any]]:
+    def _create_subtree_block_specs_fs(
+        self,
+        tree_id: str,
+        beams: list[dict[str, str]],
+        query: str = "",
+    ) -> list[dict[str, Any]]:
         specs: list[dict[str, Any]] = []
         for beam in beams:
             beam_id = beam.get("node_id")
             if not beam_id:
                 continue
 
-            children = self._get_direct_children_nodes(tree_id, beam_id)
+            children = self._order_fs_nodes_for_query(
+                self._get_direct_children_nodes(tree_id, beam_id),
+                query,
+            )
             if not children:
                 continue
 
@@ -320,7 +335,12 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
 
         return [row for row in ordered_results if row is not None]
 
-    def _create_subtree_block_fs(self, tree_id: str, beam_node_ids: list[str]) -> Optional[Block]:
+    def _create_subtree_block_fs(
+        self,
+        tree_id: str,
+        beam_node_ids: list[str],
+        query: str = "",
+    ) -> Optional[Block]:
         """Create a subtree block from children of beam nodes."""
         all_children = []
         for nid in beam_node_ids:
@@ -328,6 +348,7 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
 
         if not all_children:
             return None
+        all_children = self._order_fs_nodes_for_query(all_children, query)
 
         packs = self._pack_fs_children(
             all_children,
@@ -338,6 +359,137 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
 
         block_id = f"fs_sub_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}"
         return self._make_fs_vertical_block(tree_id, packs[0], block_id)
+
+    _FS_QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
+    _FS_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+    _FS_SOURCE_DIRS = frozenset({
+        "app",
+        "apps",
+        "contextdb",
+        "lib",
+        "libs",
+        "package",
+        "packages",
+        "src",
+    })
+    _FS_TEST_DIRS = frozenset({"spec", "specs", "test", "tests"})
+    _FS_LOW_VALUE_DIRS = frozenset({
+        ".cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "build",
+        "dist",
+        "docs",
+        "examples",
+        "vendor",
+    })
+
+    def _order_fs_nodes_for_query(self, nodes: list[dict[str, Any]], query: str = "") -> list[dict[str, Any]]:
+        """Order exchangeable filesystem siblings by query-dependent priority."""
+        if not nodes:
+            return []
+
+        query_tokens = self._tokenize_fs_query(query)
+        if not query_tokens:
+            return list(nodes)
+
+        ordered = sorted(
+            enumerate(nodes),
+            key=lambda item: self._fs_node_sort_key(item[1], query_tokens, item[0]),
+        )
+        return [node for _, node in ordered]
+
+    def _fs_node_sort_key(
+        self,
+        node: dict[str, Any],
+        query_tokens: set[str],
+        original_index: int,
+    ) -> tuple[float, int, int, str, int]:
+        attrs = self._fs_node_attrs(node)
+        score = self._score_fs_node_for_query(node, attrs, query_tokens)
+        rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
+        is_file = 0 if attrs.get("is_dir", False) else 1
+        depth = int(node.get("depth", 0) or 0)
+        return (-score, is_file, depth, rel_path.lower(), original_index)
+
+    def _score_fs_node_for_query(
+        self,
+        node: dict[str, Any],
+        attrs: dict[str, Any],
+        query_tokens: set[str],
+    ) -> float:
+        rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
+        title = (attrs.get("title") or rel_path.rsplit("/", 1)[-1]).strip()
+        tag = (attrs.get("tag") or "").lower()
+        is_dir = bool(attrs.get("is_dir", False))
+
+        entity = node.get("entity", {})
+        payload = entity.get("payload", {}) if isinstance(entity, dict) else {}
+        summary = str(payload.get("summary") or "") if is_dir else ""
+
+        path_text = f"{rel_path} {title}"
+        path_tokens = self._tokenize_fs_query(path_text)
+        summary_tokens = self._tokenize_fs_query(summary)
+        path_lower = path_text.lower()
+        summary_lower = summary.lower()
+        basename = title.lower()
+
+        score = 0.0
+        matched_tokens = query_tokens.intersection(path_tokens)
+        score += 40.0 * len(matched_tokens)
+
+        for token in query_tokens:
+            if token == basename:
+                score += 60.0
+            if token and token in path_lower:
+                score += 15.0
+            if token and token in summary_lower:
+                score += 5.0
+
+        if query_tokens and query_tokens.issubset(path_tokens):
+            score += 80.0
+        if query_tokens.intersection(summary_tokens):
+            score += 8.0 * len(query_tokens.intersection(summary_tokens))
+
+        path_parts = [part.lower() for part in rel_path.split("/") if part]
+        first_part = path_parts[0] if path_parts else ""
+        asks_for_tests = bool(query_tokens.intersection({"spec", "specs", "test", "tests", "testing", "pytest"}))
+        asks_for_docs = bool(query_tokens.intersection({"doc", "docs", "documentation", "readme"}))
+
+        if tag == "[src]" or first_part in self._FS_SOURCE_DIRS:
+            score += 10.0
+        if not asks_for_tests and (tag == "[test]" or any(part in self._FS_TEST_DIRS for part in path_parts)):
+            score -= 30.0
+        if asks_for_tests and (tag == "[test]" or any(part in self._FS_TEST_DIRS for part in path_parts)):
+            score += 25.0
+        if asks_for_docs and (tag == "[doc]" or first_part == "docs"):
+            score += 25.0
+        if not asks_for_docs and first_part in self._FS_LOW_VALUE_DIRS:
+            score -= 8.0
+
+        if is_dir and matched_tokens:
+            score += 12.0
+        elif is_dir:
+            score += 2.0
+
+        return score
+
+    @classmethod
+    def _tokenize_fs_query(cls, text: str) -> set[str]:
+        if not text:
+            return set()
+        split_text = cls._FS_CAMEL_BOUNDARY_RE.sub(" ", str(text))
+        return set(cls._FS_QUERY_TOKEN_RE.findall(split_text.lower()))
+
+    @staticmethod
+    def _fs_node_attrs(node: dict[str, Any]) -> dict[str, Any]:
+        attrs = node.get("attrs") or {}
+        if isinstance(attrs, str):
+            try:
+                return json.loads(attrs)
+            except json.JSONDecodeError:
+                return {}
+        return attrs if isinstance(attrs, dict) else {}
 
     @staticmethod
     def _build_fs_alias_maps(node_ids: list[str]) -> tuple[dict[str, str], dict[str, str]]:

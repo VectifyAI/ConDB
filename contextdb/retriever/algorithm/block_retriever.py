@@ -199,9 +199,9 @@ class BlockRetriever(BaseRetriever):
 
             round_label = "top" if turn == 0 else "subtree"
             block_specs = (
-                self._create_top_block_specs_fs(tree_id, beams[0])
+                self._create_top_block_specs_fs(tree_id, beams[0], query=query)
                 if turn == 0
-                else self._create_subtree_block_specs_fs(tree_id, beams)
+                else self._create_subtree_block_specs_fs(tree_id, beams, query=query)
             )
             if not block_specs:
                 break

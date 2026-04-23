@@ -284,7 +284,6 @@ class LegacyBlockRetriever(BaseRetriever):
             return None
 
         # Generate content: full detail for packed_full, compact for packed_compact
-        full_ids = {n["node_id"] for n in packed_full}
         content = self._generate_content_from_nodes(all_packed, compact_ids={
             n["node_id"] for n in packed_compact
         })
@@ -451,6 +450,14 @@ class LegacyBlockRetriever(BaseRetriever):
                     attrs = {}
 
             lines.append(f"- id: {node['node_id']}")
+            if "rel_path" in attrs and "is_dir" in attrs:
+                lines.append(f"  path: {attrs.get('rel_path') or attrs.get('title') or node.get('path', '')}")
+                lines.append("  type: directory" if attrs.get("is_dir") else "  type: file")
+                if attrs.get("tag"):
+                    lines.append(f"  tag: {attrs['tag']}")
+                lines.append(f"  depth: {node.get('depth', 0)}")
+                continue
+
             if attrs.get("title"):
                 lines.append(f"  title: {attrs['title']}")
             if attrs.get("summary"):

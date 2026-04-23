@@ -6,8 +6,8 @@ This variant expands each beam independently in FS mode:
 - merge ranked outputs for next-step beams
 """
 
-from collections import deque
 import json
+from collections import deque
 from typing import Any
 
 from contextdb.retriever.algorithm.block_retriever import BlockRetriever
@@ -30,7 +30,7 @@ class VerticalRetriever(BlockRetriever):
             self._precomputed_tree_id = tree_id
 
         beams = [{"node_id": root_id, "title": "root", "path": "root"}]
-        top_specs = self._create_top_block_specs_fs(tree_id, beams[0])
+        top_specs = self._create_top_block_specs_fs(tree_id, beams[0], query=query)
         if not top_specs:
             return self._empty_result()
         top_block = top_specs[0]["block"]
@@ -114,7 +114,7 @@ class VerticalRetriever(BlockRetriever):
                 if not beam_id:
                     continue
 
-                subtree_block = self._create_subtree_block_fs(tree_id, [beam_id])
+                subtree_block = self._create_subtree_block_fs(tree_id, [beam_id], query=query)
                 if subtree_block is None:
                     continue
 
