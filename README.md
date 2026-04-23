@@ -121,31 +121,53 @@ result = db.query(tree_id, "question", strategy="block", beam_size=3)
 
 ---
 
-## Benchmark Snapshot
+## Benchmark
 
-Current filesystem benchmark summary lives in [bench/fs_block_beam_vertical.md](bench/fs_block_beam_vertical.md).
+Two benchmarks live under `bench/`.
 
-Run setup: `fs_query_order=prefix`, `beam_size=3`, `max_turns=10`, `5` filesystem queries on `context7` only.
+### Filesystem mode — SWEBench-FileTree
 
-### Claude Opus 4.6
+Runs on [`AmuroEita/SWEBench-FileTree`](https://huggingface.co/datasets/AmuroEita/SWEBench-FileTree),
+a path-only version of SWE-bench code retrieval:
 
-| Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
-|---|---:|---:|---:|---:|---:|
-| **Block** | 8.44 | 2.4 | 1.00 | 1.00 | 0.2166 |
-| **Vertical** | 28.18 | 6.8 | 0.40 | 1.00 | 0.2900 |
-| **Beam** | 18.36 | 4.8 | 0.60 | 1.00 | 0.2091 |
+- 500 GitHub issues as queries
+- 475 `(repo, commit)` repository snapshots as independent retrieval universes
+- 58,058 file paths; no source code, no file summaries
 
-### Claude Sonnet 4.6
+Given an issue and one snapshot's file tree, return the file(s) the fix
+touches. Specification: `notes/condb_swebench_filetree_bench.md`.
 
-| Retriever | Avg Time (s) | Avg LLM Calls | Hit@1 | Hit@10 | Total Cost (USD) |
-|---|---:|---:|---:|---:|---:|
-| **Block** | 8.42 | 3.4 | 1.00 | 1.00 | 0.0643 |
-| **Vertical** | 20.78 | 7.0 | 0.40 | 0.80 | 0.1712 |
-| **Beam** | 17.84 | 4.8 | 0.40 | 1.00 | 0.1335 |
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+python bench/run_swebench_filetree.py --tier medium
+```
 
-`Block` is the best default: perfect Hit@1 across both models, lowest cost on Sonnet 4.6 (prompt caching cuts cost by ~60%), and fastest latency. `Beam` and `Vertical` are sensitive to model version — `Block` is the most robust choice.
+Tiers:
 
-These numbers are benchmark snapshots, not hard guarantees; exact cost and latency will vary with model choice, provider pricing, prompt-cache behavior, and corpus shape.
+```
+strict   107 queries   sanity check (gold path appears in query text)
+medium   133 queries   main report
+loose    261 queries   fuzzy matching
+full     500 queries   includes ~48% path-signal-less queries
+```
+
+Output goes to `bench/runs/<timestamp>__<tier>/`: `report.md`, `summary.json`,
+`per_query.jsonl`.
+
+### Document mode — single long document
+
+Compares retriever algorithms (Block / Beam / Vertical / ...) on one
+hierarchical document. Reports time, LLM calls, token usage with prompt
+caching, and USD cost.
+
+```bash
+python bench/run_document_bench.py \
+  --doc examples/large_doc.json \
+  --config bench/queries.json
+```
+
+Queries live in the config JSON as `{"queries": ["...", "..."]}`. Swap in
+any `--doc` and any `--config` to benchmark a different document.
 
 ---
 

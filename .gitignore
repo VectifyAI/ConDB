@@ -69,3 +69,21 @@ venv.bak/
 Thumbs.db
 bench/repos
 bench/results
+
+# Bench output
+bench/runs/
+
+# Dataset local copy (fetched from HF)
+data/
+
+# Local-only working files (scripts, notes, issue log)
+scripts/
+notes/
+issues/
+
+# Miscellaneous local files not part of the repo
+Discussion_*.docx
+PageIndex-report-preview.pdf
+claude-code-windows-setup.md
+examples/TFP_FAA_AIP_2025.pdf
+examples/large_doc.json
