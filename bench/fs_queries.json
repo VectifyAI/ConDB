@@ -1,0 +1,16 @@
+{
+  "queries": [
+    {
+      "query": "Where is the tree storage and SQLite schema defined?",
+      "ground_truth": ["contextdb/core/storage.py"]
+    },
+    {
+      "query": "How does the block cutting algorithm split a tree into blocks?",
+      "ground_truth": ["contextdb/retriever/algorithm/block_cutter.py"]
+    },
+    {
+      "query": "Where is the ConDB public API that handles store and query?",
+      "ground_truth": ["contextdb/api/condb.py"]
+    }
+  ]
+}

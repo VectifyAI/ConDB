@@ -1,0 +1,24 @@
+{
+  "queries": [
+    {
+      "query": "Where is the symbolic integration logic?",
+      "ground_truth": ["sympy/integrals/integrals.py"]
+    },
+    {
+      "query": "Where is the equation solver (solve function)?",
+      "ground_truth": ["sympy/solvers/solvers.py"]
+    },
+    {
+      "query": "Where is the matrix class and matrix operations defined?",
+      "ground_truth": ["sympy/matrices/dense.py", "sympy/matrices/matrices.py"]
+    },
+    {
+      "query": "Where is the simplification logic?",
+      "ground_truth": ["sympy/simplify/simplify.py"]
+    },
+    {
+      "query": "Where is the LaTeX printer that converts expressions to LaTeX?",
+      "ground_truth": ["sympy/printing/latex.py"]
+    }
+  ]
+}
