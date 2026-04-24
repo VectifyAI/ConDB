@@ -160,17 +160,29 @@ export ANTHROPIC_API_KEY=sk-ant-...
 python bench/run_swebench_filetree.py --tier medium
 ```
 
-Tiers:
+Tiers (by retriever difficulty; lower difficulty = more path signal in query):
 
 ```
-strict   107 queries   sanity check (gold path appears in query text)
-medium   133 queries   main report
-loose    261 queries   fuzzy matching
-full     500 queries   includes ~48% path-signal-less queries
+easy     107 queries   gold path appears in query text (sanity check)
+medium   133 queries   gold filename appears in query    (main report)
+hard     261 queries   gold module stem appears          (fuzzy matching)
+all      500 queries   no filter, includes ~48% path-signal-less queries
 ```
 
 Output goes to `bench/runs/<timestamp>__<tier>/`: `report.md`, `summary.json`,
 `per_query.jsonl`.
+
+#### Snapshot (Claude Sonnet 4.6, `--strategy auto`, top-k=10)
+
+| tier   | n   | hit@1 | hit@3 | hit@5 | hit@10 |  MRR  | nDCG@10 |
+|--------|-----|-------|-------|-------|--------|-------|---------|
+| easy   | 107 | 0.776 | 0.841 | 0.841 | 0.841  | 0.805 | 0.772   |
+| medium | 133 | 0.797 | 0.850 | 0.850 | 0.850  | 0.821 | 0.787   |
+
+Path-only filesystem retrieval lands gold in top-10 for ~85% of queries that
+carry any path-level signal. The `hard` tier (261 queries, module-stem
+signal only) is in progress and will be added once Anthropic API rate-limit
+retries are wired in. `all` (the path-signal-less ceiling) has not been run.
 
 ### Document mode — single long document
 
