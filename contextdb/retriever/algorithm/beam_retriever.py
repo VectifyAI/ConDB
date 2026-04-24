@@ -113,6 +113,18 @@ class BeamRetriever(BaseRetriever):
             # Build lookup map for O(1) access
             candidates_map = {c["node_id"]: c for c in candidates}
 
+            # Guard against premature termination in filesystem mode: the LLM must
+            # commit to at least one non-directory before we accept done=True.
+            # Otherwise we'd stop after picking a directory and return no files.
+            if done and self.mode == "filesystem":
+                picked_file = any(
+                    not candidates_map.get(nid, {}).get("is_dir", False)
+                    for nid in ranked_ids
+                )
+                if not picked_file:
+                    log.debug("turn %d: overriding done=True (all ranked are directories)", turn)
+                    done = False
+
             # Show LLM decision
             log.debug("turn %d: LLM ranked top-%d, done=%s", turn, len(ranked_ids), done)
             for i, nid in enumerate(ranked_ids[:5]):

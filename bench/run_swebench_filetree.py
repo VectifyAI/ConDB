@@ -4,8 +4,8 @@ Run ConDB filesystem retrieval on SWEBench-FileTree.
 
 Usage:
   python bench/run_swebench_filetree.py --tier medium
-  python bench/run_swebench_filetree.py --tier strict --limit 20
-  python bench/run_swebench_filetree.py --tier full --model claude-sonnet-4-7
+  python bench/run_swebench_filetree.py --tier easy --limit 20
+  python bench/run_swebench_filetree.py --tier all --model claude-sonnet-4-6
 
 Outputs to bench/runs/<timestamp>__<tier>/:
   config.json         run metadata
@@ -18,14 +18,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import shutil
-import statistics
 import sys
 import tempfile
 import time
 import traceback
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -45,7 +43,8 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def load_tier(data_dir: Path, tier: str) -> tuple[list[dict], list[dict]]:
-    if tier == "full":
+    # "all" is the unfiltered 500-query set, stored as queries.jsonl / qrels.jsonl
+    if tier == "all":
         q_path, qr_path = data_dir / "queries.jsonl", data_dir / "qrels.jsonl"
     else:
         q_path = data_dir / f"queries_{tier}.jsonl"
@@ -198,14 +197,12 @@ def run(args):
                 print(f"[skip] missing snapshot {fs_json.name}")
                 continue
 
-            t0 = time.time()
             try:
                 tree_id = build_tree_for_snapshot(db, fs_json)
             except Exception as e:
                 print(f"[ingest-err] {slug}__{commit}: {e}")
                 continue
             info = db.tree_info(tree_id)
-            ingest_ms = int((time.time() - t0) * 1000)
 
             for q in qs:
                 qid = q["id"]
@@ -274,6 +271,8 @@ def run(args):
         "per_path_signal_level": by_signal,
         "per_snapshot_size_bucket": by_bucket,
     }
+    # Re-ensure out_dir exists in case it was removed mid-run
+    out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     (out_dir / "report.md").write_text(render_report(summary, records))
 
@@ -367,15 +366,12 @@ def render_report(summary, records) -> str:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--tier", choices=["strict", "medium", "loose", "full"], default="medium")
+    p.add_argument("--tier", choices=["easy", "medium", "hard", "all"], default="medium")
     p.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
-    # Default to block: beam terminates prematurely on path-only virtual-JSON roots
-    # when node_count <= 50 (it selects the virtual root dir and stops).
-    # Block retriever handles the whole path-only tree correctly across all sizes.
-    p.add_argument("--strategy", choices=["auto", "beam", "block"], default="block")
+    p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
     p.add_argument("--max-turns", type=int, default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all")
     p.add_argument("--output-dir", default=None)
