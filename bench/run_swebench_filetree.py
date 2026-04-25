@@ -30,7 +30,7 @@ from pathlib import Path
 from contextdb.adapter.filesystem import FileSystemAdapter
 from contextdb.api.condb import ConDB
 
-DEFAULT_MODEL = "claude-haiku-4-5"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
 K_VALUES = (1, 3, 5, 10)
 
