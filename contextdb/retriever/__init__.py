@@ -2,12 +2,12 @@ from contextdb.retriever.algorithm import (
     BaseRetriever,
     BeamRetriever,
     Block,
-    BlockRetrievalResult,
     BlockResult,
+    BlockRetrievalResult,
     BlockRetriever,
-    LegacyBlockRetriever,
     BlockTreePlan,
     BlockType,
+    LegacyBlockRetriever,
 )
 from contextdb.retriever.base import ManualRetriever, RetrievalResult, TreeFormatter
 

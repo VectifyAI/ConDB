@@ -29,10 +29,24 @@ from pathlib import Path
 
 from contextdb.adapter.filesystem import FileSystemAdapter
 from contextdb.api.condb import ConDB
+from contextdb.retriever.algorithm.block_retriever import BlockRetriever
+from contextdb.retriever.algorithm.ranker import BM25PathRanker
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
 K_VALUES = (1, 3, 5, 10)
+
+
+def make_block_retriever(db: ConDB, args) -> BlockRetriever:
+    ranker = BM25PathRanker(db.storage) if args.ranker == "bm25" else None
+    return BlockRetriever(
+        db.storage,
+        db._llm,
+        mode="filesystem",
+        ranker=ranker,
+        fs_ranker=args.ranker,
+        max_parallel_blocks=args.max_parallel_blocks,
+    )
 
 
 # ── Data loading ──────────────────────────────────────────────────────
@@ -95,7 +109,8 @@ def extract_retrieved_paths(db: ConDB, tree_id: str, node_ids: list[str]) -> lis
     out: list[str] = []
     for p in paths:
         if p not in seen:
-            seen.add(p); out.append(p)
+            seen.add(p)
+            out.append(p)
     return out
 
 
@@ -170,6 +185,7 @@ def run(args):
         "provider": args.provider,
         "top_k": args.top_k,
         "strategy": args.strategy,
+        "ranker": args.ranker if args.strategy == "block" else None,
         "limit": args.limit,
         "num_queries": len(queries),
         "num_snapshots": len(by_snap),
@@ -203,6 +219,7 @@ def run(args):
                 print(f"[ingest-err] {slug}__{commit}: {e}")
                 continue
             info = db.tree_info(tree_id)
+            retriever = make_block_retriever(db, args) if args.strategy == "block" else None
 
             for q in qs:
                 qid = q["id"]
@@ -215,8 +232,11 @@ def run(args):
                         strategy=args.strategy,
                         select_k=args.top_k,
                         max_turns=args.max_turns,
+                        max_parallel_blocks=args.max_parallel_blocks,
+                        retriever=retriever,
                     )
-                    preds = extract_retrieved_paths(db, tree_id, res.node_ids)
+                    node_ids = res.node_ids
+                    preds = extract_retrieved_paths(db, tree_id, node_ids)
                     err = None
                 except Exception as e:
                     preds, res = [], None
@@ -297,10 +317,14 @@ def group_by_bucket(records):
     out: dict = defaultdict(list)
     for r in records:
         sz = r["snapshot_size"]
-        if sz <= 50:     b = "≤50"
-        elif sz <= 200:  b = "51–200"
-        elif sz <= 500:  b = "201–500"
-        else:            b = ">500"
+        if sz <= 50:
+            b = "≤50"
+        elif sz <= 200:
+            b = "51–200"
+        elif sz <= 500:
+            b = "201–500"
+        else:
+            b = ">500"
         out[b].append(r)
     return out
 
@@ -314,6 +338,10 @@ def render_report(summary, records) -> str:
         f"- timestamp: {cfg['timestamp']}",
         f"- model: `{cfg['provider']}/{cfg['model']}`",
         f"- strategy: `{cfg['strategy']}`  top-k: {cfg['top_k']}",
+    ]
+    if cfg.get("ranker"):
+        lines.append(f"- ranker: `{cfg['ranker']}`")
+    lines += [
         f"- queries: {cfg['num_queries']}  snapshots: {cfg['num_snapshots']}",
         "",
         "## Overall",
@@ -372,6 +400,9 @@ def main():
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
     p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
+    p.add_argument("--ranker", choices=["heuristic", "bm25", "none"], default="heuristic",
+                   help="Filesystem node ordering used with --strategy block")
+    p.add_argument("--max-parallel-blocks", type=int, default=None)
     p.add_argument("--max-turns", type=int, default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all")
     p.add_argument("--output-dir", default=None)

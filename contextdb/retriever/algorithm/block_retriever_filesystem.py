@@ -389,6 +389,27 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         if not nodes:
             return []
 
+        fs_ranker = getattr(self, "fs_ranker", "heuristic")
+        if fs_ranker == "none":
+            return list(nodes)
+
+        if fs_ranker == "bm25":
+            candidates = [self._fs_ranker_candidate(node) for node in nodes]
+            scores = self.ranker.rank(
+                query,
+                candidates,
+                context={"mode": "filesystem", "tree_id": getattr(self, "_precomputed_tree_id", "")},
+            )
+            score_by_id = {candidate["node_id"]: score for candidate, score in scores}
+            ordered = sorted(
+                enumerate(nodes),
+                key=lambda item: (
+                    -score_by_id.get(item[1].get("node_id", ""), 0.0),
+                    self._fs_ranker_tie_key(item[1], item[0]),
+                ),
+            )
+            return [node for _, node in ordered]
+
         query_tokens = self._tokenize_fs_query(query)
         if not query_tokens:
             return list(nodes)
@@ -398,6 +419,28 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             key=lambda item: self._fs_node_sort_key(item[1], query_tokens, item[0]),
         )
         return [node for _, node in ordered]
+
+    def _fs_ranker_candidate(self, node: dict[str, Any]) -> dict[str, Any]:
+        attrs = self._fs_node_attrs(node)
+        rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
+        title = (attrs.get("title") or rel_path.rsplit("/", 1)[-1]).strip()
+        is_dir = bool(attrs.get("is_dir", False))
+        return {
+            **node,
+            "title": title,
+            "rel_path": rel_path,
+            "tag": attrs.get("tag", ""),
+            "summary": attrs.get("summary", ""),
+            "is_dir": is_dir,
+            "is_leaf": not is_dir,
+        }
+
+    def _fs_ranker_tie_key(self, node: dict[str, Any], original_index: int) -> tuple[int, int, str, int]:
+        attrs = self._fs_node_attrs(node)
+        rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
+        is_file = 0 if attrs.get("is_dir", False) else 1
+        depth = int(node.get("depth", 0) or 0)
+        return (is_file, depth, rel_path.lower(), original_index)
 
     def _fs_node_sort_key(
         self,

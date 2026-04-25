@@ -29,11 +29,13 @@ from contextdb.retriever.algorithm.block_types import (
     BlockRetrievalResult,
     BlockTreePlan,
 )
+from contextdb.retriever.algorithm.ranker import Ranker
 from contextdb.utils.token_counter import TokenCounter
 
 log = get_logger(__name__)
 
 _DEFAULT_CONFIG = get_retriever_config("block")
+_FS_RANKERS = {"heuristic", "bm25", "none"}
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
@@ -77,9 +79,17 @@ class BlockRetriever(BaseRetriever):
         cache_enabled: bool = True,
         max_parallel_blocks: int = None,
         mode: str = "document",
+        ranker: Ranker | None = None,
+        fs_ranker: str = "heuristic",
     ):
         super().__init__(storage, llm)
+        if fs_ranker not in _FS_RANKERS:
+            raise ValueError(f"Unknown filesystem ranker: {fs_ranker!r}")
+        if fs_ranker == "bm25" and ranker is None:
+            raise ValueError("fs_ranker='bm25' requires a ranker instance")
         self.mode = mode
+        self.ranker = ranker
+        self.fs_ranker = fs_ranker
         self.cache_enabled = bool(cache_enabled)
 
         self.max_tokens_per_block = (
