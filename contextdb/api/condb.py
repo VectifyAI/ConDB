@@ -135,6 +135,7 @@ class ConDB:
     def _make_retriever(self, tree_id, llm, strategy, **kwargs) -> BaseRetriever:
         if strategy == "auto":
             strategy = self._pick_strategy(tree_id)
+        mode = self._tree_mode(tree_id)
         return build_strategy_retriever(
             self.storage,
             llm,
@@ -144,7 +145,20 @@ class ConDB:
             max_tokens_per_block=kwargs.get("max_tokens_per_block", 16000),
             cache_enabled=kwargs.get("cache_enabled", True),
             max_parallel_blocks=kwargs.get("max_parallel_blocks"),
+            mode=mode,
         )
+
+    def _tree_mode(self, tree_id: str) -> str:
+        cur = self.storage.conn.cursor()
+        cur.execute("SELECT meta_json FROM trees WHERE tree_id = ?", (tree_id,))
+        row = cur.fetchone()
+        if not row or not row["meta_json"]:
+            return "document"
+        try:
+            meta = json.loads(row["meta_json"])
+        except json.JSONDecodeError:
+            return "document"
+        return "filesystem" if meta.get("source") == "filesystem" else "document"
 
     def _pick_strategy(self, tree_id: str) -> str:
         cur = self.storage.conn.cursor()

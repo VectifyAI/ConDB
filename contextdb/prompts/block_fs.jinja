@@ -1,18 +1,18 @@
 Query: {{ query }}
 
-Selected so far:
-{% if previous_selected %}
-{% for ref in previous_selected %}
+Top candidates so far:
+{% if previous_top_candidate_ids %}
+{% for ref in previous_top_candidate_ids %}
 - {{ ref }}
 {% endfor %}
 {% else %}
 (none)
 {% endif %}
 
-{% if input_beams %}
+{% if input_frontier %}
 Current exploration path:
-{% for beam in input_beams %}
-- {{ beam }}
+{% for frontier_node in input_frontier %}
+- {{ frontier_node }}
 {% endfor %}
 {% endif %}
 
@@ -31,5 +31,4 @@ Selectable ids in the CURRENT BLOCK:
 {% endfor %}
 {% endif %}
 
-Pick up to {{ k }} candidates most relevant to the query, best first.
-IMPORTANT: Prefer [src] files/directories. Avoid [test] unless the query specifically asks about tests.
+Pick up to {{ pick_limit }} candidates most relevant to the query, best first.

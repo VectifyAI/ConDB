@@ -29,6 +29,7 @@ from pathlib import Path
 
 from contextdb.adapter.filesystem import FileSystemAdapter
 from contextdb.api.condb import ConDB
+from contextdb.retriever.algorithm.beam_retriever import BeamRetriever
 from contextdb.retriever.algorithm.block_retriever import BlockRetriever
 from contextdb.retriever.algorithm.ranker import BM25PathRanker
 
@@ -37,16 +38,23 @@ DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
 K_VALUES = (1, 3, 5, 10)
 
 
-def make_block_retriever(db: ConDB, args) -> BlockRetriever:
+def make_filesystem_retriever(db: ConDB, args, node_count: int):
     ranker = BM25PathRanker(db.storage) if args.ranker == "bm25" else None
-    return BlockRetriever(
-        db.storage,
-        db._llm,
-        mode="filesystem",
-        ranker=ranker,
-        fs_ranker=args.ranker,
-        max_parallel_blocks=args.max_parallel_blocks,
-    )
+    strategy = args.strategy
+    if strategy == "auto":
+        strategy = "beam" if node_count <= 50 else "block"
+    if strategy == "beam":
+        return BeamRetriever(db.storage, db._llm, mode="filesystem", ranker=ranker, fs_ranker=args.ranker)
+    if strategy == "block":
+        return BlockRetriever(
+            db.storage,
+            db._llm,
+            mode="filesystem",
+            ranker=ranker,
+            fs_ranker=args.ranker,
+            max_parallel_blocks=args.max_parallel_blocks,
+        )
+    return None
 
 
 # ── Data loading ──────────────────────────────────────────────────────
@@ -185,7 +193,7 @@ def run(args):
         "provider": args.provider,
         "top_k": args.top_k,
         "strategy": args.strategy,
-        "ranker": args.ranker if args.strategy == "block" else None,
+        "ranker": args.ranker,
         "limit": args.limit,
         "num_queries": len(queries),
         "num_snapshots": len(by_snap),
@@ -219,7 +227,7 @@ def run(args):
                 print(f"[ingest-err] {slug}__{commit}: {e}")
                 continue
             info = db.tree_info(tree_id)
-            retriever = make_block_retriever(db, args) if args.strategy == "block" else None
+            retriever = make_filesystem_retriever(db, args, info["node_count"])
 
             for q in qs:
                 qid = q["id"]
@@ -400,8 +408,8 @@ def main():
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
     p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
-    p.add_argument("--ranker", choices=["heuristic", "bm25", "none"], default="heuristic",
-                   help="Filesystem node ordering used with --strategy block")
+    p.add_argument("--ranker", choices=["bm25", "none"], default="bm25",
+                   help="Filesystem node ordering used with block/beam strategies")
     p.add_argument("--max-parallel-blocks", type=int, default=None)
     p.add_argument("--max-turns", type=int, default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all")

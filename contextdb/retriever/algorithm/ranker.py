@@ -10,6 +10,38 @@ from collections import Counter
 from typing import Any
 
 
+def normalize_path(path: str) -> str:
+    return str(path or "").strip("/").replace("\\", "/").lower()
+
+
+def path_matches_query(path: str, query: str, *, is_dir: bool = False) -> bool:
+    rel_path = normalize_path(path)
+    if not rel_path:
+        return False
+
+    query_text = str(query or "").replace("\\", "/").lower()
+    if is_dir:
+        return f"{rel_path.rstrip('/')}/" in query_text
+    return "/" in rel_path and rel_path in query_text
+
+
+def has_path_evidence(candidates: list[dict[str, Any]], query: str) -> bool:
+    return any(
+        path_matches_query(
+            candidate.get("rel_path") or candidate.get("path") or "",
+            query,
+            is_dir=_candidate_is_dir(candidate),
+        )
+        for candidate in candidates
+    )
+
+
+def _candidate_is_dir(candidate: dict[str, Any]) -> bool:
+    if "is_dir" in candidate:
+        return bool(candidate["is_dir"])
+    return not bool(candidate.get("is_leaf", False))
+
+
 class Ranker(ABC):
     @abstractmethod
     def rank(
@@ -26,10 +58,6 @@ class BM25PathRanker(Ranker):
 
     _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
     _TOKEN_RE = re.compile(r"[a-z0-9]+")
-
-    _SOURCE_DIRS = frozenset({"app", "apps", "core", "lib", "libs", "package", "packages", "src"})
-    _TEST_DIRS = frozenset({"spec", "specs", "test", "tests"})
-    _LOW_VALUE_DIRS = frozenset({"build", "dist", "docs", "examples", "vendor"})
 
     def __init__(
         self,
@@ -64,7 +92,7 @@ class BM25PathRanker(Ranker):
         docs = [self._candidate_tokens(c, context) for c in candidates]
         scores = self._bm25_scores(query_tokens, docs)
         return [
-            (candidate, score + self._prior_score(candidate, query_tokens))
+            (candidate, score + self._prior_score(candidate, query_tokens, query))
             for candidate, score in zip(candidates, scores)
         ]
 
@@ -100,8 +128,6 @@ class BM25PathRanker(Ranker):
             candidate.get("rel_path", ""),
             candidate.get("path", ""),
             candidate.get("title", ""),
-            candidate.get("tag", ""),
-            candidate.get("summary", ""),
         ]
         tokens = self._tokenize(" ".join(str(p) for p in parts if p))
 
@@ -132,31 +158,10 @@ class BM25PathRanker(Ranker):
         self._subtree_token_cache[key] = tokens
         return tokens
 
-    def _prior_score(self, candidate: dict[str, Any], query_tokens: list[str]) -> float:
+    def _prior_score(self, candidate: dict[str, Any], query_tokens: list[str], query: str = "") -> float:
         rel_path = str(candidate.get("rel_path") or candidate.get("path") or "").strip("/")
-        parts = [p.lower() for p in rel_path.split("/") if p]
-        first = parts[0] if parts else ""
-        tag = str(candidate.get("tag") or "").lower()
-        title = str(candidate.get("title") or "").lower()
-        basename = rel_path.rsplit("/", 1)[-1].lower() if rel_path else title
-
-        score = 0.0
-        if basename and basename in query_tokens:
-            score += 1.5
-        if first in self._SOURCE_DIRS or tag == "[src]":
-            score += 0.4
-
-        asks_for_tests = bool(set(query_tokens).intersection(self._TEST_DIRS | {"testing", "pytest"}))
-        is_test = tag == "[test]" or any(part in self._TEST_DIRS for part in parts)
-        if asks_for_tests and is_test:
-            score += 0.8
-        elif is_test:
-            score -= 2.0
-
-        if first in self._LOW_VALUE_DIRS and "docs" not in query_tokens and "readme" not in query_tokens:
-            score -= 0.3
-
-        return score
+        is_dir = self._is_dir(candidate)
+        return 20.0 if path_matches_query(rel_path, query, is_dir=is_dir) else 0.0
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
@@ -172,9 +177,7 @@ class BM25PathRanker(Ranker):
 
     @staticmethod
     def _is_dir(candidate: dict[str, Any]) -> bool:
-        if "is_dir" in candidate:
-            return bool(candidate["is_dir"])
-        return not bool(candidate.get("is_leaf", False))
+        return _candidate_is_dir(candidate)
 
     @staticmethod
     def _attrs_from_node_dict(node: dict[str, Any]) -> dict[str, Any]:

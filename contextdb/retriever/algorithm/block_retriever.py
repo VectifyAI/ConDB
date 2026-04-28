@@ -29,13 +29,13 @@ from contextdb.retriever.algorithm.block_types import (
     BlockRetrievalResult,
     BlockTreePlan,
 )
-from contextdb.retriever.algorithm.ranker import Ranker
+from contextdb.retriever.algorithm.ranker import BM25PathRanker, Ranker
 from contextdb.utils.token_counter import TokenCounter
 
 log = get_logger(__name__)
 
 _DEFAULT_CONFIG = get_retriever_config("block")
-_FS_RANKERS = {"heuristic", "bm25", "none"}
+_FS_RANKERS = {"bm25", "none"}
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
@@ -48,10 +48,10 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "selected": {"type": "array", "items": {"type": "string"}},
+                "ranked_ids": {"type": "array", "items": {"type": "string"}},
                 "done": {"type": "boolean"},
             },
-            "required": ["selected"],
+            "required": ["ranked_ids"],
         },
     }
 ]
@@ -80,13 +80,13 @@ class BlockRetriever(BaseRetriever):
         max_parallel_blocks: int = None,
         mode: str = "document",
         ranker: Ranker | None = None,
-        fs_ranker: str = "heuristic",
+        fs_ranker: str = "none",
     ):
         super().__init__(storage, llm)
         if fs_ranker not in _FS_RANKERS:
             raise ValueError(f"Unknown filesystem ranker: {fs_ranker!r}")
-        if fs_ranker == "bm25" and ranker is None:
-            raise ValueError("fs_ranker='bm25' requires a ranker instance")
+        if mode == "filesystem" and fs_ranker == "bm25" and ranker is None:
+            ranker = BM25PathRanker(storage)
         self.mode = mode
         self.ranker = ranker
         self.fs_ranker = fs_ranker
@@ -169,8 +169,8 @@ class BlockRetriever(BaseRetriever):
     ) -> BlockRetrievalResult:
         """Subtree-driven retrieval for filesystem navigation.
 
-        1. Process top block (shallow layers) → select beams
-        2. Dynamically build subtree blocks from beam nodes → repeat
+        1. Process top block (shallow layers) to choose the first frontier.
+        2. Expand frontier directories into block candidate sets and repeat.
         """
         root_id = self.storage.get_root_id(tree_id)
         if not root_id:
@@ -181,12 +181,12 @@ class BlockRetriever(BaseRetriever):
             self.token_counter.precompute_tree_tokens(self.storage, tree_id)
             self._precomputed_tree_id = tree_id
 
-        beams = self._collapse_fs_beams(
+        frontier = self._collapse_fs_frontier(
             tree_id,
             [{"node_id": root_id, "title": "root", "path": "root"}],
         )
-        selected: list[str] = []
-        previous_selected: list[str] = []
+        top_candidate_ids: list[str] = []
+        previous_top_candidate_ids: list[str] = []
         trace: list[dict[str, Any]] = []
         block_traces: list[dict[str, Any]] = []
 
@@ -197,40 +197,42 @@ class BlockRetriever(BaseRetriever):
         cache_window: deque[dict[str, Any]] = deque()
         cache_window_tokens = 0
 
-        k = beam_size if beam_size else select_k
+        result_limit = max(1, int(select_k or 1))
+        frontier_limit = beam_size if beam_size else 1
+        pick_limit = max(result_limit, frontier_limit)
         max_rounds = max(1, max_turns) if max_turns else 20
 
-        result = BlockResult(block_id="", ranked_node_ids=[], selected_node_ids=[], done=False)
+        result = BlockResult(block_id="", ordered_node_ids=[], top_candidate_node_ids=[], done=False)
 
         turn = 0
         while not result.done and turn < max_rounds:
-            if turn > 0 and not self._beams_have_children(tree_id, beams):
+            if turn > 0 and not self._frontier_has_children(tree_id, frontier):
                 break
 
             round_label = "top" if turn == 0 else "subtree"
             block_specs = (
-                self._create_top_block_specs_fs(tree_id, beams[0], query=query)
+                self._create_top_block_specs_fs(tree_id, frontier[0], query=query)
                 if turn == 0
-                else self._create_subtree_block_specs_fs(tree_id, beams, query=query)
+                else self._create_subtree_block_specs_fs(tree_id, frontier, query=query)
             )
             if not block_specs:
                 break
 
             cache_segments = self._build_cache_segments(cache_window)
-            local_k = k if len(block_specs) <= 1 else max(k, 2)
+            block_pick_limit = pick_limit if len(block_specs) <= 1 else max(pick_limit, 2)
             cache_current_block = self.cache_current_block if turn == 0 else self.cache_subtree_block
             block_rows = self._process_fs_block_specs(
                 subtree_specs=block_specs,
                 query=query,
-                previous_selected=previous_selected,
-                k=local_k,
+                previous_top_candidate_ids=previous_top_candidate_ids,
+                pick_limit=block_pick_limit,
                 cache_segments=cache_segments,
                 cache_current_block=cache_current_block,
             )
             if not block_rows:
                 break
 
-            merged_ranked: list[str] = []
+            merged_ids: list[str] = []
             candidate_count = 0
 
             for spec, block_result, llm_called, cache_metrics in block_rows:
@@ -241,7 +243,7 @@ class BlockRetriever(BaseRetriever):
                 blocks_processed += 1
 
                 candidate_count += len(block.node_ids)
-                merged_ranked.extend(block_result.ranked_node_ids)
+                merged_ids.extend(block_result.ordered_node_ids)
 
                 block_trace = {
                     "type": f"{round_label}_horizontal" if spec["block_count"] > 1 else round_label,
@@ -253,72 +255,69 @@ class BlockRetriever(BaseRetriever):
                     "tokens": block.total_tokens,
                 }
                 if round_label == "subtree":
-                    block_trace["beam_id"] = spec["beam"]["node_id"]
+                    block_trace["frontier_id"] = spec["frontier"]["node_id"]
                 block_traces.append(block_trace)
 
-            merged_ranked = self._merge_unique_ids(merged_ranked)
+            merged_ids = self._merge_unique_ids(merged_ids)
+            round_top_candidate_ids = []
+            remaining_result_slots = max(0, result_limit - len(top_candidate_ids))
+            if remaining_result_slots > 0:
+                for node_id in merged_ids:
+                    if self._is_fs_directory_id(tree_id, node_id):
+                        continue
+                    if node_id in top_candidate_ids or node_id in round_top_candidate_ids:
+                        continue
+                    round_top_candidate_ids.append(node_id)
+                    if len(round_top_candidate_ids) >= remaining_result_slots:
+                        break
             result = BlockResult(
                 block_id=f"fs_{round_label}_{turn}",
-                ranked_node_ids=merged_ranked,
-                selected_node_ids=merged_ranked[:max(1, k)],
-                done=(not merged_ranked) or all(block_result.done for _, block_result, _, _ in block_rows),
+                ordered_node_ids=merged_ids,
+                top_candidate_node_ids=round_top_candidate_ids,
+                done=(not merged_ids) or all(block_result.done for _, block_result, _, _ in block_rows),
             )
 
-            if len(block_rows) > 1 and len(merged_ranked) > 1:
-                rerank_cache_segments = self._build_cache_segments(cache_window)
-                rerank_block, rerank_allowed_ids = self._build_fs_candidate_block(
-                    tree_id=tree_id,
-                    node_ids=merged_ranked,
-                    block_id=f"fs_{round_label}_rerank_t{turn}",
+            for nid in result.top_candidate_node_ids:
+                if nid not in top_candidate_ids:
+                    top_candidate_ids.append(nid)
+            previous_top_candidate_ids = list(top_candidate_ids)
+            if len(top_candidate_ids) >= result_limit:
+                frontier = []
+                result = BlockResult(
+                    block_id=result.block_id,
+                    ordered_node_ids=result.ordered_node_ids,
+                    top_candidate_node_ids=result.top_candidate_node_ids,
+                    done=True,
+                    usage=result.usage,
                 )
-                result, llm_called, cache_metrics = self._process_block(
-                    block=rerank_block,
-                    query=query,
-                    input_beams=beams,
-                    previous_selected=previous_selected,
-                    allowed_node_ids=rerank_allowed_ids,
-                    k=k,
-                    cache_segments=rerank_cache_segments,
-                    current_block_content=rerank_block.cached_content or "",
-                    cache_current_block=False,
+            else:
+                frontier_ids = [
+                    node_id
+                    for node_id in result.ordered_node_ids
+                    if self._is_fs_directory_id(tree_id, node_id)
+                ]
+                frontier = self._collapse_fs_frontier(
+                    tree_id,
+                    self._update_frontier(frontier_ids, tree_id, beam_size),
                 )
-                total_llm_calls += llm_called
-                cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
-                cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
-                blocks_processed += 1
-
-                block_traces.append({
-                    "type": f"{round_label}_global",
-                    "block_id": rerank_block.block_id,
-                    "nodes": len(rerank_block.node_ids),
-                    "allowed": len(rerank_allowed_ids),
-                    "tokens": rerank_block.total_tokens,
-                })
-
-            previous_selected = list(result.selected_node_ids)
-            for nid in previous_selected:
-                if nid not in selected:
-                    selected.append(nid)
-            beams = self._collapse_fs_beams(
-                tree_id,
-                self._update_beams(result.ranked_node_ids, tree_id, beam_size),
-            )
-            cache_window_tokens = self._append_fs_selected_blocks(
-                cache_window=cache_window,
-                total_tokens=cache_window_tokens,
-                block_rows=block_rows,
-                beams=beams,
-                cache_block=cache_current_block,
-                pin_block=(turn == 0),
-            )
-            result = self._override_done_if_dirs(result, tree_id, beams)
+                cache_window_tokens = self._append_fs_frontier_blocks(
+                    cache_window=cache_window,
+                    total_tokens=cache_window_tokens,
+                    block_rows=block_rows,
+                    frontier=frontier,
+                    cache_block=cache_current_block,
+                    pin_block=(turn == 0),
+                )
+                result = self._override_done_if_frontier_dirs(result, tree_id, frontier)
 
             trace_entry = {
                 "turn": turn,
                 "type": f"{round_label}_split" if len(block_rows) > 1 else round_label,
                 "candidates": candidate_count,
-                "reranked_candidates": len(merged_ranked),
-                "kept": len(result.ranked_node_ids),
+                "merged_ids": len(merged_ids),
+                "top_candidate_ids": len(top_candidate_ids),
+                "frontier": len([node for node in frontier if node.get("node_id")]),
+                "kept": len(frontier),
                 "done": result.done,
             }
             if len(block_rows) > 1:
@@ -328,23 +327,10 @@ class BlockRetriever(BaseRetriever):
             trace.append(trace_entry)
             turn += 1
 
-        # Filter out directory nodes — only return files
-        file_selected = []
-        for nid in selected:
-            node = self.storage.get_node(tree_id, nid)
-            if node and node.attrs_json:
-                try:
-                    attrs = json.loads(node.attrs_json)
-                except json.JSONDecodeError:
-                    attrs = {}
-                if attrs.get("is_dir", False):
-                    continue
-            file_selected.append(nid)
-        selected = file_selected if file_selected else selected
-
-        contents = self._gather_contents(tree_id, selected)
+        top_candidate_ids = top_candidate_ids[:result_limit]
+        contents = self._gather_contents(tree_id, top_candidate_ids)
         return BlockRetrievalResult(
-            nodes=selected, contents=contents, trace=trace, turns=len(trace),
+            nodes=top_candidate_ids, contents=contents, trace=trace, turns=len(trace),
             blocks_processed=blocks_processed, total_llm_calls=total_llm_calls,
             cache_read_tokens=cache_read_tokens, cache_creation_tokens=cache_creation_tokens,
             block_traces=block_traces,
@@ -375,8 +361,8 @@ class BlockRetriever(BaseRetriever):
             return self._empty_result()
 
         beams = [{"node_id": root_id, "title": "root", "path": "root"}]
-        previous_selected: list[str] = []
-        selected: list[str] = []
+        previous_top_candidate_ids: list[str] = []
+        top_candidate_ids: list[str] = []
         trace: list[dict[str, Any]] = []
         block_traces: list[dict[str, Any]] = []
 
@@ -387,7 +373,9 @@ class BlockRetriever(BaseRetriever):
         cache_window: deque[dict[str, Any]] = deque()
         cache_window_tokens = 0
 
-        k = beam_size if beam_size else select_k
+        result_limit = max(1, int(select_k or 1))
+        frontier_limit = beam_size if beam_size else 1
+        pick_limit = max(result_limit, frontier_limit)
         max_calls = max_turns if max_turns else len(plan.blocks)
 
         h_group_map: dict[str, str] = {}
@@ -414,7 +402,7 @@ class BlockRetriever(BaseRetriever):
                 group_cache_segments = self._build_cache_segments(cache_window)
 
                 group_results = self._process_horizontal_group(
-                    group_blocks, tree_id, query, beams, previous_selected, k,
+                    group_blocks, tree_id, query, beams, previous_top_candidate_ids, pick_limit,
                     cache_segments=group_cache_segments,
                     cache_current_block=self.cache_current_block,
                 )
@@ -425,9 +413,9 @@ class BlockRetriever(BaseRetriever):
                     cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
                     blocks_processed += 1
 
-                    for node_id in result.selected_node_ids:
-                        if node_id not in selected:
-                            selected.append(node_id)
+                    for node_id in result.top_candidate_node_ids:
+                        if len(top_candidate_ids) < result_limit and node_id not in top_candidate_ids:
+                            top_candidate_ids.append(node_id)
 
                     block_traces.append({
                         "type": "horizontal",
@@ -437,28 +425,28 @@ class BlockRetriever(BaseRetriever):
                         "tokens": blk.total_tokens,
                     })
 
-                all_ranked = []
+                all_ordered = []
                 for result, _, _, _ in group_results:
-                    all_ranked.extend(result.ranked_node_ids)
+                    all_ordered.extend(result.ordered_node_ids)
                 seen = set()
-                merged_ranked = []
-                for nid in all_ranked:
+                merged_ids = []
+                for nid in all_ordered:
                     if nid not in seen:
                         seen.add(nid)
-                        merged_ranked.append(nid)
+                        merged_ids.append(nid)
 
-                previous_selected = merged_ranked[:max(1, k)]
-                for nid in previous_selected:
-                    if nid not in selected:
-                        selected.append(nid)
-                beams = self._update_beams(merged_ranked, tree_id, beam_size)
+                previous_top_candidate_ids = merged_ids[:pick_limit]
+                for nid in previous_top_candidate_ids:
+                    if len(top_candidate_ids) < result_limit and nid not in top_candidate_ids:
+                        top_candidate_ids.append(nid)
+                beams = self._update_beams(merged_ids, tree_id, beam_size)
 
                 trace.append({
                     "turn": len(trace),
                     "group_id": group_id,
                     "h_blocks": len(group_blocks),
-                    "candidates": sum(len(r.ranked_node_ids) for r, _, _, _ in group_results),
-                    "kept": len(merged_ranked),
+                    "candidates": sum(len(r.ordered_node_ids) for r, _, _, _ in group_results),
+                    "kept": len(merged_ids),
                     "done": any(r.done for r, _, _, _ in group_results),
                 })
                 if any(r.done for r, _, _, _ in group_results):
@@ -486,10 +474,10 @@ class BlockRetriever(BaseRetriever):
             result, llm_called, cache_metrics = self._process_block(
                 block=block,
                 query=query,
-                input_beams=beams,
-                previous_selected=previous_selected,
+                input_frontier=beams,
+                previous_top_candidate_ids=previous_top_candidate_ids,
                 allowed_node_ids=allowed_node_ids,
-                k=k,
+                pick_limit=pick_limit,
                 cache_segments=block_cache_segments,
                 current_block_content=block.cached_content or "",
                 cache_current_block=self.cache_current_block,
@@ -502,12 +490,12 @@ class BlockRetriever(BaseRetriever):
                 cache_window, cache_window_tokens, block, cache_block=self.cache_current_block,
             )
 
-            for node_id in result.selected_node_ids:
-                if node_id not in selected:
-                    selected.append(node_id)
+            for node_id in result.top_candidate_node_ids:
+                if len(top_candidate_ids) < result_limit and node_id not in top_candidate_ids:
+                    top_candidate_ids.append(node_id)
 
-            previous_selected = list(result.selected_node_ids)
-            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
+            previous_top_candidate_ids = list(result.top_candidate_node_ids)
+            beams = self._update_beams(result.ordered_node_ids, tree_id, beam_size)
 
             block_traces.append({
                 "type": "vertical",
@@ -521,17 +509,18 @@ class BlockRetriever(BaseRetriever):
                 "turn": len(trace),
                 "block_id": block.block_id,
                 "candidates": len(allowed_node_ids),
-                "kept": len(result.ranked_node_ids),
+                "kept": len(result.ordered_node_ids),
                 "done": result.done,
             })
 
             if result.done:
                 break
 
-        contents = self._gather_contents(tree_id, selected)
+        top_candidate_ids = top_candidate_ids[:result_limit]
+        contents = self._gather_contents(tree_id, top_candidate_ids)
 
         return BlockRetrievalResult(
-            nodes=selected,
+            nodes=top_candidate_ids,
             contents=contents,
             trace=trace,
             turns=len(trace),
@@ -548,8 +537,8 @@ class BlockRetriever(BaseRetriever):
         tree_id,
         query,
         beams,
-        previous_selected,
-        k,
+        previous_top_candidate_ids,
+        pick_limit,
         cache_segments: list[str] = None,
         cache_current_block: bool = True,
     ):
@@ -566,7 +555,7 @@ class BlockRetriever(BaseRetriever):
         if len(tasks) == 1:
             blk, allowed = tasks[0]
             result, llm_called, cache_metrics = self._process_block(
-                blk, query, beams, previous_selected, allowed, k,
+                blk, query, beams, previous_top_candidate_ids, allowed, pick_limit,
                 cache_segments=cache_segments or [],
                 current_block_content=blk.cached_content or "",
                 cache_current_block=cache_current_block,
@@ -582,9 +571,9 @@ class BlockRetriever(BaseRetriever):
                     blk,
                     query,
                     beams,
-                    previous_selected,
+                    previous_top_candidate_ids,
                     allowed,
-                    k,
+                    pick_limit,
                     cache_segments=cache_segments or [],
                     current_block_content=blk.cached_content or "",
                     cache_current_block=cache_current_block,
@@ -607,10 +596,10 @@ class BlockRetriever(BaseRetriever):
         self,
         block,
         query,
-        input_beams,
-        previous_selected,
+        input_frontier,
+        previous_top_candidate_ids,
         allowed_node_ids,
-        k,
+        pick_limit,
         cache_segments: list[str] = None,
         current_block_content: str = "",
         cache_current_block: bool = True,
@@ -618,7 +607,7 @@ class BlockRetriever(BaseRetriever):
         """Process one fixed block with dynamic beam filter."""
         empty_metrics = {"cache_read_tokens": 0, "cache_creation_tokens": 0}
         if not allowed_node_ids:
-            return BlockResult(block_id=block.block_id, ranked_node_ids=[], selected_node_ids=[], done=False), 0, empty_metrics
+            return BlockResult(block_id=block.block_id, ordered_node_ids=[], top_candidate_node_ids=[], done=False), 0, empty_metrics
 
         current_block_prompt = self._render_block_cache_segment(
             block.block_id,
@@ -648,25 +637,25 @@ class BlockRetriever(BaseRetriever):
                 tree_id=block.tree_id,
                 block=block,
                 allowed_node_ids=allowed_node_ids,
-                input_beams=input_beams,
-                previous_selected=previous_selected,
+                input_frontier=input_frontier,
+                previous_top_candidate_ids=previous_top_candidate_ids,
             )
             dynamic_prompt = BLOCK_FS_PROMPT.render(
                 query=query,
-                previous_selected=prompt_context["previous_selected"],
-                input_beams=prompt_context["input_beams"],
+                previous_top_candidate_ids=prompt_context["previous_top_candidate_ids"],
+                input_frontier=prompt_context["input_frontier"],
                 selection_mode=prompt_context["selection_mode"],
                 selection_aliases=prompt_context["selection_aliases"],
-                k=k,
+                pick_limit=pick_limit,
             )
             response_id_map = prompt_context["alias_to_node_id"]
         else:
             dynamic_prompt = BLOCK_PROMPT.render(
                 query=query,
-                previous_selected=previous_selected,
-                input_beams=input_beams,
+                previous_top_candidate_ids=previous_top_candidate_ids,
+                input_frontier=input_frontier,
                 allowed_node_ids=allowed_node_ids,
-                k=k,
+                pick_limit=pick_limit,
             )
         prefix_tokens = self.token_counter.count_text_tokens(self._cache_payload_to_text(cache_payload))
         current_tokens = 0 if (self.cache_enabled and cache_current_block) else self.token_counter.count_text_tokens(current_block_prompt)
@@ -776,19 +765,29 @@ class BlockRetriever(BaseRetriever):
             response_id_map=response_id_map,
         )
 
+        top_candidate_node_ids = ranked_ids[:max(1, pick_limit)]
+        if self.mode == "filesystem":
+            top_candidate_node_ids = []
+            for node_id in ranked_ids:
+                if self._is_fs_directory_id(block.tree_id, node_id):
+                    continue
+                top_candidate_node_ids.append(node_id)
+                if len(top_candidate_node_ids) >= max(1, pick_limit):
+                    break
+
         result = BlockResult(
             block_id=block.block_id,
-            ranked_node_ids=ranked_ids,
-            selected_node_ids=ranked_ids[:max(1, k)],
+            ordered_node_ids=ranked_ids,
+            top_candidate_node_ids=top_candidate_node_ids,
             done=done,
             usage=usage,
         )
         return result, 1, cache_metrics
 
-    # ---- beam management ----
+    # ---- frontier management ----
 
-    def _update_beams(self, ranked_ids, tree_id, beam_size):
-        new_beams = []
+    def _update_frontier(self, ranked_ids, tree_id, beam_size):
+        next_frontier = []
         for node_id in ranked_ids:
             node = self.storage.get_node(tree_id, node_id)
             attrs = {}
@@ -798,38 +797,54 @@ class BlockRetriever(BaseRetriever):
                 except json.JSONDecodeError:
                     attrs = {}
 
-            if self.mode == "filesystem":
-                beam_path = attrs.get("rel_path", "")
-            else:
-                beam_path = node.path if node else ""
-            new_beams.append({
+            frontier_path = attrs.get("rel_path", "") if self.mode == "filesystem" else (node.path if node else "")
+            next_frontier.append({
                 "node_id": node_id,
                 "title": attrs.get("title", ""),
-                "path": beam_path,
+                "path": frontier_path,
             })
-            if beam_size and len(new_beams) >= beam_size:
+            if beam_size and len(next_frontier) >= beam_size:
                 break
 
-        return new_beams if new_beams else [{"node_id": "", "title": "", "path": ""}]
+        return next_frontier if next_frontier else [{"node_id": "", "title": "", "path": ""}]
 
-    def _beams_have_children(self, tree_id: str, beams: list[dict[str, str]]) -> bool:
-        for beam in beams:
-            node_id = beam.get("node_id", "")
+    def _update_beams(self, ranked_ids, tree_id, beam_size):
+        return self._update_frontier(ranked_ids, tree_id, beam_size)
+
+    def _frontier_has_children(self, tree_id: str, frontier: list[dict[str, str]]) -> bool:
+        for frontier_node in frontier:
+            node_id = frontier_node.get("node_id", "")
             if node_id and self.storage.get_children(tree_id, node_id):
                 return True
         return False
 
-    def _override_done_if_dirs(self, result: BlockResult, tree_id: str, beams: list[dict]) -> BlockResult:
-        """In fs mode, force-continue if beams still point to directories."""
-        if result.done and self._beams_have_children(tree_id, beams):
+    def _beams_have_children(self, tree_id: str, beams: list[dict[str, str]]) -> bool:
+        return self._frontier_has_children(tree_id, beams)
+
+    def _override_done_if_frontier_dirs(self, result: BlockResult, tree_id: str, frontier: list[dict]) -> BlockResult:
+        """In fs mode, force-continue if the frontier still has expandable directories."""
+        if result.done and self._frontier_has_children(tree_id, frontier):
             return BlockResult(
                 block_id=result.block_id,
-                ranked_node_ids=result.ranked_node_ids,
-                selected_node_ids=result.selected_node_ids,
+                ordered_node_ids=result.ordered_node_ids,
+                top_candidate_node_ids=result.top_candidate_node_ids,
                 done=False,
                 usage=result.usage,
             )
         return result
+
+    def _override_done_if_dirs(self, result: BlockResult, tree_id: str, beams: list[dict]) -> BlockResult:
+        return self._override_done_if_frontier_dirs(result, tree_id, beams)
+
+    def _is_fs_directory_id(self, tree_id: str, node_id: str) -> bool:
+        node = self.storage.get_node(tree_id, node_id)
+        if not node or not node.attrs_json:
+            return False
+        try:
+            attrs = json.loads(node.attrs_json)
+        except json.JSONDecodeError:
+            return False
+        return bool(attrs.get("is_dir", False))
 
     # ---- allowed node filtering (dynamic, but content stays fixed) ----
 
@@ -883,9 +898,9 @@ class BlockRetriever(BaseRetriever):
 
     # ---- DB helpers ----
 
-    def _gather_contents(self, tree_id, selected):
+    def _gather_contents(self, tree_id, top_candidate_ids):
         contents = []
-        for node_id in selected:
+        for node_id in top_candidate_ids:
             entity = self.storage.get_entity(tree_id, node_id)
             if entity:
                 contents.append({"node_id": node_id, "content": json.loads(entity.payload_json)})

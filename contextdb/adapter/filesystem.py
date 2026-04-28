@@ -61,19 +61,6 @@ class FileSystemAdapter(BaseAdapter):
         tree = self._scan_dir(self.root, entities)
         return tree, entities
 
-    @staticmethod
-    def _get_file_tag(rel_path: str, ext: str, name: str) -> str:
-        parts = rel_path.replace("\\", "/").split("/")
-        if any(p in ("test", "tests") for p in parts):
-            return "[test]"
-        if ext in (".md", ".rst", ".txt") or "docs/" in rel_path.replace("\\", "/") + "/":
-            return "[doc]"
-        config_names = {"setup.py", "setup.cfg", "pyproject.toml", "Makefile", "Dockerfile"}
-        config_exts = {".ini", ".cfg", ".yaml", ".yml", ".toml"}
-        if name in config_names or ext in config_exts:
-            return "[config]"
-        return "[src]"
-
     def _scan_dir(self, dir_path: Path, entities: dict[str, dict[str, Any]]) -> dict[str, Any]:
         entity_id = str(uuid.uuid4())
         children: dict[str, dict[str, Any]] = {}
@@ -171,15 +158,12 @@ class FileSystemAdapter(BaseAdapter):
             "text": "",
         }
 
-        tag = self._get_file_tag(rel, ext, file_path.name)
-
         attrs = {
             "title": file_path.name,
             "file_size": stat.st_size,
             "extension": ext,
             "mtime": stat.st_mtime,
             "is_dir": False,
-            "tag": tag,
             "rel_path": rel,
         }
 
@@ -279,8 +263,6 @@ class FileSystemAdapter(BaseAdapter):
 
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         ext = Path(rel_path).suffix.lower()
-        name = Path(rel_path).name or title
-        tag = self._get_file_tag(rel_path, ext, name)
 
         entity_id = str(uuid.uuid4())
         entities[entity_id] = {
@@ -297,7 +279,6 @@ class FileSystemAdapter(BaseAdapter):
                 "extension": ext,
                 "mtime": mtime,
                 "is_dir": False,
-                "tag": tag,
                 "rel_path": rel_path,
                 "virtual_source": virtual_source,
             },
@@ -422,7 +403,6 @@ class FileSystemAdapter(BaseAdapter):
                 virtual_rel = entry["path"]
                 virtual_ext = Path(virtual_rel).suffix.lower()
                 base_name = Path(virtual_rel).name or slot_name
-                tag = self._get_file_tag(virtual_rel, virtual_ext, base_name)
                 key = base_name
                 if key in children:
                     key = f"{base_name}::{uuid.uuid4().hex[:8]}"
@@ -460,7 +440,6 @@ class FileSystemAdapter(BaseAdapter):
                             "extension": virtual_ext,
                             "mtime": stat.st_mtime,
                             "is_dir": False,
-                            "tag": tag,
                             "rel_path": virtual_rel,
                             "virtual_source": rel,
                         },

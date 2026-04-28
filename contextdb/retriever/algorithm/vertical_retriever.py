@@ -34,8 +34,8 @@ class VerticalRetriever(BlockRetriever):
         if not top_specs:
             return self._empty_result()
         top_block = top_specs[0]["block"]
-        selected: list[str] = []
-        previous_selected: list[str] = []
+        top_candidate_ids: list[str] = []
+        previous_top_candidate_ids: list[str] = []
         trace: list[dict[str, Any]] = []
         block_traces: list[dict[str, Any]] = []
 
@@ -46,7 +46,9 @@ class VerticalRetriever(BlockRetriever):
         cache_window: deque[dict[str, Any]] = deque()
         cache_window_tokens = 0
 
-        k = beam_size if beam_size else select_k
+        result_limit = max(1, int(select_k or 1))
+        frontier_limit = beam_size if beam_size else 1
+        pick_limit = max(result_limit, frontier_limit)
         max_calls = max_turns if max_turns else 20
 
         # Step 1: top block
@@ -58,10 +60,10 @@ class VerticalRetriever(BlockRetriever):
         top_result, llm_called, cache_metrics = self._process_block(
             block=top_block,
             query=query,
-            input_beams=beams,
-            previous_selected=previous_selected,
+            input_frontier=beams,
+            previous_top_candidate_ids=previous_top_candidate_ids,
             allowed_node_ids=allowed_top,
-            k=k,
+            pick_limit=pick_limit,
             cache_segments=top_cache_segments,
             current_block_content=top_block.cached_content or "",
             cache_current_block=self.cache_current_block,
@@ -78,11 +80,11 @@ class VerticalRetriever(BlockRetriever):
             pin_block=True,
         )
 
-        beams = self._update_beams(top_result.ranked_node_ids, tree_id, beam_size)
-        for nid in top_result.selected_node_ids:
-            if nid not in selected:
-                selected.append(nid)
-        previous_selected = list(top_result.selected_node_ids)
+        beams = self._update_beams(top_result.ordered_node_ids, tree_id, beam_size)
+        for nid in top_result.top_candidate_node_ids:
+            if len(top_candidate_ids) < result_limit and nid not in top_candidate_ids:
+                top_candidate_ids.append(nid)
+        previous_top_candidate_ids = list(top_result.top_candidate_node_ids)
 
         block_traces.append({
             "type": "top",
@@ -98,7 +100,7 @@ class VerticalRetriever(BlockRetriever):
             "turn": 0,
             "block_id": top_block.block_id,
             "candidates": len(allowed_top),
-            "kept": len(top_result.ranked_node_ids),
+            "kept": len(top_result.ordered_node_ids),
             "done": done,
         })
 
@@ -126,10 +128,10 @@ class VerticalRetriever(BlockRetriever):
                 result, branch_calls, branch_cache_metrics = self._process_block(
                     block=subtree_block,
                     query=query,
-                    input_beams=[beam],
-                    previous_selected=previous_selected,
+                    input_frontier=[beam],
+                    previous_top_candidate_ids=previous_top_candidate_ids,
                     allowed_node_ids=allowed_sub,
-                    k=k,
+                    pick_limit=pick_limit,
                     cache_segments=sub_cache_segments,
                     current_block_content=subtree_block.cached_content or "",
                     cache_current_block=self.cache_subtree_block,
@@ -142,9 +144,9 @@ class VerticalRetriever(BlockRetriever):
                     cache_window, cache_window_tokens, subtree_block, cache_block=self.cache_subtree_block,
                 )
 
-                for nid in result.selected_node_ids:
-                    if nid not in selected:
-                        selected.append(nid)
+                for nid in result.top_candidate_node_ids:
+                    if len(top_candidate_ids) < result_limit and nid not in top_candidate_ids:
+                        top_candidate_ids.append(nid)
 
                 branch_rows.append({
                     "beam_id": beam_id,
@@ -168,23 +170,23 @@ class VerticalRetriever(BlockRetriever):
             if not branch_rows:
                 break
 
-            merged_ranked: list[str] = []
+            merged_ids: list[str] = []
             seen: set[str] = set()
             for row in branch_rows:
-                for nid in row["result"].ranked_node_ids:
+                for nid in row["result"].ordered_node_ids:
                     if nid in seen:
                         continue
                     seen.add(nid)
-                    merged_ranked.append(nid)
+                    merged_ids.append(nid)
 
-            if not merged_ranked:
+            if not merged_ids:
                 break
 
-            previous_selected = merged_ranked[:max(1, k)]
-            for nid in previous_selected:
-                if nid not in selected:
-                    selected.append(nid)
-            beams = self._update_beams(merged_ranked, tree_id, beam_size)
+            previous_top_candidate_ids = merged_ids[:pick_limit]
+            for nid in previous_top_candidate_ids:
+                if len(top_candidate_ids) < result_limit and nid not in top_candidate_ids:
+                    top_candidate_ids.append(nid)
+            beams = self._update_beams(merged_ids, tree_id, beam_size)
 
             done = all(row["result"].done for row in branch_rows)
             if done and self._beams_have_children(tree_id, beams):
@@ -195,14 +197,14 @@ class VerticalRetriever(BlockRetriever):
                 "type": "branch_split",
                 "branch_blocks": len(branch_rows),
                 "candidates": sum(row["allowed_count"] for row in branch_rows),
-                "kept": len(merged_ranked),
+                "kept": len(merged_ids),
                 "done": done,
             })
             turn += 1
 
         # Keep files only in filesystem mode
-        file_selected = []
-        for nid in selected:
+        file_top_candidate_ids = []
+        for nid in top_candidate_ids:
             node = self.storage.get_node(tree_id, nid)
             if node and node.attrs_json:
                 try:
@@ -211,12 +213,12 @@ class VerticalRetriever(BlockRetriever):
                     attrs = {}
                 if attrs.get("is_dir", False):
                     continue
-            file_selected.append(nid)
-        selected = file_selected if file_selected else selected
+            file_top_candidate_ids.append(nid)
+        top_candidate_ids = (file_top_candidate_ids if file_top_candidate_ids else top_candidate_ids)[:result_limit]
 
-        contents = self._gather_contents(tree_id, selected)
+        contents = self._gather_contents(tree_id, top_candidate_ids)
         return BlockRetrievalResult(
-            nodes=selected,
+            nodes=top_candidate_ids,
             contents=contents,
             trace=trace,
             turns=len(trace),

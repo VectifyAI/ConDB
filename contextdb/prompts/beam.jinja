@@ -2,14 +2,14 @@ You are ranking tree nodes to answer a user question.
 
 Query: {{ query }}
 
-Selected so far:
-{% if selected %}
-{{ selected }}
+Top candidates so far:
+{% if top_candidate_ids %}
+{{ top_candidate_ids }}
 {% else %}
 (none)
 {% endif %}
 
-Candidates (pick up to {{ k }} ids, best first):
+Candidates (pick up to {{ pick_limit }} ids, best first):
 {% for c in candidates -%}
 - id: {{ c.node_id }}
   title: {{ c.title }}
@@ -21,5 +21,5 @@ Candidates (pick up to {{ k }} ids, best first):
 {% endfor %}
 
 Return ONE tool call "rank" with:
-- selected: list of ids in best-to-worst order
+- ranked_ids: list of candidate ids in best-to-worst order
 - done: true ONLY if you've reached leaf nodes or the content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.

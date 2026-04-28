@@ -29,25 +29,25 @@ You are ranking tree nodes to answer a user question.
 
 Query: {{ query }}
 
-Selected so far:
-{% if selected %}
-{{ selected }}
+Top candidates so far:
+{% if top_candidate_ids %}
+{{ top_candidate_ids }}
 {% else %}
 (none)
 {% endif %}
 
-{% if input_beams %}
-Input beams (context from previous block):
-{% for beam in input_beams %}
-- {{ beam.node_id }}: {{ beam.title }} ({{ beam.path }})
+{% if input_frontier %}
+Input frontier (context from previous block):
+{% for frontier_node in input_frontier %}
+- {{ frontier_node.node_id }}: {{ frontier_node.title }} ({{ frontier_node.path }})
 {% endfor %}
 {% endif %}
 
-Pick up to {{ k }} candidates from the CURRENT BLOCK above, best first.
+Pick up to {{ pick_limit }} candidates from the CURRENT BLOCK above, best first.
 Previous blocks are provided for context only — do NOT select nodes from them.
 
 Return ONE tool call "rank" with:
-- selected: list of ids from the CURRENT BLOCK in best-to-worst order
+- ranked_ids: list of ids from the CURRENT BLOCK in best-to-worst order
 - done: true ONLY if you've reached leaf nodes or content is specific enough to answer. If nodes are high-level sections, set done=false to explore deeper.
 """
 )
@@ -67,10 +67,10 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "selected": {"type": "array", "items": {"type": "string"}},
+                "ranked_ids": {"type": "array", "items": {"type": "string"}},
                 "done": {"type": "boolean"},
             },
-            "required": ["selected"],
+            "required": ["ranked_ids"],
         },
     }
 ]
@@ -132,7 +132,7 @@ class LegacyBlockRetriever(BaseRetriever):
         top_prefix = top_block.cached_content or ""
 
         beams = [{"node_id": root_id, "title": "root", "path": "root"}]
-        selected: list[str] = []
+        top_candidate_ids: list[str] = []
         trace: list[dict[str, Any]] = []
         block_traces: list[dict[str, Any]] = []
 
@@ -141,22 +141,24 @@ class LegacyBlockRetriever(BaseRetriever):
         cache_creation_tokens = 0
         blocks_processed = 0
 
-        k = beam_size if beam_size else select_k
+        result_limit = max(1, int(select_k or 1))
+        frontier_limit = beam_size if beam_size else 1
+        pick_limit = max(result_limit, frontier_limit)
         max_calls = max_turns if max_turns else 20
 
         # Step 1: Process top block
         result, llm_called, cache_metrics = self._process_block(
-            top_block, query, beams, selected, k, prefix="",
+            top_block, query, beams, top_candidate_ids, pick_limit, prefix="",
         )
         total_llm_calls += llm_called
         cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
         cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
         blocks_processed += 1
 
-        beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
-        for node_id in result.selected_node_ids:
-            if node_id not in selected:
-                selected.append(node_id)
+        beams = self._update_beams(result.ordered_node_ids, tree_id, beam_size)
+        for node_id in result.top_candidate_node_ids:
+            if len(top_candidate_ids) < result_limit and node_id not in top_candidate_ids:
+                top_candidate_ids.append(node_id)
 
         block_traces.append({
             "type": "top",
@@ -168,7 +170,7 @@ class LegacyBlockRetriever(BaseRetriever):
             "turn": 0,
             "block_id": top_block.block_id,
             "candidates": len(top_block.node_ids),
-            "kept": len(result.ranked_node_ids),
+            "kept": len(result.ordered_node_ids),
             "done": result.done,
         })
 
@@ -188,17 +190,17 @@ class LegacyBlockRetriever(BaseRetriever):
                 break
 
             result, llm_called, cache_metrics = self._process_block(
-                subtree_block, query, beams, selected, k, prefix=top_prefix,
+                subtree_block, query, beams, top_candidate_ids, pick_limit, prefix=top_prefix,
             )
             total_llm_calls += llm_called
             cache_read_tokens += cache_metrics.get("cache_read_tokens", 0)
             cache_creation_tokens += cache_metrics.get("cache_creation_tokens", 0)
             blocks_processed += 1
 
-            beams = self._update_beams(result.ranked_node_ids, tree_id, beam_size)
-            for node_id in result.selected_node_ids:
-                if node_id not in selected:
-                    selected.append(node_id)
+            beams = self._update_beams(result.ordered_node_ids, tree_id, beam_size)
+            for node_id in result.top_candidate_node_ids:
+                if len(top_candidate_ids) < result_limit and node_id not in top_candidate_ids:
+                    top_candidate_ids.append(node_id)
 
             block_traces.append({
                 "type": "subtree",
@@ -210,15 +212,16 @@ class LegacyBlockRetriever(BaseRetriever):
                 "turn": turn,
                 "block_id": subtree_block.block_id,
                 "candidates": len(subtree_block.node_ids),
-                "kept": len(result.ranked_node_ids),
+                "kept": len(result.ordered_node_ids),
                 "done": result.done,
             })
             turn += 1
 
-        contents = self._gather_contents(tree_id, selected)
+        top_candidate_ids = top_candidate_ids[:result_limit]
+        contents = self._gather_contents(tree_id, top_candidate_ids)
 
         return BlockRetrievalResult(
-            nodes=selected,
+            nodes=top_candidate_ids,
             contents=contents,
             trace=trace,
             turns=len(trace),
@@ -322,7 +325,7 @@ class LegacyBlockRetriever(BaseRetriever):
 
     # ---- LLM interaction ----
 
-    def _process_block(self, block, query, beams, selected, k, prefix=""):
+    def _process_block(self, block, query, beams, top_candidate_ids, pick_limit, prefix=""):
         """Process a block with LLM. Returns (BlockResult, llm_calls, cache_metrics)."""
         empty_metrics = {"cache_read_tokens": 0, "cache_creation_tokens": 0}
 
@@ -330,7 +333,7 @@ class LegacyBlockRetriever(BaseRetriever):
         content = block.cached_content
 
         if not node_ids:
-            return BlockResult(block_id=block.block_id, ranked_node_ids=[], selected_node_ids=[], done=False), 0, empty_metrics
+            return BlockResult(block_id=block.block_id, ordered_node_ids=[], top_candidate_node_ids=[], done=False), 0, empty_metrics
 
         # Cached prefix (reusable across queries) vs non-cached current block (one-time)
         if prefix:
@@ -340,7 +343,12 @@ class LegacyBlockRetriever(BaseRetriever):
             cache_part = BLOCK_CONTENT_PREFIX + content
             non_cached_part = None
 
-        dynamic_prompt = BLOCK_PROMPT.render(query=query, selected=selected, input_beams=beams, k=k)
+        dynamic_prompt = BLOCK_PROMPT.render(
+            query=query,
+            top_candidate_ids=top_candidate_ids,
+            input_frontier=beams,
+            pick_limit=pick_limit,
+        )
 
         if hasattr(self.llm, "chat_with_cache"):
             resp = self.llm.chat_with_cache(
@@ -363,8 +371,8 @@ class LegacyBlockRetriever(BaseRetriever):
 
         result = BlockResult(
             block_id=block.block_id,
-            ranked_node_ids=ranked_ids,
-            selected_node_ids=ranked_ids[:max(1, k)],
+            ordered_node_ids=ranked_ids,
+            top_candidate_node_ids=ranked_ids[:max(1, pick_limit)],
             done=done,
             usage=usage,
         )
@@ -374,8 +382,9 @@ class LegacyBlockRetriever(BaseRetriever):
         valid_set = set(valid_node_ids)
         for block in resp.get("content", []):
             if block.get("type") == "tool_use" and block.get("name") == "rank":
-                ranked_ids = block.get("input", {}).get("selected", []) or []
-                done = bool(block.get("input", {}).get("done", False))
+                tool_input = block.get("input", {}) or {}
+                ranked_ids = tool_input.get("ranked_ids", []) or []
+                done = bool(tool_input.get("done", False))
                 return [nid for nid in ranked_ids if nid in valid_set], done
         raise ValueError("LLM did not return a rank tool call")
 
@@ -453,8 +462,6 @@ class LegacyBlockRetriever(BaseRetriever):
             if "rel_path" in attrs and "is_dir" in attrs:
                 lines.append(f"  path: {attrs.get('rel_path') or attrs.get('title') or node.get('path', '')}")
                 lines.append("  type: directory" if attrs.get("is_dir") else "  type: file")
-                if attrs.get("tag"):
-                    lines.append(f"  tag: {attrs['tag']}")
                 lines.append(f"  depth: {node.get('depth', 0)}")
                 continue
 
@@ -477,9 +484,9 @@ class LegacyBlockRetriever(BaseRetriever):
                 lines.append(f"  range: {page_start}-{page_end}")
         return "\n".join(lines)
 
-    def _gather_contents(self, tree_id, selected):
+    def _gather_contents(self, tree_id, top_candidate_ids):
         contents = []
-        for node_id in selected:
+        for node_id in top_candidate_ids:
             entity = self.storage.get_entity(tree_id, node_id)
             if entity:
                 contents.append({"node_id": node_id, "content": json.loads(entity.payload_json)})
