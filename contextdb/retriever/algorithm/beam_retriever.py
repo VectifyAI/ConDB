@@ -8,7 +8,6 @@ from jinja2 import Template
 
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
-from contextdb.retriever.algorithm.ranker import BM25PathRanker, Ranker, has_path_evidence
 from contextdb.retriever.base import RetrievalResult
 
 log = get_logger(__name__)
@@ -34,15 +33,9 @@ TOOLS = [
 class BeamRetriever(BaseRetriever):
     """Beam search over the tree with LLM as the ranking judge."""
 
-    def __init__(self, storage, llm, mode: str = "document", ranker: Ranker | None = None, fs_ranker: str = "none"):
+    def __init__(self, storage, llm, mode: str = "document"):
         super().__init__(storage, llm)
-        if fs_ranker not in {"bm25", "none"}:
-            raise ValueError(f"Unknown filesystem ranker: {fs_ranker!r}")
-        if mode == "filesystem" and fs_ranker == "bm25" and ranker is None:
-            ranker = BM25PathRanker(storage)
         self.mode = mode
-        self.ranker = ranker
-        self.fs_ranker = fs_ranker
         self._entity_cache: dict[str, dict[str, Any]] = {}
         self._cached_tree_id: str = ""
 
@@ -279,34 +272,7 @@ class BeamRetriever(BaseRetriever):
         query: str,
         tree_id: str,
     ) -> list[dict[str, Any]]:
-        if self.mode != "filesystem" or not candidates:
-            return candidates
-        if self.fs_ranker == "none":
-            return list(candidates)
-        if not has_path_evidence(candidates, query):
-            return list(candidates)
-
-        scores = self.ranker.rank(
-            query,
-            candidates,
-            context={"mode": "filesystem", "tree_id": tree_id},
-        )
-        score_by_id = {candidate["node_id"]: score for candidate, score in scores}
-        ordered = sorted(
-            enumerate(candidates),
-            key=lambda item: (
-                -score_by_id.get(item[1].get("node_id", ""), 0.0),
-                self._fs_ranker_tie_key(item[1], item[0]),
-            ),
-        )
-        return [candidate for _, candidate in ordered]
-
-    @staticmethod
-    def _fs_ranker_tie_key(candidate: dict[str, Any], original_index: int) -> tuple[int, int, str, int]:
-        is_file = 0 if candidate.get("is_dir", False) else 1
-        depth = int(candidate.get("depth", 0) or 0)
-        rel_path = str(candidate.get("rel_path") or candidate.get("path") or "").lower()
-        return (is_file, depth, rel_path, original_index)
+        return list(candidates)
 
     def _candidate_from_child(
         self, tree_id: str, child, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False

@@ -14,10 +14,7 @@ from contextdb.config import get_llm_config, get_retriever_config
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 from contextdb.retriever.algorithm.block_cutter import BlockCutter
-from contextdb.retriever.algorithm.block_retriever_filesystem import (
-    BlockRetrieverFilesystemSupport,
-    FilesystemRenderOptions,
-)
+from contextdb.retriever.algorithm.block_retriever_filesystem import BlockRetrieverFilesystemSupport
 from contextdb.retriever.algorithm.block_retriever_prompt_cache import (
     DOC_CACHE_STATIC_SEGMENT,
     FS_CACHE_STATIC_SEGMENT,
@@ -29,14 +26,12 @@ from contextdb.retriever.algorithm.block_types import (
     BlockRetrievalResult,
     BlockTreePlan,
 )
-from contextdb.retriever.algorithm.ranker import BM25PathRanker, Ranker
+from contextdb.retriever.algorithm.ranker import Ranker
 from contextdb.utils.token_counter import TokenCounter
 
 log = get_logger(__name__)
 
 _DEFAULT_CONFIG = get_retriever_config("block")
-_FS_RANKERS = {"bm25", "none"}
-
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 BLOCK_PROMPT = Template((_PROMPTS_DIR / "block.jinja").read_text(encoding="utf-8"))
 BLOCK_FS_PROMPT = Template((_PROMPTS_DIR / "block_fs.jinja").read_text(encoding="utf-8"))
@@ -60,11 +55,7 @@ __all__ = [
     "BlockRetriever",
     "DOC_CACHE_STATIC_SEGMENT",
     "FS_CACHE_STATIC_SEGMENT",
-    "FilesystemRenderOptions",
-    "FsRenderOptions",
 ]
-
-FsRenderOptions = FilesystemRenderOptions
 
 
 class BlockRetriever(BaseRetriever):
@@ -80,16 +71,10 @@ class BlockRetriever(BaseRetriever):
         max_parallel_blocks: int = None,
         mode: str = "document",
         ranker: Ranker | None = None,
-        fs_ranker: str = "none",
     ):
         super().__init__(storage, llm)
-        if fs_ranker not in _FS_RANKERS:
-            raise ValueError(f"Unknown filesystem ranker: {fs_ranker!r}")
-        if mode == "filesystem" and fs_ranker == "bm25" and ranker is None:
-            ranker = BM25PathRanker(storage)
         self.mode = mode
         self.ranker = ranker
-        self.fs_ranker = fs_ranker
         self.cache_enabled = bool(cache_enabled)
 
         self.max_tokens_per_block = (
@@ -259,12 +244,22 @@ class BlockRetriever(BaseRetriever):
                 block_traces.append(block_trace)
 
             merged_ids = self._merge_unique_ids(merged_ids)
+            ordered_merged_ids = self._order_fs_node_ids_for_query(tree_id, merged_ids, query)
+            merged_file_ids = [
+                node_id
+                for node_id in ordered_merged_ids
+                if not self._is_fs_directory_id(tree_id, node_id)
+            ]
+            merged_dir_ids = [
+                node_id
+                for node_id in ordered_merged_ids
+                if self._is_fs_directory_id(tree_id, node_id)
+            ]
+
             round_top_candidate_ids = []
             remaining_result_slots = max(0, result_limit - len(top_candidate_ids))
             if remaining_result_slots > 0:
-                for node_id in merged_ids:
-                    if self._is_fs_directory_id(tree_id, node_id):
-                        continue
+                for node_id in merged_file_ids:
                     if node_id in top_candidate_ids or node_id in round_top_candidate_ids:
                         continue
                     round_top_candidate_ids.append(node_id)
@@ -272,7 +267,7 @@ class BlockRetriever(BaseRetriever):
                         break
             result = BlockResult(
                 block_id=f"fs_{round_label}_{turn}",
-                ordered_node_ids=merged_ids,
+                ordered_node_ids=ordered_merged_ids,
                 top_candidate_node_ids=round_top_candidate_ids,
                 done=(not merged_ids) or all(block_result.done for _, block_result, _, _ in block_rows),
             )
@@ -291,14 +286,9 @@ class BlockRetriever(BaseRetriever):
                     usage=result.usage,
                 )
             else:
-                frontier_ids = [
-                    node_id
-                    for node_id in result.ordered_node_ids
-                    if self._is_fs_directory_id(tree_id, node_id)
-                ]
                 frontier = self._collapse_fs_frontier(
                     tree_id,
-                    self._update_frontier(frontier_ids, tree_id, beam_size),
+                    self._update_frontier(merged_dir_ids, tree_id, beam_size),
                 )
                 cache_window_tokens = self._append_fs_frontier_blocks(
                     cache_window=cache_window,
@@ -786,9 +776,9 @@ class BlockRetriever(BaseRetriever):
 
     # ---- frontier management ----
 
-    def _update_frontier(self, ranked_ids, tree_id, beam_size):
+    def _update_frontier(self, node_ids, tree_id, beam_size):
         next_frontier = []
-        for node_id in ranked_ids:
+        for node_id in node_ids:
             node = self.storage.get_node(tree_id, node_id)
             attrs = {}
             if node and node.attrs_json:
@@ -808,8 +798,8 @@ class BlockRetriever(BaseRetriever):
 
         return next_frontier if next_frontier else [{"node_id": "", "title": "", "path": ""}]
 
-    def _update_beams(self, ranked_ids, tree_id, beam_size):
-        return self._update_frontier(ranked_ids, tree_id, beam_size)
+    def _update_beams(self, node_ids, tree_id, beam_size):
+        return self._update_frontier(node_ids, tree_id, beam_size)
 
     def _frontier_has_children(self, tree_id: str, frontier: list[dict[str, str]]) -> bool:
         for frontier_node in frontier:

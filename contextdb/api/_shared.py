@@ -46,6 +46,7 @@ def build_strategy_retriever(
     cache_enabled: bool = True,
     max_parallel_blocks: int = None,
     mode: str = "document",
+    ranker=None,
 ) -> BaseRetriever:
     """Create a retriever from the ConDB strategy selector."""
     if strategy == "beam":
@@ -58,6 +59,7 @@ def build_strategy_retriever(
             cache_enabled=cache_enabled,
             max_parallel_blocks=max_parallel_blocks,
             mode=mode,
+            ranker=ranker,
         )
     raise ValueError(f"Unknown strategy: {strategy!r}")
 

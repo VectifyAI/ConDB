@@ -4,7 +4,6 @@ import hashlib
 import json
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import Any, Optional
 
 from contextdb.retriever.algorithm.block_types import Block, BlockResult, BlockType
@@ -17,21 +16,6 @@ class _RetrieverSupportBase:
 
     def __getattr__(self, name: str):
         return getattr(self._retriever, name)
-
-
-@dataclass(frozen=True)
-class FilesystemRenderOptions:
-    include_dir_summaries: bool = True
-    include_file_summaries: bool = False
-    summary_max_chars: int = 200
-
-
-_FS_DEFAULT_RENDER_OPTIONS = FilesystemRenderOptions()
-_FS_VIRTUAL_TOP_RENDER_OPTIONS = FilesystemRenderOptions(
-    include_dir_summaries=True,
-    include_file_summaries=False,
-    summary_max_chars=96,
-)
 
 
 class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
@@ -53,14 +37,11 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             if is_virtual_root
             else self._get_direct_children_nodes(tree_id, root_id)
         )
-        nodes = self._order_fs_nodes_for_query(nodes, query)
-        render_options = self._get_fs_top_render_options(is_virtual_root)
         return self._build_fs_block_specs(
             tree_id=tree_id,
             frontier_node=root_frontier,
             nodes=nodes,
             base_block_id=self._get_fs_top_block_id(tree_id),
-            render_options=render_options,
         )
 
     def _get_virtual_fs_top_nodes(self, tree_id: str, root_id: str, max_depth: int = 4) -> list[dict[str, Any]]:
@@ -100,10 +81,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         walk(root_id, max_depth)
         return nodes
 
-    @staticmethod
-    def _get_fs_top_render_options(is_virtual_root: bool) -> FilesystemRenderOptions:
-        return _FS_VIRTUAL_TOP_RENDER_OPTIONS if is_virtual_root else _FS_DEFAULT_RENDER_OPTIONS
-
     def _create_subtree_block_specs_fs(
         self,
         tree_id: str,
@@ -116,10 +93,7 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             if not frontier_id:
                 continue
 
-            children = self._order_fs_nodes_for_query(
-                self._get_direct_children_nodes(tree_id, frontier_id),
-                query,
-            )
+            children = self._get_direct_children_nodes(tree_id, frontier_id)
             if not children:
                 continue
 
@@ -129,7 +103,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
                     frontier_node=frontier_node,
                     nodes=children,
                     base_block_id=f"fs_sub_{frontier_id[:8]}",
-                    render_options=_FS_DEFAULT_RENDER_OPTIONS,
                     always_suffix=True,
                 )
             )
@@ -141,13 +114,12 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         frontier_node: dict[str, str],
         nodes: list[dict[str, Any]],
         base_block_id: str,
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
         always_suffix: bool = False,
     ) -> list[dict[str, Any]]:
         if not nodes:
             return []
 
-        packs = self._pack_fs_children(nodes, render_options=render_options)
+        packs = self._pack_fs_children(nodes)
         if not packs:
             return []
 
@@ -164,7 +136,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
                     tree_id,
                     pack,
                     block_id,
-                    render_options=render_options,
                 ),
                 "block_index": idx,
                 "block_count": len(packs),
@@ -174,7 +145,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
     def _pack_fs_children(
         self,
         children: list[dict[str, Any]],
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> list[list[dict[str, Any]]]:
         if not children:
             return []
@@ -184,10 +154,7 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
 
         for child in children:
             candidate_pack = current_pack + [child]
-            candidate_tokens = self._count_fs_block_tokens(
-                candidate_pack,
-                render_options=render_options,
-            )
+            candidate_tokens = self._count_fs_block_tokens(candidate_pack)
             if current_pack and candidate_tokens > self.max_tokens_per_block:
                 packs.append(current_pack)
                 current_pack = [child]
@@ -212,7 +179,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             tree_id,
             nodes_to_pack,
             block_id,
-            render_options=_FS_DEFAULT_RENDER_OPTIONS,
         )
 
     def _build_fs_candidate_block(
@@ -227,7 +193,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             tree_id,
             nodes,
             block_id,
-            render_options=_FS_DEFAULT_RENDER_OPTIONS,
         )
         return block, allowed_node_ids
 
@@ -348,62 +313,55 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
 
         if not all_children:
             return None
-        all_children = self._order_fs_nodes_for_query(all_children, query)
-
-        packs = self._pack_fs_children(
-            all_children,
-            render_options=_FS_DEFAULT_RENDER_OPTIONS,
-        )
+        packs = self._pack_fs_children(all_children)
         if not packs:
             return None
 
         block_id = f"fs_sub_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}"
         return self._make_fs_vertical_block(tree_id, packs[0], block_id)
 
-    def _order_fs_nodes_for_query(self, nodes: list[dict[str, Any]], query: str = "") -> list[dict[str, Any]]:
-        """Order exchangeable filesystem siblings when BM25 has exact path evidence."""
-        if not nodes:
-            return []
+    def _order_fs_node_ids_for_query(self, tree_id: str, node_ids: list[str], query: str = "") -> list[str]:
+        """Order node ids with the optional path ranker."""
+        ranker = getattr(self, "ranker", None)
+        if ranker is None or not node_ids:
+            return list(node_ids)
 
-        fs_ranker = getattr(self, "fs_ranker", "bm25")
-        if fs_ranker == "none":
-            return list(nodes)
+        nodes = self._get_nodes_by_ids(tree_id, node_ids)
+        node_by_id = {node.get("node_id", ""): node for node in nodes}
+        candidates = [
+            self._fs_order_candidate(node_by_id[node_id])
+            for node_id in node_ids
+            if node_id in node_by_id
+        ]
+        if not has_path_evidence(candidates, query):
+            return list(node_ids)
+        scores = ranker.rank(
+            query,
+            candidates,
+            context={"mode": "filesystem", "tree_id": tree_id},
+        )
+        score_by_id = {candidate["node_id"]: score for candidate, score in scores}
+        ordered = sorted(
+            enumerate(node_ids),
+            key=lambda item: (
+                -score_by_id.get(item[1], 0.0),
+                self._fs_order_tie_key(node_by_id.get(item[1], {}), item[0]),
+            ),
+        )
+        return [node_id for _, node_id in ordered]
 
-        if fs_ranker == "bm25":
-            candidates = [self._fs_ranker_candidate(node) for node in nodes]
-            if not has_path_evidence(candidates, query):
-                return list(nodes)
-            scores = self.ranker.rank(
-                query,
-                candidates,
-                context={"mode": "filesystem", "tree_id": getattr(self, "_precomputed_tree_id", "")},
-            )
-            score_by_id = {candidate["node_id"]: score for candidate, score in scores}
-            ordered = sorted(
-                enumerate(nodes),
-                key=lambda item: (
-                    -score_by_id.get(item[1].get("node_id", ""), 0.0),
-                    self._fs_ranker_tie_key(item[1], item[0]),
-                ),
-            )
-            return [node for _, node in ordered]
-
-        return list(nodes)
-
-    def _fs_ranker_candidate(self, node: dict[str, Any]) -> dict[str, Any]:
+    def _fs_order_candidate(self, node: dict[str, Any]) -> dict[str, Any]:
         attrs = self._fs_node_attrs(node)
         rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
-        title = (attrs.get("title") or rel_path.rsplit("/", 1)[-1]).strip()
         is_dir = bool(attrs.get("is_dir", False))
         return {
-            **node,
-            "title": title,
+            "node_id": node.get("node_id", ""),
             "rel_path": rel_path,
             "is_dir": is_dir,
             "is_leaf": not is_dir,
         }
 
-    def _fs_ranker_tie_key(self, node: dict[str, Any], original_index: int) -> tuple[int, int, str, int]:
+    def _fs_order_tie_key(self, node: dict[str, Any], original_index: int) -> tuple[int, int, str, int]:
         attrs = self._fs_node_attrs(node)
         rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
         is_file = 0 if attrs.get("is_dir", False) else 1
@@ -435,7 +393,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         nodes: list[dict],
         path_prefix: str = "",
         node_id_to_alias: dict[str, str] | None = None,
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> str:
         if node_id_to_alias is None:
             node_id_to_alias, _ = self._build_fs_alias_maps([node["node_id"] for node in nodes])
@@ -470,14 +427,12 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
     def _render_fs_block_content(
         self,
         nodes: list[dict[str, Any]],
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> tuple[str, int]:
         node_id_to_alias, _ = self._build_fs_alias_maps([node["node_id"] for node in nodes])
         plain_content = self._build_fs_block_content(
             nodes,
             path_prefix="",
             node_id_to_alias=node_id_to_alias,
-            render_options=render_options,
         )
         plain_tokens = self.token_counter.count_text_tokens(plain_content)
 
@@ -489,7 +444,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             nodes,
             path_prefix=path_prefix,
             node_id_to_alias=node_id_to_alias,
-            render_options=render_options,
         )
         compressed_tokens = self.token_counter.count_text_tokens(compressed_content)
         if compressed_tokens < plain_tokens:
@@ -499,26 +453,18 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
     def _count_fs_block_tokens(
         self,
         nodes: list[dict[str, Any]],
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> int:
         if not nodes:
             return 0
-        return self._render_fs_block_content(
-            nodes,
-            render_options=render_options,
-        )[1]
+        return self._render_fs_block_content(nodes)[1]
 
     def _make_fs_vertical_block(
         self,
         tree_id: str,
         nodes: list[dict[str, Any]],
         block_id: str,
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> Block:
-        content, total_tokens = self._render_fs_block_content(
-            nodes,
-            render_options=render_options,
-        )
+        content, total_tokens = self._render_fs_block_content(nodes)
         node_ids = [node["node_id"] for node in nodes]
         depths = [node.get("depth", 0) for node in nodes]
         return Block(
@@ -539,12 +485,8 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         tree_id: str,
         nodes: list[dict[str, Any]],
         block_id: str,
-        render_options: FilesystemRenderOptions = _FS_DEFAULT_RENDER_OPTIONS,
     ) -> Block:
-        content, total_tokens = self._render_fs_block_content(
-            nodes,
-            render_options=render_options,
-        )
+        content, total_tokens = self._render_fs_block_content(nodes)
         node_ids = [node["node_id"] for node in nodes]
         depths = [node.get("depth", 0) for node in nodes]
         return Block(
@@ -822,4 +764,3 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             (tree_id, node_id),
         )
         return [self._row_to_node_dict(row) for row in cursor.fetchall()]
-FsRenderOptions = FilesystemRenderOptions

@@ -146,6 +146,7 @@ class ConDB:
             cache_enabled=kwargs.get("cache_enabled", True),
             max_parallel_blocks=kwargs.get("max_parallel_blocks"),
             mode=mode,
+            ranker=kwargs.get("ranker"),
         )
 
     def _tree_mode(self, tree_id: str) -> str:

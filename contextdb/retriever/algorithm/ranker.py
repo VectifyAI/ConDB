@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from abc import ABC, abstractmethod
@@ -10,8 +9,24 @@ from collections import Counter
 from typing import Any
 
 
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
 def normalize_path(path: str) -> str:
     return str(path or "").strip("/").replace("\\", "/").lower()
+
+
+def tokenize_path_text(text: str) -> list[str]:
+    if not text:
+        return []
+    split_text = _CAMEL_BOUNDARY_RE.sub(" ", str(text).replace("_", " ").replace("-", " "))
+    tokens = _TOKEN_RE.findall(split_text.lower())
+    expanded = list(tokens)
+    for token in tokens:
+        if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+            expanded.append(token[:-1])
+    return expanded
 
 
 def path_matches_query(path: str, query: str, *, is_dir: bool = False) -> bool:
@@ -26,12 +41,12 @@ def path_matches_query(path: str, query: str, *, is_dir: bool = False) -> bool:
 
 
 def has_path_evidence(candidates: list[dict[str, Any]], query: str) -> bool:
+    query_tokens = set(tokenize_path_text(query))
+    if not query_tokens:
+        return False
+
     return any(
-        path_matches_query(
-            candidate.get("rel_path") or candidate.get("path") or "",
-            query,
-            is_dir=_candidate_is_dir(candidate),
-        )
+        query_tokens.intersection(tokenize_path_text(_candidate_path(candidate)))
         for candidate in candidates
     )
 
@@ -40,6 +55,10 @@ def _candidate_is_dir(candidate: dict[str, Any]) -> bool:
     if "is_dir" in candidate:
         return bool(candidate["is_dir"])
     return not bool(candidate.get("is_leaf", False))
+
+
+def _candidate_path(candidate: dict[str, Any]) -> str:
+    return str(candidate.get("rel_path") or candidate.get("path") or "").strip("/")
 
 
 class Ranker(ABC):
@@ -54,26 +73,24 @@ class Ranker(ABC):
 
 
 class BM25PathRanker(Ranker):
-    """BM25 over file paths, with optional subtree path tokens for directories."""
-
-    _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-    _TOKEN_RE = re.compile(r"[a-z0-9]+")
+    """Path-aware BM25 over filesystem candidates."""
 
     def __init__(
         self,
-        storage=None,
         *,
         k1: float = 1.2,
         b: float = 0.75,
-        use_subtree_paths: bool = True,
-        subtree_max_depth: int = 100,
+        basename_weight: float = 3.0,
+        parent_weight: float = 1.5,
+        full_path_weight: float = 1.0,
     ) -> None:
-        self.storage = storage
         self.k1 = k1
         self.b = b
-        self.use_subtree_paths = use_subtree_paths
-        self.subtree_max_depth = subtree_max_depth
-        self._subtree_token_cache: dict[tuple[str, str], list[str]] = {}
+        self.field_weights = {
+            "basename": basename_weight,
+            "parent": parent_weight,
+            "full_path": full_path_weight,
+        }
 
     def rank(
         self,
@@ -88,13 +105,27 @@ class BM25PathRanker(Ranker):
         if not query_tokens:
             return [(c, 0.0) for c in candidates]
 
-        context = context or {}
-        docs = [self._candidate_tokens(c, context) for c in candidates]
-        scores = self._bm25_scores(query_tokens, docs)
+        docs = [self._candidate_fields(c) for c in candidates]
+        scores = self._fielded_bm25_scores(query_tokens, docs)
         return [
-            (candidate, score + self._prior_score(candidate, query_tokens, query))
+            (candidate, score + self._prior_score(candidate, query))
             for candidate, score in zip(candidates, scores)
         ]
+
+    def _fielded_bm25_scores(
+        self,
+        query_tokens: list[str],
+        docs: list[dict[str, list[str]]],
+    ) -> list[float]:
+        scores = [0.0 for _ in docs]
+        for field_name, weight in self.field_weights.items():
+            if weight <= 0:
+                continue
+            field_docs = [doc.get(field_name, []) for doc in docs]
+            field_scores = self._bm25_scores(query_tokens, field_docs)
+            for idx, score in enumerate(field_scores):
+                scores[idx] += weight * score
+        return scores
 
     def _bm25_scores(self, query_tokens: list[str], docs: list[list[str]]) -> list[float]:
         n_docs = len(docs)
@@ -123,71 +154,25 @@ class BM25PathRanker(Ranker):
             scores.append(score)
         return scores
 
-    def _candidate_tokens(self, candidate: dict[str, Any], context: dict[str, Any]) -> list[str]:
-        parts = [
-            candidate.get("rel_path", ""),
-            candidate.get("path", ""),
-            candidate.get("title", ""),
-        ]
-        tokens = self._tokenize(" ".join(str(p) for p in parts if p))
+    def _candidate_fields(self, candidate: dict[str, Any]) -> dict[str, list[str]]:
+        rel_path = _candidate_path(candidate)
+        basename = rel_path.rsplit("/", 1)[-1] if rel_path else ""
+        parent = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+        return {
+            "basename": self._tokenize(basename),
+            "parent": self._tokenize(parent),
+            "full_path": self._tokenize(rel_path),
+        }
 
-        if not self.use_subtree_paths or not self._is_dir(candidate):
-            return tokens
-
-        tree_id = context.get("tree_id")
-        node_id = candidate.get("node_id")
-        if not self.storage or not tree_id or not node_id:
-            return tokens
-
-        return tokens + self._subtree_tokens(str(tree_id), str(node_id))
-
-    def _subtree_tokens(self, tree_id: str, node_id: str) -> list[str]:
-        key = (tree_id, node_id)
-        cached = self._subtree_token_cache.get(key)
-        if cached is not None:
-            return cached
-
-        tokens: list[str] = []
-        for node in self.storage.get_subtree(tree_id, node_id, max_depth=self.subtree_max_depth):
-            attrs = self._attrs_from_node_dict(node)
-            if attrs.get("is_dir"):
-                continue
-            rel_path = attrs.get("rel_path") or node.get("path") or attrs.get("title") or ""
-            tokens.extend(self._tokenize(str(rel_path)))
-
-        self._subtree_token_cache[key] = tokens
-        return tokens
-
-    def _prior_score(self, candidate: dict[str, Any], query_tokens: list[str], query: str = "") -> float:
+    def _prior_score(self, candidate: dict[str, Any], query: str = "") -> float:
         rel_path = str(candidate.get("rel_path") or candidate.get("path") or "").strip("/")
         is_dir = self._is_dir(candidate)
         return 20.0 if path_matches_query(rel_path, query, is_dir=is_dir) else 0.0
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
-        if not text:
-            return []
-        split_text = cls._CAMEL_BOUNDARY_RE.sub(" ", str(text).replace("_", " ").replace("-", " "))
-        tokens = cls._TOKEN_RE.findall(split_text.lower())
-        expanded = list(tokens)
-        for token in tokens:
-            if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
-                expanded.append(token[:-1])
-        return expanded
+        return tokenize_path_text(text)
 
     @staticmethod
     def _is_dir(candidate: dict[str, Any]) -> bool:
         return _candidate_is_dir(candidate)
-
-    @staticmethod
-    def _attrs_from_node_dict(node: dict[str, Any]) -> dict[str, Any]:
-        attrs = node.get("attrs") or {}
-        if isinstance(attrs, dict):
-            return attrs
-        if isinstance(attrs, str):
-            try:
-                parsed = json.loads(attrs)
-            except json.JSONDecodeError:
-                return {}
-            return parsed if isinstance(parsed, dict) else {}
-        return {}

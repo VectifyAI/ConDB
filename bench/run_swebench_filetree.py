@@ -39,19 +39,18 @@ K_VALUES = (1, 3, 5, 10)
 
 
 def make_filesystem_retriever(db: ConDB, args, node_count: int):
-    ranker = BM25PathRanker(db.storage) if args.ranker == "bm25" else None
+    ranker = BM25PathRanker() if args.ranker == "bm25" else None
     strategy = args.strategy
     if strategy == "auto":
         strategy = "beam" if node_count <= 50 else "block"
     if strategy == "beam":
-        return BeamRetriever(db.storage, db._llm, mode="filesystem", ranker=ranker, fs_ranker=args.ranker)
+        return BeamRetriever(db.storage, db._llm, mode="filesystem")
     if strategy == "block":
         return BlockRetriever(
             db.storage,
             db._llm,
             mode="filesystem",
             ranker=ranker,
-            fs_ranker=args.ranker,
             max_parallel_blocks=args.max_parallel_blocks,
         )
     return None
@@ -408,8 +407,8 @@ def main():
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
     p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
-    p.add_argument("--ranker", choices=["bm25", "none"], default="bm25",
-                   help="Filesystem node ordering used with block/beam strategies")
+    p.add_argument("--ranker", choices=["bm25", "none"], default="none",
+                   help="Optional path ordering for Block merge results")
     p.add_argument("--max-parallel-blocks", type=int, default=None)
     p.add_argument("--max-turns", type=int, default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all")
