@@ -5,7 +5,12 @@
 Path-only code retrieval over `AmuroEita/SWEBench-FileTree`.
 
 ```bash
-PYTHONPATH=. python bench/run_swebench_filetree.py --tier all --strategy block --ranker none --top-k 10 --output-dir bench/runs/block_none_all
+PYTHONPATH=. python bench/run_swebench_filetree.py \
+  --tier all \
+  --strategy block \
+  --ranker none \
+  --top-k 10 \
+  --output-dir bench/runs/block_none_all
 ```
 
 Outputs:
@@ -18,18 +23,22 @@ Outputs:
 ### Latest Full Run
 
 Claude Sonnet 4.6, `tier=all`, `strategy=block`, `ranker=none`, `top_k=10`.
-Results are from `bench/runs/swe_all_20260504_135806/block_none_all_repaired`.
 
-| tier | n | hit@1 | hit@3 | hit@5 | hit@10 | MRR | nDCG@10 | avg LLM calls | avg turns | avg latency |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| easy | 107 | 0.794 | 0.850 | 0.916 | 0.981 | 0.846 | 0.837 | 2.49 | 1.69 | 6.79s |
-| medium | 133 | 0.812 | 0.872 | 0.925 | 0.985 | 0.861 | 0.851 | 2.38 | 1.64 | 6.71s |
-| hard | 261 | 0.808 | 0.862 | 0.908 | 0.977 | 0.853 | 0.849 | 2.41 | 1.65 | 6.70s |
+Metric notes:
 
-Full-set aggregate: `n=500`, `hit@1=0.746`, `hit@10=0.962`, `MRR=0.805`,
-`nDCG@10=0.813`.
+- `recall@gold`: fraction of gold files recovered when the cutoff is the
+  query's gold-file count.
+- `exact@gold`: all gold files are recovered within that same cutoff.
+- `found@gold`: average number of gold files recovered within that cutoff.
 
-BM25 was not a win in the prior full-run comparison. It improved 27 queries and
-worsened 32 by RR or hit@10. The main positive cases were path namespace
-disambiguation; the main negative cases were already solved by the existing
-block ordering.
+| gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 430 | 1 | 0.749 | 0.749 | 0.75 | 7.00 |
+| 2 | 48 | 2 | 0.521 | 0.271 | 1.04 | 8.31 |
+| 3 | 13 | 3 | 0.410 | 0.077 | 1.23 | 8.77 |
+| 4 | 6 | 4 | 0.417 | 0.000 | 1.67 | 9.17 |
+| 5 | 1 | 5 | 0.200 | 0.000 | 1.00 | 2.00 |
+| 6+ | 2 | gold | 0.274 | 0.000 | 2.00 | 10.00 |
+
+Full-set aggregate: `n=500`, `recall@gold=0.711`, `exact@gold=0.672`,
+`MRR=0.805`, `nDCG@10=0.813`, `avg gold=1.24`, `avg returned=7.20`.

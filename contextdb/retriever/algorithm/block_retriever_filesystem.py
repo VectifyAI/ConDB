@@ -320,11 +320,18 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
         block_id = f"fs_sub_{'_'.join(bid[:8] for bid in beam_node_ids[:3])}"
         return self._make_fs_vertical_block(tree_id, packs[0], block_id)
 
-    def _order_fs_node_ids_for_query(self, tree_id: str, node_ids: list[str], query: str = "") -> list[str]:
-        """Order node ids with the optional path ranker."""
+    def _order_fs_node_id_groups_for_query(
+        self,
+        tree_id: str,
+        node_id_groups: list[list[str]],
+        query: str = "",
+    ) -> list[str]:
+        """Order block outputs without changing order inside any block."""
+        node_id_groups = self._dedupe_fs_node_id_groups(node_id_groups)
+        node_ids = self._flatten_fs_node_id_groups(node_id_groups)
         ranker = getattr(self, "ranker", None)
-        if ranker is None or not node_ids:
-            return list(node_ids)
+        if ranker is None or len(node_id_groups) <= 1 or not node_ids:
+            return node_ids
 
         nodes = self._get_nodes_by_ids(tree_id, node_ids)
         node_by_id = {node.get("node_id", ""): node for node in nodes}
@@ -334,21 +341,56 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             if node_id in node_by_id
         ]
         if not has_path_evidence(candidates, query):
-            return list(node_ids)
+            return node_ids
         scores = ranker.rank(
             query,
             candidates,
             context={"mode": "filesystem", "tree_id": tree_id},
         )
         score_by_id = {candidate["node_id"]: score for candidate, score in scores}
-        ordered = sorted(
-            enumerate(node_ids),
-            key=lambda item: (
-                -score_by_id.get(item[1], 0.0),
-                self._fs_order_tie_key(node_by_id.get(item[1], {}), item[0]),
-            ),
-        )
-        return [node_id for _, node_id in ordered]
+        original_index = {node_id: idx for idx, node_id in enumerate(node_ids)}
+        positions = [0 for _ in node_id_groups]
+        ordered: list[str] = []
+
+        while len(ordered) < len(node_ids):
+            best_group_idx = -1
+            best_key: tuple[float, int] | None = None
+            for group_idx, group in enumerate(node_id_groups):
+                position = positions[group_idx]
+                if position >= len(group):
+                    continue
+                node_id = group[position]
+                key = (-score_by_id.get(node_id, 0.0), original_index[node_id])
+                if best_key is None or key < best_key:
+                    best_key = key
+                    best_group_idx = group_idx
+
+            if best_group_idx < 0:
+                break
+            node_id = node_id_groups[best_group_idx][positions[best_group_idx]]
+            ordered.append(node_id)
+            positions[best_group_idx] += 1
+
+        return ordered
+
+    @staticmethod
+    def _dedupe_fs_node_id_groups(node_id_groups: list[list[str]]) -> list[list[str]]:
+        seen: set[str] = set()
+        deduped_groups: list[list[str]] = []
+        for group in node_id_groups:
+            deduped_group: list[str] = []
+            for node_id in group:
+                if not node_id or node_id in seen:
+                    continue
+                seen.add(node_id)
+                deduped_group.append(node_id)
+            if deduped_group:
+                deduped_groups.append(deduped_group)
+        return deduped_groups
+
+    @staticmethod
+    def _flatten_fs_node_id_groups(node_id_groups: list[list[str]]) -> list[str]:
+        return [node_id for group in node_id_groups for node_id in group]
 
     def _fs_order_candidate(self, node: dict[str, Any]) -> dict[str, Any]:
         attrs = self._fs_node_attrs(node)
@@ -360,13 +402,6 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             "is_dir": is_dir,
             "is_leaf": not is_dir,
         }
-
-    def _fs_order_tie_key(self, node: dict[str, Any], original_index: int) -> tuple[int, int, str, int]:
-        attrs = self._fs_node_attrs(node)
-        rel_path = (attrs.get("rel_path") or node.get("path") or "").strip("/")
-        is_file = 0 if attrs.get("is_dir", False) else 1
-        depth = int(node.get("depth", 0) or 0)
-        return (is_file, depth, rel_path.lower(), original_index)
 
     @staticmethod
     def _fs_node_attrs(node: dict[str, Any]) -> dict[str, Any]:

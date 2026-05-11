@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-27T00:00:00.000Z" agent="ConDB flow generator" version="24.7.8">
+  <diagram name="Filesystem Retrieval">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1450" math="0" shadow="0">
+      <root>
+        <mxCell id="0" value=""/>
+        <mxCell id="1" value="" parent="0"/>
+        <mxCell id="query" value="&lt;b&gt;ConDB.query()&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;filesystem tree_id + user question&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="725" y="35" width="350" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="strategy" value="&lt;b&gt;Algorithm Strategy&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;auto: small tree -&amp;gt; Beam, large tree -&amp;gt; Block&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;strokeColor=#cbd5e1;fillColor=#ffffff;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="690" y="145" width="420" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_query_strategy" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="query" target="strategy">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_lane" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#d9e2ec;fillColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="55" y="275" width="790" height="1040" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_lane" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#d9e2ec;fillColor=#ffffff;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="895" y="275" width="850" height="1040" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_header" value="&lt;b&gt;Filesystem BeamRetriever&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#64748b&quot;&gt;small tree, layer-by-layer navigation&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;strokeColor=none;fillColor=#eff6ff;fontFamily=Arial;fontSize=22;fontColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="55" y="275" width="790" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_header" value="&lt;b&gt;Filesystem BlockRetriever&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#64748b&quot;&gt;large tree, token-bounded blocks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;strokeColor=none;fillColor=#f0fdfa;fontFamily=Arial;fontSize=22;fontColor=#0f172a;" vertex="1" parent="1">
+          <mxGeometry x="895" y="275" width="850" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_strategy_beam" value="node_count &amp;lt;= 50" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="strategy" target="beam_header">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_strategy_block" value="node_count &amp;gt; 50" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="strategy" target="block_header">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_1" value="&lt;b&gt;Initialize frontier&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;F0 = {root}. Frontier is the directory set to expand.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="370" width="660" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_2" value="&lt;b&gt;Build candidate set&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;C_t = direct children of each node in F_t. Fields: path + type; metadata reserved, disabled.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="475" width="660" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_3" value="&lt;b&gt;LLM ranks candidates&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;rank(C_t) -&amp;gt; ranked_ids + done.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="580" width="660" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_4" value="&lt;b&gt;Split ranked ids&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;files(ranked_ids) -&amp;gt; top_candidate_ids; dirs(ranked_ids) -&amp;gt; next frontier.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="685" width="660" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_decision" value="&lt;b&gt;File or directory?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;strokeColor=#cbd5e1;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=16;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="805" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_file" value="&lt;b&gt;File&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;Add to top_candidate_ids A.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="105" y="930" width="280" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_dir" value="&lt;b&gt;Directory&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;F_{t+1} = returned directories.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="930" width="280" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="beam_stop" value="Repeat while F has expandable directories and done is false.&lt;br&gt;&lt;b&gt;Final: return top k top_candidate_ids + contents.&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#dbe4ee;fillColor=#f8fafc;fontFamily=Arial;fontSize=13;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="210" y="1070" width="490" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b1_b2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_1" target="beam_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b2_b3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_2" target="beam_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b3_b4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_3" target="beam_4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_b4_dec" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_4" target="beam_decision">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dec_file" value="file" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_decision" target="beam_file">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dec_dir" value="directory" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_decision" target="beam_dir">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_file_stop" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_file" target="beam_stop">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dir_stop" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="beam_dir" target="beam_stop">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dir_loop" value="recursive next level" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="beam_dir" target="beam_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_1" value="&lt;b&gt;Initialize frontier&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;F0 = {root}; collapse virtual single-child directories.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="360" width="710" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_2" value="&lt;b&gt;Create block specs from frontier&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;turn 0: top block. Later turns: subtree blocks from each frontier directory.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="450" width="710" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_3" value="&lt;b&gt;Candidate universe per block&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;For each block i: C_i = block.node_ids. Fields: path + type; metadata reserved, disabled.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="540" width="710" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_4" value="&lt;b&gt;LLM ranks each block&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;rank(C_i) -&amp;gt; ranked_i + done_i. These are returned candidates.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="630" width="710" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_decision" value="&lt;b&gt;Multiple blocks?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;strokeColor=#cbd5e1;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=16;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="730" width="250" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_single" value="&lt;b&gt;Single block&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;merged_ids = ranked_0.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="935" y="855" width="300" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_parallel" value="&lt;b&gt;Parallel blocks&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;Merge all ranked_i into merged_ids.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="855" width="310" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_global" value="&lt;b&gt;Deterministic merge&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;merged_ids = unique(L1 + L2 + ...); no global ranking after merge.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="955" width="500" height="74" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_update" value="&lt;b&gt;Split merged ids&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px&quot; color=&quot;#475569&quot;&gt;append files(M) until |top_candidate_ids| = k; dirs(M) -&amp;gt; F_{t+1}.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#dbe4ee;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=14;spacing=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="1070" width="680" height="74" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_continue" value="&lt;b&gt;Continue?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;strokeColor=#cbd5e1;fillColor=#ffffff;fontColor=#0f172a;fontFamily=Arial;fontSize=16;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="1175" width="250" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="block_return" value="Stop when done, no expandable frontier, or max_turns.&lt;br&gt;&lt;b&gt;Final: return top k top_candidate_ids + contents.&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#dbe4ee;fillColor=#f8fafc;fontFamily=Arial;fontSize=13;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="1045" y="1280" width="650" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_bl1_bl2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_1" target="block_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_bl2_bl3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_2" target="block_3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_bl3_bl4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_3" target="block_4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_bl4_dec" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_4" target="block_decision">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dec_single" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_decision" target="block_single">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_dec_parallel" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_decision" target="block_parallel">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_single_global" value="already merged" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_single" target="block_global">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_parallel_global" value="merged candidates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_parallel" target="block_global">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_global_update" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_global" target="block_update">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_update_continue" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_update" target="block_continue">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_continue_loop" value="yes: recurse into F_{t+1}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="block_continue" target="block_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_continue_return" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748b;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="block_continue" target="block_return">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="summary" value="&lt;b&gt;candidate_set&lt;/b&gt;: shown to LLM. &amp;nbsp;&amp;nbsp; | &amp;nbsp;&amp;nbsp; &lt;b&gt;ranked_ids&lt;/b&gt;: block-local LLM output. &amp;nbsp;&amp;nbsp; | &amp;nbsp;&amp;nbsp; &lt;b&gt;pick_limit&lt;/b&gt;: per-call output cap. &amp;nbsp;&amp;nbsp; | &amp;nbsp;&amp;nbsp; &lt;b&gt;frontier&lt;/b&gt;: directories to expand. &amp;nbsp;&amp;nbsp; | &amp;nbsp;&amp;nbsp; &lt;b&gt;k&lt;/b&gt;: final result limit." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;strokeColor=#dbe4ee;fillColor=#ffffff;fontFamily=Arial;fontSize=14;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="260" y="1370" width="1260" height="48" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

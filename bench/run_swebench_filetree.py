@@ -9,7 +9,7 @@ Usage:
 
 Outputs to bench/runs/<timestamp>__<tier>/:
   config.json         run metadata
-  per_query.jsonl     per-query hit@k + top10 paths
+  per_query.jsonl     per-query gold-cutoff metrics and returned paths
   summary.json        aggregated metrics (overall, per-repo, per-signal)
   report.md           human-readable summary
 """
@@ -35,7 +35,6 @@ from contextdb.retriever.algorithm.ranker import BM25PathRanker
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
-K_VALUES = (1, 3, 5, 10)
 
 
 def make_filesystem_retriever(db: ConDB, args, node_count: int):
@@ -123,8 +122,32 @@ def extract_retrieved_paths(db: ConDB, tree_id: str, node_ids: list[str]) -> lis
 
 # ── Metrics ──────────────────────────────────────────────────────────
 
-def hit_at_k(preds: list[str], golds: set[str], k: int) -> int:
-    return int(any(p in golds for p in preds[:k]))
+
+def found_at_k(preds: list[str], golds: set[str], k: int) -> int:
+    return len(set(preds[:k]).intersection(golds))
+
+
+def recall_at_k(preds: list[str], golds: set[str], k: int) -> float:
+    if not golds:
+        return 0.0
+    return found_at_k(preds, golds, k) / len(golds)
+
+
+def exact_at_k(preds: list[str], golds: set[str], k: int) -> int:
+    return int(bool(golds) and golds.issubset(set(preds[:k])))
+
+
+def gold_cutoff(golds: set[str]) -> int:
+    return max(1, len(golds))
+
+
+def gold_cutoff_metrics(preds: list[str], golds: set[str]) -> dict[str, float | int]:
+    cutoff = gold_cutoff(golds)
+    return {
+        "found@gold": found_at_k(preds, golds, cutoff),
+        "recall@gold": recall_at_k(preds, golds, cutoff),
+        "exact@gold": exact_at_k(preds, golds, cutoff),
+    }
 
 
 def reciprocal_rank(preds: list[str], golds: set[str]) -> float:
@@ -145,12 +168,20 @@ def aggregate(records: list[dict]) -> dict:
     n = len(records)
     if n == 0:
         return {"n": 0}
+    cutoff_metrics = [gold_cutoff_metrics(r.get("top_k_preds", []), set(r.get("gold", []))) for r in records]
     out = {"n": n}
-    for k in K_VALUES:
-        out[f"hit@{k}"] = sum(r[f"hit@{k}"] for r in records) / n
-    out["mrr"] = sum(r["rr"] for r in records) / n
-    out["ndcg@10"] = sum(r["ndcg@10"] for r in records) / n
+    out["mrr"] = sum(
+        reciprocal_rank(r.get("top_k_preds", []), set(r.get("gold", []))) for r in records
+    ) / n
+    out["ndcg@10"] = sum(
+        ndcg_at_k(r.get("top_k_preds", []), set(r.get("gold", [])), 10) for r in records
+    ) / n
     out["failed"] = sum(1 for r in records if r.get("error"))
+    out["avg_gold"] = sum(len(set(r.get("gold", []))) for r in records) / n
+    out["avg_returned"] = sum(r.get("num_preds", len(r.get("top_k_preds", []))) for r in records) / n
+    out["found@gold"] = sum(m["found@gold"] for m in cutoff_metrics) / n
+    out["recall@gold"] = sum(m["recall@gold"] for m in cutoff_metrics) / n
+    out["exact@gold"] = sum(m["exact@gold"] for m in cutoff_metrics) / n
     return out
 
 
@@ -258,6 +289,7 @@ def run(args):
                     "snapshot_size": info["node_count"],
                     "path_signal_level": signal_map.get(qid, -1),
                     "gold": sorted(gold),
+                    "gold_count": len(gold),
                     "top_k_preds": preds[: args.top_k],
                     "num_preds": len(preds),
                     "latency_ms": dt_ms,
@@ -265,17 +297,22 @@ def run(args):
                     "turns": getattr(res, "turns", 0) if res else 0,
                     "error": err,
                 }
-                for k in K_VALUES:
-                    rec[f"hit@{k}"] = hit_at_k(preds, gold, k)
+                rec.update(gold_cutoff_metrics(preds, gold))
                 rec["rr"] = reciprocal_rank(preds, gold)
                 rec["ndcg@10"] = ndcg_at_k(preds, gold, 10)
                 per_query_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 per_query_f.flush()
                 records.append(rec)
                 done += 1
-                mark = "✓" if rec["hit@10"] else ("x" if not err else "E")
+                if rec["exact@gold"]:
+                    mark = "✓"
+                elif rec["found@gold"]:
+                    mark = "~"
+                else:
+                    mark = "E" if err else "x"
                 print(f"[{done:4d}/{len(queries)}] {mark} {qid:40s} "
-                      f"h@1={rec['hit@1']} h@5={rec['hit@5']} "
+                      f"found={rec['found@gold']}/{rec['gold_count']} "
+                      f"recall={rec['recall@gold']:.3f} "
                       f"nodes={info['node_count']:5d} {dt_ms}ms")
 
             # cleanup this tree to keep sqlite small
@@ -290,6 +327,7 @@ def run(args):
     by_repo = {k: aggregate(v) for k, v in group_by(records, "repo").items()}
     by_signal = {k: aggregate(v) for k, v in group_by(records, "path_signal_level").items()}
     by_bucket = {k: aggregate(v) for k, v in group_by_bucket(records).items()}
+    by_gold_count = {k: aggregate(v) for k, v in group_by_gold_count(records).items()}
 
     summary = {
         "config": cfg,
@@ -297,6 +335,7 @@ def run(args):
         "per_repo": by_repo,
         "per_path_signal_level": by_signal,
         "per_snapshot_size_bucket": by_bucket,
+        "per_gold_count": by_gold_count,
     }
     # Re-ensure out_dir exists in case it was removed mid-run
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -304,10 +343,11 @@ def run(args):
     (out_dir / "report.md").write_text(render_report(summary, records))
 
     print(f"\n=== OVERALL ({overall['n']} queries) ===")
-    for k in K_VALUES:
-        print(f"  hit@{k:<2d}  {overall[f'hit@{k}']:.3f}")
-    print(f"  mrr     {overall['mrr']:.3f}")
-    print(f"  ndcg@10 {overall['ndcg@10']:.3f}")
+    print(f"  recall@gold {overall['recall@gold']:.3f}")
+    print(f"  exact@gold  {overall['exact@gold']:.3f}")
+    print(f"  found@gold  {overall['found@gold']:.2f}")
+    print(f"  mrr         {overall['mrr']:.3f}")
+    print(f"  ndcg@10     {overall['ndcg@10']:.3f}")
     if overall.get("failed"):
         print(f"  failed  {overall['failed']}")
     print(f"\nreport: {out_dir}/report.md")
@@ -336,6 +376,22 @@ def group_by_bucket(records):
     return out
 
 
+def group_by_gold_count(records):
+    out: dict = defaultdict(list)
+    for r in records:
+        gold_count = int(r.get("gold_count", len(set(r.get("gold", [])))))
+        bucket = str(gold_count) if gold_count <= 5 else "6+"
+        out[bucket].append(r)
+    return out
+
+
+def gold_bucket_sort_key(bucket) -> int:
+    text = str(bucket)
+    if text.endswith("+"):
+        return int(text[:-1])
+    return int(text)
+
+
 def render_report(summary, records) -> str:
     cfg = summary["config"]
     o = summary["overall"]
@@ -356,42 +412,55 @@ def render_report(summary, records) -> str:
         "| metric | value |",
         "|---|---|",
     ]
-    for k in K_VALUES:
-        lines.append(f"| hit@{k} | {o[f'hit@{k}']:.3f} |")
     lines += [
+        f"| recall@gold | {o.get('recall@gold', 0.0):.3f} |",
+        f"| exact@gold | {o.get('exact@gold', 0.0):.3f} |",
+        f"| found@gold | {o.get('found@gold', 0.0):.2f} |",
         f"| mrr | {o['mrr']:.3f} |",
         f"| ndcg@10 | {o['ndcg@10']:.3f} |",
-        f"| failed | {o.get('failed',0)} |",
+        f"| avg_gold | {o.get('avg_gold', 0.0):.2f} |",
+        f"| avg_returned | {o.get('avg_returned', 0.0):.2f} |",
         "",
     ]
 
     def table(title, d, key_label):
         lines.append(f"## {title}")
         lines.append("")
-        lines.append(f"| {key_label} | n | hit@1 | hit@5 | hit@10 | mrr |")
-        lines.append("|---|---|---|---|---|---|")
-        items = sorted(d.items(), key=lambda x: -x[1]["n"])
+        lines.append(
+            f"| {key_label} | n | cutoff | recall@gold | exact@gold | found@gold | "
+            "avg gold | avg returned |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+
+        def sort_key(item):
+            return gold_bucket_sort_key(item[0]) if title == "Per gold count" else -item[1]["n"]
+
+        items = sorted(d.items(), key=sort_key)
         for k, v in items:
-            lines.append(f"| {k} | {v['n']} | {v['hit@1']:.3f} | "
-                         f"{v['hit@5']:.3f} | {v['hit@10']:.3f} | {v['mrr']:.3f} |")
+            cutoff = "gold" if title == "Per gold count" and str(k).endswith("+") else (
+                str(k) if title == "Per gold count" else "gold"
+            )
+            lines.append(
+                f"| {k} | {v['n']} | {cutoff} | {v.get('recall@gold', 0.0):.3f} | "
+                f"{v.get('exact@gold', 0.0):.3f} | {v.get('found@gold', 0.0):.2f} | "
+                f"{v.get('avg_gold', 0.0):.2f} | {v.get('avg_returned', 0.0):.2f} |"
+            )
         lines.append("")
 
+    table("Per gold count", summary.get("per_gold_count", {}), "gold files")
     table("Per repo", summary["per_repo"], "repo")
     table("Per path_signal_level", summary["per_path_signal_level"], "level")
     table("Per snapshot size", summary["per_snapshot_size_bucket"], "bucket")
 
-    # failure samples
-    failures = [r for r in records if r["hit@10"] == 0 and not r.get("error")]
-    if failures:
-        lines += ["## Failure samples (hit@10 = 0)", ""]
-        import random
-        random.seed(0)
-        for r in random.sample(failures, min(5, len(failures))):
+    misses = [r for r in records if r.get("recall@gold", 0.0) < 1.0 and not r.get("error")]
+    if misses:
+        lines += ["## Miss samples", ""]
+        for r in misses[:5]:
             lines += [
                 f"### {r['query_id']}  ({r['repo']}@{r['commit']})",
                 f"- signal level: {r['path_signal_level']}",
                 f"- gold: {r['gold']}",
-                f"- top10: {r['top_k_preds']}",
+                f"- returned: {r['top_k_preds']}",
                 "",
             ]
     return "\n".join(lines)

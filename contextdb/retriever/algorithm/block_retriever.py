@@ -218,6 +218,7 @@ class BlockRetriever(BaseRetriever):
                 break
 
             merged_ids: list[str] = []
+            merged_id_groups: list[list[str]] = []
             candidate_count = 0
 
             for spec, block_result, llm_called, cache_metrics in block_rows:
@@ -229,6 +230,7 @@ class BlockRetriever(BaseRetriever):
 
                 candidate_count += len(block.node_ids)
                 merged_ids.extend(block_result.ordered_node_ids)
+                merged_id_groups.append(list(block_result.ordered_node_ids))
 
                 block_trace = {
                     "type": f"{round_label}_horizontal" if spec["block_count"] > 1 else round_label,
@@ -244,7 +246,7 @@ class BlockRetriever(BaseRetriever):
                 block_traces.append(block_trace)
 
             merged_ids = self._merge_unique_ids(merged_ids)
-            ordered_merged_ids = self._order_fs_node_ids_for_query(tree_id, merged_ids, query)
+            ordered_merged_ids = self._order_fs_node_id_groups_for_query(tree_id, merged_id_groups, query)
             merged_file_ids = [
                 node_id
                 for node_id in ordered_merged_ids

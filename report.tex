@@ -1,0 +1,482 @@
+\documentclass{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage{courier}
+\usepackage{microtype}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{float}
+
+\definecolor{PromptBg}{RGB}{248,249,250}
+\definecolor{PromptRule}{RGB}{210,214,220}
+
+\lstdefinestyle{prompt}{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  frame=single,
+  framerule=0.35pt,
+  rulecolor=\color{PromptRule},
+  backgroundcolor=\color{PromptBg},
+  xleftmargin=0.6em,
+  xrightmargin=0.6em,
+  aboveskip=0.6em,
+  belowskip=0.9em,
+  keepspaces=true,
+  showstringspaces=false
+}
+
+\lstset{style=prompt}
+
+\begin{document}
+
+\pagestyle{empty}
+
+\begin{center}
+{\Large\bfseries Filesystem Retrieval Flow}
+\end{center}
+
+\section*{1. Strategy Selection}
+
+The filesystem retriever treats the repository as a tree. Each node is either a
+directory or a file, and each candidate shown to the LLM contains only the node
+id, relative path, and type. Metadata fields are reserved for a later version
+and are not rendered in the active LLM-facing candidate payload.
+
+The query entry point chooses the retrieval strategy in this order:
+\begin{enumerate}
+  \item Read the tree metadata. If the tree source is not filesystem, dispatch
+  to the document retriever.
+  \item If the caller passes \texttt{strategy="beam"}, use Beam directly.
+  If the caller passes \texttt{strategy="block"}, use Block directly.
+  \item If the caller passes \texttt{strategy="auto"}, count tree nodes.
+  Trees with at most 50 nodes use Beam; larger trees use Block.
+  \item Run the chosen retriever with the query, beam width, and final result
+  limit.
+\end{enumerate}
+
+The algorithms below show the filesystem path. Candidate order follows the
+stored filesystem order except for the optional post-merge path ordering in
+Algorithm 5.
+
+\section*{2. Beam Retriever}
+
+Beam retrieval is level-by-level tree navigation. On each turn, every current
+beam is expanded to its direct children. The union of those children is the
+candidate set for that LLM call. If a beam is already a leaf, the leaf itself is
+kept as a candidate so it can be returned.
+
+The Beam flow is implemented by Algorithm 1:
+\begin{enumerate}
+  \item Initialize the beam set with the root node.
+  \item Expand every current beam into direct children.
+  \item Treat the union of expanded children as the current candidate set.
+  \item Ask the LLM to rank candidates and optionally signal \texttt{done}.
+  \item If the LLM says \texttt{done} but returned only directories, force
+  \texttt{done=false} and continue exploring.
+  \item Add returned ids to the running top-candidate set.
+  \item Keep the top ranked expandable ids as the next beams.
+  \item Stop when $k$ file results have been collected, the LLM says
+  \texttt{done}, there are no candidates, or the depth limit is reached.
+\end{enumerate}
+
+\begin{algorithm}[H]
+\caption{FilesystemBeam}
+\begin{algorithmic}[1]
+\Require Tree id $T$, query $q$, beam width $b$, final result limit $k$
+\Ensure Retrieved file nodes $R$
+\State $r \gets \Call{Root}{T}$
+\State $B \gets [r]$
+\State $A \gets [\ ]$
+\State $p \gets \max(b,k)$
+\For{$t = 0,1,\ldots,\Call{MaxDepth}{T}$}
+  \State $C \gets [\ ]$
+  \ForAll{$u \in B$}
+    \State $Ch \gets \Call{Children}{T,u}$
+    \If{$Ch = \emptyset$}
+      \State $C \gets C \cup \{u\}$
+    \Else
+      \State $C \gets C \cup Ch$
+    \EndIf
+  \EndFor
+  \If{$C = \emptyset$}
+    \State \textbf{break}
+  \EndIf
+  \State $(L, done) \gets \Call{LLMRankBeam}{q, C, A, p}$
+  \If{$done$ and no node in $L$ is a file}
+    \State $done \gets \textsc{false}$
+  \EndIf
+  \State $Q \gets [u \in L: u \text{ is a file}]$
+  \State $A \gets (A \cup Q)[1:k]$
+  \If{$|A| \ge k$}
+    \State \textbf{break}
+  \EndIf
+  \State $B \gets [\ ]$
+  \ForAll{$u \in L$}
+    \If{$u$ is a directory or expandable node}
+      \State append $u$ to $B$
+    \EndIf
+    \If{$|B| = b$}
+      \State \textbf{break}
+    \EndIf
+  \EndFor
+  \If{$done$}
+    \State \textbf{break}
+  \EndIf
+\EndFor
+\State \Return $A[1:k]$
+\end{algorithmic}
+\end{algorithm}
+
+\section*{3. Block Retriever}
+
+Block retrieval has the same recursive intent as Beam, but it does not present
+one large candidate list when the directory is wide. Instead, it partitions the
+current visible children into token-bounded blocks. For a block $B_i$, the block
+candidate set is exactly $C_i = B_i.\text{\texttt{node\_ids}}$. The LLM returns a
+block-local ordered list from that block only; those returned ids are not
+inserted back into $C_i$. They are merged with other block results by order
+preservation, then split into file results and directory frontier nodes.
+When all entries in a block share a directory prefix, the rendered block may add
+\texttt{Path prefix: <prefix>} once and show each candidate path relative to that
+prefix.
+
+The Block flow is implemented by Algorithms 2--5:
+\begin{enumerate}
+  \item Initialize the frontier with the root, then collapse virtual
+  single-child directory chains. This is handled by the main loop in
+  Algorithm 2.
+  \item Materialize visible candidates from the current frontier. At turn 0 this
+  is the top visible layer; later turns use the direct children of frontier
+  nodes. This is handled by Algorithm 3.
+  \item Pack visible candidates into token-bounded blocks
+  $\mathcal{B}=\{B_1,\ldots,B_m\}$. This is handled by Algorithm 3.
+  \item Render each block using only id, path, and type. If a shared path prefix
+  reduces tokens, render the prefix once and shorten candidate paths within that
+  block. This is handled by Algorithm 3.
+  \item For each block $B_i$, define the allowed candidate set
+  $C_i=B_i.\text{\texttt{node\_ids}}$ and ask the LLM to rank only ids in $C_i$.
+  This is handled by Algorithm 4.
+  \item Keep per-block outputs as block-local groups
+  $\mathcal{G}=[L_1,\ldots,L_m]$ and derive
+  $M=\Call{Flatten}{\mathcal{G}}$ for the no-ranker path. This merge removes
+  duplicates while preserving each block's LLM-returned order.
+  \item Optionally reorder across block groups without changing the relative
+  order inside any $L_i$, then split the resulting list by node type: files enter
+  the accumulated top-candidate result set, while directories enter the next
+  frontier. This is handled by Algorithm 5.
+  \item If the LLM says \texttt{done} but the frontier still contains
+  directories, override \texttt{done=false} and continue drilling down. This is
+  handled by Algorithm 5.
+  \item Stop immediately once the accumulated file result set reaches the final
+  result limit $k$.
+\end{enumerate}
+
+\begin{algorithm}[H]
+\caption{FilesystemBlock Main Loop}
+\begin{algorithmic}[1]
+\Require Tree id $T$, query $q$, beam width $b$, final result limit $k$, token budget $\tau$
+\Ensure Retrieved file nodes $R$
+\State $r \gets \Call{Root}{T}$
+\State $F \gets \Call{CollapseSingleChildDirs}{[r]}$
+\State $A \gets [\ ]$
+\State $P \gets [\ ]$
+\State $\hat b \gets b$ if set, otherwise $1$
+\State $p \gets \max(\hat b,k)$ \Comment{LLM pick limit, not the final result limit}
+\State $t \gets 0$
+\While{$t < \Call{MaxRounds}{}$}
+  \If{$t > 0$ and no node in $F$ has children}
+    \State \textbf{break}
+  \EndIf
+  \State $(\mathcal{B}, X) \gets \Call{BuildBlockCandidates}{T,F,t,\tau}$
+  \If{$X = \emptyset$ or $\mathcal{B}=\emptyset$}
+    \State \textbf{break}
+  \EndIf
+  \State $p_t \gets p$ if $|\mathcal{B}|=1$, otherwise $\max(p,2)$
+  \State $(\mathcal{G}, M, done) \gets \Call{CallBlocksAndMerge}{q,\mathcal{B},F,P,p_t}$
+  \State $(F,P,A,done) \gets \Call{UpdateState}{T,q,\mathcal{G},M,done,b,k,A}$
+  \If{$|A| \ge k$ or $done$}
+    \State \textbf{break}
+  \EndIf
+  \State $t \gets t + 1$
+\EndWhile
+\State \Return $A[1:k]$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{BuildBlockCandidates}
+\begin{algorithmic}[1]
+\Require Tree id $T$, frontier $F$, turn $t$, token budget $\tau$
+\Ensure Token-bounded blocks $\mathcal{B}$ and visible candidates $X$
+\If{$t = 0$}
+  \State $X \gets \Call{TopVisibleNodes}{T,F_1}$
+\Else
+  \State $X \gets [\ ]$
+  \ForAll{$u \in F$}
+    \State $X \gets X \cup \Call{Children}{T,u}$
+  \EndFor
+\EndIf
+\If{$X = \emptyset$}
+  \State \Return $(\emptyset,\emptyset)$
+\EndIf
+\State Render each candidate using id, path, and type
+\State Render a shared \texttt{Path prefix} when it shortens the block
+\State $\mathcal{B} \gets \Call{PackIntoBlocks}{X,\tau}$
+\State \Return $(\mathcal{B},X)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{CallBlocksAndMerge}
+\begin{algorithmic}[1]
+\Require Query $q$, blocks $\mathcal{B}$, frontier $F$, previous top candidates $P$, LLM pick limit $p$
+\Ensure Block-local id groups $\mathcal{G}$, merged ids $M$, and stop signal $done$
+\ForAll{$i=1,\ldots,|\mathcal{B}|$ \textbf{in parallel}}
+  \State $B_i \gets \mathcal{B}_i$
+  \State $C_i \gets B_i.\text{\texttt{node\_ids}}$
+  \State $(L_i,d_i) \gets \Call{LLMRankBlock}{q,B_i,C_i,F,P,p}$
+\EndFor
+\State $\mathcal{G} \gets [\ ]$
+\For{$i=1,\ldots,|\mathcal{B}|$}
+  \State $\mathcal{G} \gets \mathcal{G} \parallel [L_i]$
+\EndFor
+\State $\mathcal{G} \gets \Call{UniquePreserveBlockOrder}{\mathcal{G}}$
+\State $M \gets \Call{Flatten}{\mathcal{G}}$
+\State $done \gets \Call{AllTrue}{\{d_i\}}$
+\State \Return $(\mathcal{G},M,done)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{UpdateState}
+\begin{algorithmic}[1]
+\Require Tree id $T$, query $q$, block-local id groups $\mathcal{G}$, merged ids $M$, stop signal $done$, beam width $b$, final result limit $k$, top candidates $A$
+\Ensure Next frontier $F$, previous top candidates $P$, top candidates $A$, stop signal $done$
+\State $M' \gets \Call{ConstrainedPathOrder}{\mathcal{G},q}$
+\State $Q \gets [u \in M': u \text{ is a file}]$
+\State $D \gets [u \in M': u \text{ is a directory}]$
+\State $r \gets \max(0, k-|A|)$
+\State $A \gets A \cup Q[1:r]$
+\State $P \gets A[1:k]$
+\If{$|A| \ge k$}
+  \State \Return $(\emptyset,P,A[1:k],\textsc{true})$
+\EndIf
+\State $F' \gets D[1:b]$
+\State $F \gets \Call{CollapseSingleChildDirs}{F'}$
+\If{$done$ and some node in $F$ still has children}
+  \State $done \gets \textsc{false}$
+\EndIf
+\State \Return $(F,P,A[1:k],done)$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Block semantics.}
+For every block call, the LLM can only select ids from the current block's
+allowed list. If the current directory produces three blocks
+$B_1,B_2,B_3$, the calls produce $L_1,L_2,L_3$. The algorithm keeps these as
+block-local groups $\mathcal{G}=[L_1,L_2,L_3]$ and derives
+$M=\Call{Flatten}{\mathcal{G}}$. This is a merge, not another LLM ranking step.
+$M$ is therefore called \texttt{merged\_ids}, not a ranked list. Without path
+ordering, its order is inherited from block order and each block's local LLM
+order. With optional path ordering, only cross-block order may change; the
+relative order inside each $L_i$ is fixed. Files enter
+\texttt{top\_candidate\_ids}; directories enter the next frontier after
+beam-width truncation. The next candidate set is produced only by expanding that
+frontier.
+
+\paragraph{Block cache method.}
+Block retrieval separates stable tree text from dynamic query state. The stable
+part is the rendered block content; the dynamic part contains the query, current
+exploration path, previous top candidates, and the ids allowed for the current
+block call. If cache is enabled, the retriever builds a cache payload from a
+static instruction segment plus a bounded cache window of previously useful
+block segments. The current block is also placed in the cache payload when
+\texttt{cache\_current\_block} is enabled at the top level, or when
+\texttt{cache\_subtree\_block} is enabled in recursive subtree rounds.
+
+After each round, the blocks that contain the next frontier are appended to the
+cache window. The first top-level block may be pinned, while later entries can be
+trimmed when the cache-window token budget is exceeded. The LLM call then sends
+the cache payload as cached content and sends only the query-specific message as
+the dynamic user message. If the LLM adapter does not support cached calls, the
+same content is concatenated into a normal prompt; retrieval semantics are the
+same, but no provider-side cache saving is used. The \texttt{Path prefix} line
+is separate from this cache mechanism: it is only a token-compression rendering
+trick inside a block.
+
+\paragraph{Path ordering.}
+The deterministic merge preserves block order and block-local order. It does not
+compare candidates from different blocks. When a ranker is supplied, the path
+scorer runs once over the block-local groups
+$\mathcal{G}=[L_1,\ldots,L_m]$ and before the file/directory split:
+\[
+M'=\Call{ConstrainedPathOrder}{\mathcal{G},q}.
+\]
+Only the current head of each group may be selected at each step, so different
+blocks can be interleaved while the relative order inside every $L_i$ remains
+unchanged. Without a ranker, $M'=\Call{Flatten}{\mathcal{G}}$.
+
+The optional scorer is path-only:
+\[
+s(u,q)=3\,\mathrm{BM25}(q,\mathrm{basename}(u))
+      +1.5\,\mathrm{BM25}(q,\mathrm{parent}(u))
+      +\mathrm{BM25}(q,\mathrm{path}(u)).
+\]
+The ordered list $M'$ is then split: files fill the remaining $k-|A|$ result
+slots, and directories are truncated to the beam width for the next frontier.
+
+\section*{4. Output Semantics}
+
+In filesystem mode, \texttt{candidate\_set}, \texttt{ranked\_ids},
+\texttt{frontier}, and \texttt{top\_candidate\_ids} have different meanings.
+The candidate set is the current block-local pool shown to the LLM.
+\texttt{ranked\_ids} is only the LLM-returned order inside one block and may
+contain files or directories. After deterministic merge, the cross-block list is
+\texttt{merged\_ids}; it is not a global ranking. If optional path ordering is
+enabled, the retriever derives one ordered list from \texttt{merged\_ids} before
+splitting it. Files then enter \texttt{top\_candidate\_ids}, which is the
+maintained result set, and directories form the next frontier. Final filesystem
+output returns at most $k$ entries from \texttt{top\_candidate\_ids} and their
+contents. The separate \texttt{pick\_limit} controls how many ids an LLM call may
+return inside one round; it is not the final result count.
+
+\newpage
+
+\section*{Appendix A. LLM Prompt Payloads}
+
+\subsection*{A.1 Tool schema}
+
+Both retrievers use the same tool-call contract. The LLM must return one
+\texttt{rank} tool call.
+
+\noindent\textbf{Tool schema}
+\begin{lstlisting}
+TOOLS = [
+    {
+        "name": "rank",
+        "description": "Rank candidate node ids for the query",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ranked_ids": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "done": {"type": "boolean"},
+            },
+            "required": ["ranked_ids"],
+        },
+    }
+]
+\end{lstlisting}
+
+\subsection*{A.2 Rendered prompt examples}
+
+The boxes below show examples after the templates are rendered for an LLM call.
+Angle-bracket fields are filled from the current tree state before each call.
+
+\subsection*{A.2.1 Beam prompt}
+
+\noindent Source template: \texttt{contextdb/prompts/beam\_fs.jinja}
+\begin{lstlisting}
+You are navigating a source code repository to find files relevant to this query:
+
+Query: <query>
+
+Already top candidates:
+- <previous top candidate node id>
+
+Current candidates (pick up to <pick_limit>, most relevant first):
+- id: <node id>
+  path: <relative path>
+  type: <directory | file>
+- id: <node id>
+  path: <relative path>
+  type: <directory | file>
+
+RULES:
+- Select directories to explore deeper, or files if they match the query
+- set done=true ONLY when you've found specific source files that answer the query
+- set done=false if you returned directories that need further exploration
+
+Return ONE tool call "rank" with:
+- ranked_ids: list of candidate ids in best-to-worst order
+- done: true or false
+\end{lstlisting}
+
+\subsection*{A.2.2 Block prompt}
+
+\noindent Source templates: \texttt{block\_fs\_cache\_prefix.jinja} and
+\texttt{block\_fs.jinja}. The first part is the cached block prefix; the second
+part is the dynamic user message for the current query and allowed ids.
+
+\noindent\textbf{Cached block prefix}
+\begin{lstlisting}
+=== REPOSITORY DIRECTORY TREE ===
+
+Path prefix: <shared directory prefix>/
+
+- id: n1
+  path: <path relative to prefix>
+  type: <directory | file>
+- id: n2
+  path: <path relative to prefix>
+  type: <directory | file>
+
+You are navigating a source code repository's directory tree to find files relevant to a query.
+Each entry above has:
+- id: a unique node identifier
+- path: relative file/directory path
+- type: file or directory
+
+RULES:
+- Select directories to drill deeper into, or files if they directly match the query
+- set done=false if returned directories need further exploration
+- Select ONLY ids from the allowed list provided below
+
+Return ONE tool call "rank" with:
+- ranked_ids: list of candidate ids in best-to-worst order
+- done: true ONLY when the returned ids are specific source files
+\end{lstlisting}
+
+\noindent\textbf{Dynamic message}
+\begin{lstlisting}
+Query: <query>
+
+Top candidates so far:
+- <previous top candidate path>
+
+Current exploration path:
+- <current frontier path>
+
+The LAST BLOCK above is the CURRENT BLOCK.
+IDs in each block are local to that block.
+Return only ids from the CURRENT BLOCK.
+
+Selectable ids in the CURRENT BLOCK:
+- n1
+- n2
+
+Pick up to <pick_limit> candidates most relevant to the query, best first.
+\end{lstlisting}
+
+\noindent\textbf{Expected tool call}
+\begin{lstlisting}
+rank({
+  "ranked_ids": ["n1"],
+  "done": true
+})
+\end{lstlisting}
+
+The implementation maps local aliases such as \texttt{n1} back to real node ids
+before splitting ranked ids into the top-candidate result set and the next
+frontier.
+
+\end{document}

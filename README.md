@@ -172,17 +172,23 @@ all      500 queries   no filter, includes ~48% path-signal-less queries
 Output goes to `bench/runs/<timestamp>__<tier>/`: `report.md`, `summary.json`,
 `per_query.jsonl`.
 
-#### Snapshot (Claude Sonnet 4.6, `--strategy auto`, top-k=10)
+#### Latest Run (Claude Sonnet 4.6, `--strategy block --ranker none`, top-k=10)
 
-| tier   | n   | hit@1 | hit@3 | hit@5 | hit@10 |  MRR  | nDCG@10 |
-|--------|-----|-------|-------|-------|--------|-------|---------|
-| easy   | 107 | 0.776 | 0.841 | 0.841 | 0.841  | 0.805 | 0.772   |
-| medium | 133 | 0.797 | 0.850 | 0.850 | 0.850  | 0.821 | 0.787   |
+The cutoff for each query is its gold-file count: one-gold queries use top-1,
+two-gold queries use top-2, and so on. The `6+` row contains one 6-gold query
+and one 21-gold outlier.
 
-Path-only filesystem retrieval lands gold in top-10 for ~85% of queries that
-carry any path-level signal. The `hard` tier (261 queries, module-stem
-signal only) is in progress and will be added once Anthropic API rate-limit
-retries are wired in. `all` (the path-signal-less ceiling) has not been run.
+| gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
+|------------|--------:|-------:|------------:|-----------:|-----------:|-------------:|
+| 1          | 430     | 1      | 0.749       | 0.749      | 0.75       | 7.00         |
+| 2          | 48      | 2      | 0.521       | 0.271      | 1.04       | 8.31         |
+| 3          | 13      | 3      | 0.410       | 0.077      | 1.23       | 8.77         |
+| 4          | 6       | 4      | 0.417       | 0.000      | 1.67       | 9.17         |
+| 5          | 1       | 5      | 0.200       | 0.000      | 1.00       | 2.00         |
+| 6+         | 2       | gold   | 0.274       | 0.000      | 2.00       | 10.00        |
+
+The full 500-query run aggregates to `recall@gold=0.711`, `exact@gold=0.672`,
+`MRR=0.805`, `nDCG@10=0.813`, `avg gold=1.24`, and `avg returned=7.20`.
 
 ### Document mode — single long document
 

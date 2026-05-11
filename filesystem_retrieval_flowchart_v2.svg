@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1240" viewBox="0 0 1800 1240">
+  <defs>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+      <path d="M 2 2 L 12 7 L 2 12 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      text { font-family: Arial, Helvetica, sans-serif; }
+      .title { font-size: 46px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-size: 22px; font-weight: 400; fill: #64748b; }
+      .lane-title { font-size: 28px; font-weight: 700; fill: #0f172a; }
+      .lane-subtitle { font-size: 18px; font-weight: 500; fill: #64748b; }
+      .node-title { font-size: 21px; font-weight: 700; fill: #0f172a; }
+      .node-text { font-size: 17px; font-weight: 400; fill: #475569; }
+      .small { font-size: 15px; font-weight: 500; fill: #64748b; }
+      .label { font-size: 14px; font-weight: 700; fill: #64748b; }
+      .card { fill: #ffffff; stroke: #dbe4ee; stroke-width: 1.4; rx: 18; filter: url(#shadow); }
+      .lane { fill: #ffffff; stroke: #d9e2ec; stroke-width: 1.5; rx: 24; filter: url(#shadow); }
+      .lane-left { fill: #eff6ff; }
+      .lane-right { fill: #f0fdfa; }
+      .decision { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.6; filter: url(#shadow); }
+      .accent-blue { fill: #2563eb; }
+      .accent-teal { fill: #0f766e; }
+      .accent-slate { fill: #334155; }
+      .arrow { stroke: #64748b; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .loop { stroke: #94a3b8; stroke-width: 2.2; fill: none; stroke-dasharray: 7 7; marker-end: url(#arrow); }
+      .chip { fill: #f1f5f9; stroke: #dbe4ee; stroke-width: 1; rx: 14; }
+      .num { font-size: 16px; font-weight: 700; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1240"/>
+
+  <text class="title" x="90" y="72">ConDB Filesystem Retrieval</text>
+  <text class="subtitle" x="90" y="108">Two retrievers, same goal: navigate the file tree, collect file nodes, return file contents.</text>
+
+  <!-- Top routing row -->
+  <rect class="card" x="90" y="145" width="310" height="76"/>
+  <circle class="accent-slate" cx="124" cy="183" r="16"/>
+  <text class="num" x="119" y="189">1</text>
+  <text class="node-title" x="155" y="176">ConDB.query()</text>
+  <text class="node-text" x="155" y="202">tree_id + user question</text>
+
+  <path class="arrow" d="M 405 183 H 490"/>
+
+  <rect class="card" x="500" y="145" width="330" height="76"/>
+  <circle class="accent-slate" cx="534" cy="183" r="16"/>
+  <text class="num" x="529" y="189">2</text>
+  <text class="node-title" x="565" y="176">Filesystem mode</text>
+  <text class="node-text" x="565" y="202">meta.source = filesystem</text>
+
+  <path class="arrow" d="M 835 183 H 915"/>
+
+  <path class="decision" d="M 1045 130 L 1195 183 L 1045 236 L 895 183 Z"/>
+  <text class="node-title" x="1000" y="177">Strategy</text>
+  <text class="node-text" x="982" y="202">auto / beam / block</text>
+
+  <path class="arrow" d="M 970 230 C 840 260 680 275 535 292"/>
+  <text class="label" x="660" y="260">auto: node_count &lt;= 50</text>
+
+  <path class="arrow" d="M 1120 230 C 1235 260 1380 276 1515 292"/>
+  <text class="label" x="1228" y="260">auto: node_count &gt; 50</text>
+
+  <!-- Lane containers -->
+  <rect class="lane" x="70" y="285" width="800" height="830"/>
+  <rect class="lane-left" x="70" y="285" width="800" height="72" rx="24"/>
+  <text class="lane-title" x="110" y="331">Filesystem BeamRetriever</text>
+  <text class="lane-subtitle" x="490" y="331">small tree, layer-by-layer navigation</text>
+
+  <rect class="lane" x="930" y="285" width="800" height="830"/>
+  <rect class="lane-right" x="930" y="285" width="800" height="72" rx="24"/>
+  <text class="lane-title" x="970" y="331">Filesystem BlockRetriever</text>
+  <text class="lane-subtitle" x="1370" y="331">large tree, token-bounded blocks</text>
+
+  <!-- Beam lane -->
+  <rect class="card" x="130" y="390" width="680" height="74"/>
+  <circle class="accent-blue" cx="164" cy="427" r="16"/><text class="num" x="159" y="433">1</text>
+  <text class="node-title" x="195" y="421">Start from root</text>
+  <text class="node-text" x="195" y="447">Initial beam is the filesystem root.</text>
+
+  <path class="arrow" d="M 470 466 V 502"/>
+  <rect class="card" x="130" y="505" width="680" height="74"/>
+  <circle class="accent-blue" cx="164" cy="542" r="16"/><text class="num" x="159" y="548">2</text>
+  <text class="node-title" x="195" y="536">Expand current beams</text>
+  <text class="node-text" x="195" y="562">Read direct children from SQLite in tree order.</text>
+
+  <path class="arrow" d="M 470 581 V 617"/>
+  <rect class="card" x="130" y="620" width="680" height="74"/>
+  <circle class="accent-blue" cx="164" cy="657" r="16"/><text class="num" x="159" y="663">3</text>
+  <text class="node-title" x="195" y="651">Build candidate list</text>
+  <text class="node-text" x="195" y="677">Each candidate exposes path and type. Metadata is disabled.</text>
+
+  <path class="arrow" d="M 470 696 V 732"/>
+  <rect class="card" x="130" y="735" width="680" height="74"/>
+  <circle class="accent-blue" cx="164" cy="772" r="16"/><text class="num" x="159" y="778">4</text>
+  <text class="node-title" x="195" y="766">LLM chooses candidates</text>
+  <text class="node-text" x="195" y="792">Tool call returns selected ids and a done flag.</text>
+
+  <path class="arrow" d="M 470 811 V 846"/>
+  <path class="decision" d="M 470 845 L 585 895 L 470 945 L 355 895 Z"/>
+  <text class="node-title" x="430" y="890">File or</text>
+  <text class="node-title" x="420" y="916">directory?</text>
+
+  <path class="arrow" d="M 355 895 H 230 V 975"/>
+  <text class="label" x="252" y="882">file</text>
+  <rect class="card" x="110" y="980" width="300" height="72"/>
+  <text class="node-title" x="145" y="1010">Add to selected</text>
+  <text class="node-text" x="145" y="1036">Keep file node as a result.</text>
+
+  <path class="arrow" d="M 585 895 H 710 V 975"/>
+  <text class="label" x="665" y="882">directory</text>
+  <rect class="card" x="530" y="980" width="300" height="72"/>
+  <text class="node-title" x="565" y="1010">Next beam</text>
+  <text class="node-text" x="565" y="1036">Drill into that directory.</text>
+
+  <path class="loop" d="M 680 978 C 860 900 860 585 812 542"/>
+  <path class="arrow" d="M 410 1016 H 520"/>
+  <path class="arrow" d="M 470 1055 V 1080"/>
+  <rect class="chip" x="300" y="1082" width="340" height="38"/>
+  <text class="small" x="333" y="1107">Stop at done, leaf, or max_turns.</text>
+
+  <!-- Block lane -->
+  <rect class="card" x="990" y="390" width="680" height="74"/>
+  <circle class="accent-teal" cx="1024" cy="427" r="16"/><text class="num" x="1019" y="433">1</text>
+  <text class="node-title" x="1055" y="421">Start from root</text>
+  <text class="node-text" x="1055" y="447">Collapse virtual single-child directories.</text>
+
+  <path class="arrow" d="M 1330 466 V 502"/>
+  <rect class="card" x="990" y="505" width="680" height="74"/>
+  <circle class="accent-teal" cx="1024" cy="542" r="16"/><text class="num" x="1019" y="548">2</text>
+  <text class="node-title" x="1055" y="536">Build top block</text>
+  <text class="node-text" x="1055" y="562">Pack top-level candidates into prompt-sized blocks.</text>
+
+  <path class="arrow" d="M 1330 581 V 617"/>
+  <rect class="card" x="990" y="620" width="680" height="74"/>
+  <circle class="accent-teal" cx="1024" cy="657" r="16"/><text class="num" x="1019" y="663">3</text>
+  <text class="node-title" x="1055" y="651">LLM chooses from current block</text>
+  <text class="node-text" x="1055" y="677">Files are collected; directories become beams.</text>
+
+  <path class="arrow" d="M 1330 696 V 732"/>
+  <rect class="card" x="990" y="735" width="680" height="74"/>
+  <circle class="accent-teal" cx="1024" cy="772" r="16"/><text class="num" x="1019" y="778">4</text>
+  <text class="node-title" x="1055" y="766">Create subtree blocks</text>
+  <text class="node-text" x="1055" y="792">For each beam, pack its children by token budget.</text>
+
+  <path class="arrow" d="M 1330 811 V 846"/>
+  <path class="decision" d="M 1330 845 L 1455 895 L 1330 945 L 1205 895 Z"/>
+  <text class="node-title" x="1280" y="890">Multiple</text>
+  <text class="node-title" x="1288" y="916">blocks?</text>
+
+  <path class="arrow" d="M 1205 895 H 1080 V 975"/>
+  <text class="label" x="1112" y="882">no</text>
+  <rect class="card" x="970" y="980" width="300" height="72"/>
+  <text class="node-title" x="1005" y="1010">Single block</text>
+  <text class="node-text" x="1005" y="1036">One LLM selection step.</text>
+
+  <path class="arrow" d="M 1455 895 H 1580 V 975"/>
+  <text class="label" x="1530" y="882">yes</text>
+  <rect class="card" x="1410" y="980" width="300" height="72"/>
+  <text class="node-title" x="1445" y="1010">Parallel blocks</text>
+  <text class="node-text" x="1445" y="1036">Select in parallel, then merge.</text>
+
+  <path class="arrow" d="M 1270 1016 H 1400"/>
+  <path class="arrow" d="M 1560 1054 V 1084 H 1330"/>
+  <rect class="chip" x="1160" y="1082" width="340" height="38"/>
+  <text class="small" x="1185" y="1107">Optional LLM final selection, then repeat.</text>
+  <path class="loop" d="M 1500 1090 C 1725 1000 1730 600 1672 542"/>
+
+  <!-- Bottom summary -->
+  <rect class="card" x="270" y="1150" width="1260" height="58"/>
+  <text class="node-title" x="325" y="1186">Beam</text>
+  <text class="node-text" x="395" y="1186">feeds one frontier layer directly to the LLM.</text>
+  <line x1="865" y1="1165" x2="865" y2="1194" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text class="node-title" x="925" y="1186">Block</text>
+  <text class="node-text" x="995" y="1186">splits large candidate sets into prompt-sized blocks, then merges selections.</text>
+</svg>
