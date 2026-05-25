@@ -4,17 +4,17 @@ Interpret the query semantically, not by exact words.
 - Prefer nodes whose text/summary provides direct evidence for the query constraints.
 - For compound questions, choose nodes that jointly cover all requested facts.
 
-Selected in previous block:
-{% if previous_selected %}
-{{ previous_selected }}
+Top candidates in previous block:
+{% if previous_top_candidate_ids %}
+{{ previous_top_candidate_ids }}
 {% else %}
 (none)
 {% endif %}
 
-{% if input_beams %}
-Input beams (context from previous block):
-{% for beam in input_beams %}
-- {{ beam.node_id }}: {{ beam.title }} ({{ beam.path }})
+{% if input_frontier %}
+Input frontier (context from previous block):
+{% for frontier_node in input_frontier %}
+- {{ frontier_node.node_id }}: {{ frontier_node.title }} ({{ frontier_node.path }})
 {% endfor %}
 {% endif %}
 
@@ -29,5 +29,5 @@ Allowed node ids in CURRENT BLOCK (you MUST select only from these ids):
 (none)
 {% endif %}
 
-Pick up to {{ k }} candidates from the ALLOWED NODE IDS above, best first.
-Set done=true only if selected nodes already provide sufficient concrete evidence; otherwise done=false.
+Pick up to {{ pick_limit }} candidates from the ALLOWED NODE IDS above, best first.
+Set done=true only if top candidates already provide sufficient concrete evidence; otherwise done=false.

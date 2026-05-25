@@ -7,14 +7,12 @@ Each entry above has:
 - id: a unique node identifier (use these exact ids in your response)
 - path: relative file/directory path
 - type: file or directory
-- tag: [src], [test], [doc], or [config]
 
 RULES:
-- STRONGLY prefer [src] tagged files/directories over [test], [doc], or [config]
 - Select directories to drill deeper into, or files if they directly match the query
-- set done=false unless ALL your selections are leaf files (not directories)
+- set done=false if returned directories need further exploration
 - Select ONLY ids from the allowed list provided below
 
 Return ONE tool call "rank" with:
-- selected: list of ids in best-to-worst order
-- done: true ONLY when ALL selected nodes are specific source files (not directories)
+- ranked_ids: list of candidate ids in best-to-worst order
+- done: true ONLY when the returned ids are specific source files (not directories)

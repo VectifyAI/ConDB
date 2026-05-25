@@ -2,27 +2,25 @@ You are navigating a source code repository to find files relevant to this query
 
 Query: {{ query }}
 
-{% if selected %}
-Already selected:
-{% for s in selected %}
+{% if top_candidate_ids %}
+Already top candidates:
+{% for s in top_candidate_ids %}
 - {{ s }}
 {% endfor %}
 {% endif %}
 
-Current candidates (pick up to {{ k }}, most relevant first):
+Current candidates (pick up to {{ pick_limit }}, most relevant first):
 {% for c in candidates -%}
 - id: {{ c.node_id }}
   path: {{ c.rel_path or c.path }}
   {% if c.is_dir %}type: directory{% else %}type: file{% endif %}
-  {% if c.tag %}tag: {{ c.tag }}{% endif %}
 {% endfor %}
 
 RULES:
 - Select directories to explore deeper, or files if they match the query
-- STRONGLY prefer [src] files over [test] files
 - set done=true ONLY when you've found specific source files that answer the query
-- set done=false if you selected directories that need further exploration
+- set done=false if returned directories need further exploration
 
 Return ONE tool call "rank" with:
-- selected: list of ids in best-to-worst order
+- ranked_ids: list of candidate ids in best-to-worst order
 - done: true or false

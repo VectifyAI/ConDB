@@ -23,8 +23,8 @@ TOOLS = [
         "description": "Rank candidate node ids for the query",
         "input_schema": {
             "type": "object",
-            "properties": {"selected": {"type": "array", "items": {"type": "string"}}, "done": {"type": "boolean"}},
-            "required": ["selected"],
+            "properties": {"ranked_ids": {"type": "array", "items": {"type": "string"}}, "done": {"type": "boolean"}},
+            "required": ["ranked_ids"],
         },
     }
 ]
@@ -44,9 +44,9 @@ class BeamRetriever(BaseRetriever):
     ) -> RetrievalResult:
         """
         Run beam search on a tree.
-        - beam_size: how many paths to keep each step (k in beam search)
+        - beam_size: how many frontier paths to keep each step
         - max_turns: optional cap; when None, use full tree depth as upper bound
-        - select_k: how many top candidates to keep as "answers" each step
+        - select_k: final number of top file results to return
         """
         root_id = self.storage.get_root_id(tree_id)
         if not root_id:
@@ -61,64 +61,71 @@ class BeamRetriever(BaseRetriever):
 
         log.debug("start beam_size=%s max_turns=%s select_k=%s query=%s", beam_size, max_turns, select_k, query[:50])
 
-        beams = [{"node_id": root_id, "titles": [], "parent_summary": ""}]
-        selected: list[str] = []
+        result_limit = max(1, int(select_k or 1))
+        frontier = [{"node_id": root_id, "titles": [], "parent_summary": ""}]
+        top_candidate_ids: list[str] = []
         trace: list[dict[str, Any]] = []
 
         for turn in range(max_turns):
-            candidates = []
+            candidate_set = []
 
-            # Expand beams
-            log.debug("turn %d: expanding %d beams", turn, len(beams))
-            for beam in beams:
+            # Expand frontier nodes into the candidate set shown to the LLM.
+            log.debug("turn %d: expanding %d frontier nodes", turn, len(frontier))
+            for frontier_node in frontier:
                 # Get parent node's summary for context carrying
-                parent_summary = beam.get("parent_summary", "")
-                children = self.storage.get_children(tree_id, beam["node_id"])
+                parent_summary = frontier_node.get("parent_summary", "")
+                children = self.storage.get_children(tree_id, frontier_node["node_id"])
                 if not children:
-                    # Leaf node: mark is_leaf=True to exclude from next beams
-                    candidates.append(self._candidate_from_node(
-                        tree_id, beam["node_id"], beam["titles"], parent_summary, is_leaf=True))
-                    log.debug("  leaf: %s", beam["node_id"][:8])
+                    # Leaf node: mark is_leaf=True to exclude from next frontier.
+                    candidate_set.append(self._candidate_from_node(
+                        tree_id, frontier_node["node_id"], frontier_node["titles"], parent_summary, is_leaf=True))
+                    log.debug("  leaf: %s", frontier_node["node_id"][:8])
                     continue
 
                 for child in children:
-                    candidates.append(self._candidate_from_child(
-                        tree_id, child, beam["titles"], parent_summary))
+                    candidate_set.append(self._candidate_from_child(
+                        tree_id, child, frontier_node["titles"], parent_summary))
 
-            if not candidates:
+            if not candidate_set:
                 log.debug("turn %d: no candidates, stopping", turn)
                 break
 
-            # Check if all beams are leaves (no children to expand)
+            # Check if all frontier nodes are leaves (no children to expand)
             # If so, stop early - no point asking LLM whether to continue
             all_leaves = all(
-                not self.storage.get_children(tree_id, beam["node_id"]) for beam in beams
+                not self.storage.get_children(tree_id, frontier_node["node_id"]) for frontier_node in frontier
             )
-            if all_leaves and len(beams) > 0:
-                log.debug("turn %d: all beams are leaves, stopping early", turn)
-                # Add leaf nodes to selected before stopping
-                for beam in beams:
-                    if beam["node_id"] not in selected:
-                        selected.append(beam["node_id"])
+            if all_leaves and len(frontier) > 0:
+                log.debug("turn %d: all frontier nodes are leaves, stopping early", turn)
+                # Add leaf nodes to top candidates before stopping.
+                for frontier_node in frontier:
+                    if len(top_candidate_ids) < result_limit and frontier_node["node_id"] not in top_candidate_ids:
+                        top_candidate_ids.append(frontier_node["node_id"])
                 break
 
-            # Show candidates
-            log.debug("turn %d: %d candidates:", turn, len(candidates))
-            for c in candidates[:10]:
+            # Show candidate set
+            candidate_set = self._order_fs_candidates(candidate_set, query, tree_id)
+            log.debug("turn %d: %d candidates:", turn, len(candidate_set))
+            for c in candidate_set[:10]:
                 log.debug("  [%s] %s", c["node_id"][:8], c["title"] or c["path"])
 
-            k = len(candidates) if beam_size is None else max(beam_size, select_k)
-            ranked_ids, done = self._rank_with_llm(query, candidates, selected, k=k)
+            pick_limit = len(candidate_set) if beam_size is None else max(beam_size, result_limit)
+            ranked_ids, done = self._rank_with_llm(
+                query,
+                candidate_set,
+                top_candidate_ids,
+                pick_limit=pick_limit,
+            )
 
             # Build lookup map for O(1) access
-            candidates_map = {c["node_id"]: c for c in candidates}
+            candidate_map = {c["node_id"]: c for c in candidate_set}
 
             # Guard against premature termination in filesystem mode: the LLM must
             # commit to at least one non-directory before we accept done=True.
             # Otherwise we'd stop after picking a directory and return no files.
             if done and self.mode == "filesystem":
                 picked_file = any(
-                    not candidates_map.get(nid, {}).get("is_dir", False)
+                    not candidate_map.get(nid, {}).get("is_dir", False)
                     for nid in ranked_ids
                 )
                 if not picked_file:
@@ -128,59 +135,81 @@ class BeamRetriever(BaseRetriever):
             # Show LLM decision
             log.debug("turn %d: LLM ranked top-%d, done=%s", turn, len(ranked_ids), done)
             for i, nid in enumerate(ranked_ids[:5]):
-                c = candidates_map.get(nid)
+                c = candidate_map.get(nid)
                 if c:
                     log.debug("  #%d [%s] %s", i + 1, nid[:8], c["title"])
 
-            # Pick top candidates as "selected" (answers).
-            # In fs mode when done, keep all ranked files (not just top-k)
-            keep_n = len(ranked_ids) if (self.mode == "filesystem" and done) else max(1, select_k)
-            for node_id in ranked_ids[:keep_n]:
-                if node_id not in selected:
-                    selected.append(node_id)
+            # Add file-like ranked ids until the final result limit is reached.
+            remaining_result_slots = max(0, result_limit - len(top_candidate_ids))
+            if self.mode == "filesystem":
+                ranked_file_ids = [
+                    node_id
+                    for node_id in ranked_ids
+                    if not candidate_map.get(node_id, {}).get("is_dir", False)
+                ]
+                top_ids_this_turn = ranked_file_ids[:remaining_result_slots]
+            else:
+                top_ids_this_turn = ranked_ids[:remaining_result_slots]
+            for node_id in top_ids_this_turn:
+                if node_id not in top_candidate_ids:
+                    top_candidate_ids.append(node_id)
 
-            # Keep the next beam set (exclude leaf nodes)
-            next_beams = []
-            seen = set()
-            for node_id in ranked_ids:
-                if node_id in seen:
-                    continue
-                seen.add(node_id)
-                cand = candidates_map[node_id]
-                if cand.get("is_leaf"):
-                    # Leaf nodes go to selected, not next_beams
-                    if node_id not in selected:
-                        selected.append(node_id)
-                    continue
-                next_beams.append({
-                    "node_id": cand["node_id"],
-                    "titles": cand["path_titles"],
-                    "parent_summary": cand.get("summary", ""),
-                })
-                if beam_size is not None and len(next_beams) >= max(1, beam_size):
-                    break
-            if beam_size is None:
-                for cand in candidates:
-                    if cand["node_id"] in seen or cand.get("is_leaf"):
+            if len(top_candidate_ids) >= result_limit:
+                next_frontier = []
+                done = True
+            else:
+                # Keep the next frontier set (directories / expandable nodes only).
+                next_frontier = []
+                seen = set()
+                for node_id in ranked_ids:
+                    if node_id in seen:
                         continue
-                    seen.add(cand["node_id"])
-                    next_beams.append({
+                    seen.add(node_id)
+                    cand = candidate_map[node_id]
+                    if cand.get("is_leaf") or (self.mode == "filesystem" and not cand.get("is_dir", False)):
+                        # Leaf/file nodes go to top candidates, not next frontier.
+                        if self.mode != "filesystem" and node_id not in top_candidate_ids:
+                            top_candidate_ids.append(node_id)
+                        continue
+                    next_frontier.append({
                         "node_id": cand["node_id"],
                         "titles": cand["path_titles"],
                         "parent_summary": cand.get("summary", ""),
                     })
+                    if beam_size is not None and len(next_frontier) >= max(1, beam_size):
+                        break
+                if beam_size is None:
+                    for cand in candidate_set:
+                        if cand["node_id"] in seen or cand.get("is_leaf"):
+                            continue
+                        if self.mode == "filesystem" and not cand.get("is_dir", False):
+                            continue
+                        seen.add(cand["node_id"])
+                        next_frontier.append({
+                            "node_id": cand["node_id"],
+                            "titles": cand["path_titles"],
+                            "parent_summary": cand.get("summary", ""),
+                        })
 
-            trace.append({"turn": turn, "candidates": len(candidates), "kept": len(next_beams), "done": done})
+            trace.append({
+                "turn": turn,
+                "candidates": len(candidate_set),
+                "top_candidate_ids": len(top_candidate_ids),
+                "frontier": len(next_frontier),
+                "kept": len(next_frontier),
+                "done": done,
+            })
 
-            beams = next_beams
+            frontier = next_frontier
             if done:
                 log.debug("turn %d: done=True, stopping", turn)
                 break
 
-        # In filesystem mode, filter directories and keep only files
+        # In filesystem mode, top candidates should already be files; keep this as
+        # a defensive filter for old traces or unusual adapters.
         if self.mode == "filesystem":
-            file_selected = []
-            for node_id in selected:
+            file_top_candidate_ids = []
+            for node_id in top_candidate_ids:
                 node = self.storage.get_node(tree_id, node_id)
                 if node and node.attrs_json:
                     try:
@@ -189,13 +218,15 @@ class BeamRetriever(BaseRetriever):
                         attrs = {}
                     if attrs.get("is_dir", False):
                         continue
-                file_selected.append(node_id)
-            selected = file_selected if file_selected else selected
+                file_top_candidate_ids.append(node_id)
+            top_candidate_ids = file_top_candidate_ids if file_top_candidate_ids else top_candidate_ids
 
         # Final results
         contents = []
-        log.debug("=== retrieval complete: %d nodes selected ===", len(selected))
-        for node_id in selected:
+        top_candidate_ids = top_candidate_ids[:result_limit]
+
+        log.debug("=== retrieval complete: %d top candidates ===", len(top_candidate_ids))
+        for node_id in top_candidate_ids:
             entity = self.storage.get_entity(tree_id, node_id)
             if entity:
                 payload = json.loads(entity.payload_json)
@@ -204,30 +235,44 @@ class BeamRetriever(BaseRetriever):
                 text = (payload.get("text") or payload.get("summary") or "")[:100]
                 log.debug("  [%s] %s: %s...", node_id[:8], title, text)
 
-        return RetrievalResult(selected, contents, trace, len(trace))
+        return RetrievalResult(top_candidate_ids, contents, trace, len(trace))
 
     def _rank_with_llm(
-        self, query: str, candidates: list[dict[str, Any]], selected: list[str], k: int
+        self, query: str, candidates: list[dict[str, Any]], top_candidate_ids: list[str], pick_limit: int
     ) -> tuple[list[str], bool]:
         """
         Ask the LLM to rank candidates. Returns (ranked_ids, done).
         This is the core "LLM as judge" step.
         """
         tmpl = PROMPT_FS if self.mode == "filesystem" else PROMPT
-        prompt = tmpl.render(query=query, candidates=candidates, selected=selected, k=k)
+        prompt = tmpl.render(
+            query=query,
+            candidates=candidates,
+            top_candidate_ids=top_candidate_ids,
+            pick_limit=pick_limit,
+        )
         resp = self.llm.chat([{"role": "user", "content": prompt}], tools=TOOLS)
         for block in resp.get("content", []):
             if block.get("type") != "tool_use":
                 continue
             if block.get("name") != "rank":
                 continue
-            ranked_ids = block.get("input", {}).get("selected", []) or []
-            done = bool(block.get("input", {}).get("done", False))
+            tool_input = block.get("input", {}) or {}
+            ranked_ids = tool_input.get("ranked_ids", []) or []
+            done = bool(tool_input.get("done", False))
             # Keep only ids that actually exist in candidates.
             known = {c["node_id"] for c in candidates}
             ranked = [nid for nid in ranked_ids if nid in known]
             return ranked, done
         raise ValueError("LLM did not return a rank tool call")
+
+    def _order_fs_candidates(
+        self,
+        candidates: list[dict[str, Any]],
+        query: str,
+        tree_id: str,
+    ) -> list[dict[str, Any]]:
+        return list(candidates)
 
     def _candidate_from_child(
         self, tree_id: str, child, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False
@@ -253,10 +298,8 @@ class BeamRetriever(BaseRetriever):
         }
         if self.mode == "filesystem":
             cand["rel_path"] = attrs.get("rel_path", "")
-            cand["tag"] = attrs.get("tag", "")
             cand["is_dir"] = attrs.get("is_dir", False)
-            if not cand["is_dir"]:
-                cand["summary"] = ""
+            cand["summary"] = ""
         return cand
 
     def _candidate_from_node(

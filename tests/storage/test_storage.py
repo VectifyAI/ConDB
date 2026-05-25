@@ -454,6 +454,40 @@ def test_delete_tree_no_cross_contamination(db):
     assert db.get_root_id(t1) is None
     assert db.get_root_id(t2) is not None
 
+def test_delete_tree_removes_orphan_entities(db):
+    """Deleting a tree should clean up entities no other tree references."""
+    tid = db.ingest_tree(
+        {
+            "type": "object",
+            "entity_id": "root_e",
+            "children": {"a": {"type": "leaf", "entity_id": "leaf_e"}},
+        },
+        entities={
+            "root_e": {"type": "doc", "title": "Root"},
+            "leaf_e": {"type": "text", "content": "hello"},
+        },
+    )
+    assert _count(db, "entities") == 2
+
+    db.delete_tree(tid)
+
+    assert _count(db, "entities") == 0
+
+def test_delete_tree_keeps_shared_entities_until_last_reference_is_gone(db):
+    """Shared entity rows survive until all referencing trees are deleted."""
+    shared_entity = {"shared_e": {"type": "text", "content": "shared"}}
+    t1 = db.ingest_tree({"type": "leaf", "entity_id": "shared_e"}, entities=shared_entity)
+    t2 = db.ingest_tree({"type": "leaf", "entity_id": "shared_e"}, entities=shared_entity)
+
+    assert _count(db, "entities") == 1
+
+    db.delete_tree(t1)
+    assert _count(db, "entities") == 1
+    assert db.get_entity(t2, db.get_root_id(t2)) is not None
+
+    db.delete_tree(t2)
+    assert _count(db, "entities") == 0
+
 def test_delete_nonexistent_tree(db):
     """Deleting non-existent tree doesn't raise."""
     db.delete_tree("ghost")  # should not raise

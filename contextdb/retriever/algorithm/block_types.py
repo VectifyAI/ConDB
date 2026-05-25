@@ -27,8 +27,8 @@ class Block:
 @dataclass
 class BlockResult:
     block_id: str
-    ranked_node_ids: list[str]
-    selected_node_ids: list[str]
+    ordered_node_ids: list[str]
+    top_candidate_node_ids: list[str]
     done: bool
     usage: Optional[dict[str, int]] = None
 

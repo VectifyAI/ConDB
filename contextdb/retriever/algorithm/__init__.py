@@ -4,8 +4,8 @@ from contextdb.retriever.algorithm.block_retriever import BlockRetriever
 from contextdb.retriever.algorithm.block_retriever_legacy import LegacyBlockRetriever
 from contextdb.retriever.algorithm.block_types import (
     Block,
-    BlockRetrievalResult,
     BlockResult,
+    BlockRetrievalResult,
     BlockTreePlan,
     BlockType,
 )

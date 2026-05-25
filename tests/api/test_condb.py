@@ -1,9 +1,11 @@
 """Tests for ConDB public API."""
 
-import pytest
-import contextdb
-from contextdb import ConDB, QueryResult, TreeNotFoundError, LLMNotConfiguredError
+from types import SimpleNamespace
 
+import pytest
+
+import contextdb
+from contextdb import ConDB, LLMNotConfiguredError, QueryResult, TreeNotFoundError
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
@@ -42,6 +44,25 @@ SAMPLE_PAGEINDEX = {
     ],
 }
 
+SAMPLE_CHATINDEX = {
+    "conversation_id": "conv_1",
+    "participants": ["user", "assistant"],
+    "topics": [
+        {
+            "node_id": "topic_1",
+            "title": "Onboarding",
+            "summary": "Initial setup discussion",
+            "msg_start": 0,
+            "msg_end": 1,
+            "messages": [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "How can I help?"},
+            ],
+            "subtopics": [],
+        }
+    ],
+}
+
 
 @pytest.fixture
 def db():
@@ -77,6 +98,11 @@ def test_store_pageindex(db):
     assert len(tree_id) == 36  # UUID format
 
 
+def test_store_document_alias(db):
+    tree_id = db.store(SAMPLE_PAGEINDEX, format="document")
+    assert db.has_tree(tree_id)
+
+
 def test_store_with_meta(db):
     tree_id = db.store(SAMPLE_PAGEINDEX, meta={"source": "test.pdf"})
     info = db.tree_info(tree_id)
@@ -90,6 +116,39 @@ def test_store_generic(db):
     }
     tree_id = db.store(data, format="generic")
     assert db.has_tree(tree_id)
+
+
+def test_store_chatindex(db):
+    tree_id = db.store(SAMPLE_CHATINDEX, format="chatindex")
+    info = db.tree_info(tree_id)
+    root_id = info["root_node_id"]
+
+    root_content = db.get_content(tree_id, root_id)
+    assert root_content is not None
+    assert root_content["conversation_id"] == "conv_1"
+    assert root_content["title"] == "conv_1"
+
+    children = db.get_children(tree_id, root_id)
+    assert len(children) == 1
+    assert children[0]["attrs"]["summary"] == "Initial setup discussion"
+
+    topic_content = db.get_content(tree_id, children[0]["node_id"])
+    assert topic_content is not None
+    assert topic_content["title"] == "Onboarding"
+    assert topic_content["messages"][0]["content"] == "Hello"
+
+
+def test_delete_chatindex_tree_cleans_entities(db):
+    tree_id = db.store(SAMPLE_CHATINDEX, format="chatindex")
+    cur = db.storage.conn.cursor()
+
+    cur.execute("SELECT COUNT(*) AS c FROM entities")
+    assert cur.fetchone()["c"] == 2
+
+    db.delete_tree(tree_id)
+
+    cur.execute("SELECT COUNT(*) AS c FROM entities")
+    assert cur.fetchone()["c"] == 0
 
 
 def test_store_bad_format(db):
@@ -192,20 +251,71 @@ def test_query_tree_not_found(db):
 
 class FakeLLM:
     """Minimal LLM that always selects the first candidate."""
-    def chat(self, messages, system="", tools=None):
+    def chat(self, messages, system="", tools=None, cache_key=None):
         # Extract candidate node IDs from the prompt text
         text = messages[0]["content"] if messages else ""
         import re
         ids = re.findall(r"id: ([0-9a-f-]+)", text)
-        selected = ids[:1] if ids else []
+        ranked_ids = ids[:1] if ids else []
         return {
             "content": [
                 {"type": "tool_use", "id": "t1", "name": "rank",
-                 "input": {"selected": selected, "done": True}}
+                 "input": {"ranked_ids": ranked_ids, "done": True}}
             ],
             "stop_reason": "tool_use",
             "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
         }
+
+
+class SpyCacheLLM:
+    provider = "anthropic"
+    model = "claude-sonnet-4-20250514"
+
+    def __init__(self):
+        self.chat_calls = []
+        self.cache_calls = []
+
+    @staticmethod
+    def _response():
+        return {
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "rank", "input": {"ranked_ids": [], "done": True}}
+            ],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        }
+
+    def chat(self, messages, system="", tools=None, cache_key=None):
+        self.chat_calls.append(
+            {
+                "messages": messages,
+                "system": system,
+                "tools": tools,
+                "cache_key": cache_key,
+            }
+        )
+        return self._response()
+
+    def chat_with_cache(
+        self,
+        messages,
+        system="",
+        tools=None,
+        cache_content=None,
+        non_cached_content=None,
+        cache_key=None,
+    ):
+        self.cache_calls.append(
+            {
+                "messages": messages,
+                "system": system,
+                "tools": tools,
+                "cache_content": cache_content,
+                "non_cached_content": non_cached_content,
+                "cache_key": cache_key,
+            }
+        )
+        return self._response()
 
 
 def test_query_with_llm_object(stored):
@@ -232,6 +342,64 @@ def test_query_strategy_block(stored):
     db, tree_id = stored
     result = db.query(tree_id, "test", llm=FakeLLM(), strategy="block")
     assert isinstance(result, QueryResult)
+
+
+def test_query_strategy_block_passes_max_parallel_blocks_to_retriever(stored, monkeypatch):
+    captured = {}
+
+    class SpyBlockRetriever:
+        def __init__(self, storage, llm, **kwargs):
+            captured["init_kwargs"] = kwargs
+
+        def retrieve(self, tree_id, question, **kwargs):
+            captured["retrieve_kwargs"] = kwargs
+            return SimpleNamespace(
+                nodes=[],
+                contents=[],
+                turns=0,
+                total_llm_calls=0,
+                trace=[],
+            )
+
+    monkeypatch.setattr("contextdb.api.condb.BlockRetriever", SpyBlockRetriever)
+
+    db, tree_id = stored
+    result = db.query(
+        tree_id,
+        "test",
+        llm=FakeLLM(),
+        strategy="block",
+        max_parallel_blocks=2,
+    )
+
+    assert isinstance(result, QueryResult)
+    assert captured["init_kwargs"]["max_parallel_blocks"] == 2
+    assert "max_parallel_blocks" not in captured["retrieve_kwargs"]
+
+
+def test_query_strategy_block_cache_enabled_uses_cached_llm_path(stored):
+    db, tree_id = stored
+    llm = SpyCacheLLM()
+
+    result = db.query(tree_id, "test", llm=llm, strategy="block", cache_enabled=True)
+
+    assert isinstance(result, QueryResult)
+    assert len(llm.cache_calls) == 1
+    assert llm.cache_calls[0]["cache_content"]
+    assert llm.cache_calls[0]["cache_key"] is not None
+    assert llm.chat_calls == []
+
+
+def test_query_strategy_block_cache_disabled_uses_plain_chat(stored):
+    db, tree_id = stored
+    llm = SpyCacheLLM()
+
+    result = db.query(tree_id, "test", llm=llm, strategy="block", cache_enabled=False)
+
+    assert isinstance(result, QueryResult)
+    assert len(llm.chat_calls) == 1
+    assert llm.chat_calls[0]["cache_key"] is None
+    assert llm.cache_calls == []
 
 
 def test_query_bad_strategy(stored):

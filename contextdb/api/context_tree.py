@@ -151,7 +151,7 @@ class ContextTree:
                     cache_enabled, max_parallel_blocks
 
         Returns:
-            RetrievalResult or BlockRetrievalResult with selected nodes and contents
+            RetrievalResult or BlockRetrievalResult with retrieved node ids and contents
         """
         if not self.llm:
             raise ValueError("LLM client not provided")

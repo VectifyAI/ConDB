@@ -33,9 +33,8 @@ FS_CACHE_STATIC_SEGMENT = (
     "You are navigating a source code repository's directory tree to find files relevant to a query.\n"
     "Previous blocks are provided for context only.\n"
     "RULES:\n"
-    "- STRONGLY prefer [src] tagged files/directories over [test], [doc], or [config]\n"
     "- Select directories to drill deeper into, or files if they directly match the query\n"
-    "- set done=false unless ALL your selections are leaf files (not directories)\n"
+    "- set done=false if returned directories need further exploration\n"
 )
 
 
@@ -141,8 +140,9 @@ class BlockRetrieverPromptCacheSupport(_RetrieverSupportBase):
         valid_set = set(valid_node_ids)
         for block in resp.get("content", []):
             if block.get("type") == "tool_use" and block.get("name") == "rank":
-                ranked_ids = block.get("input", {}).get("selected", []) or []
-                done = bool(block.get("input", {}).get("done", False))
+                tool_input = block.get("input", {}) or {}
+                ranked_ids = tool_input.get("ranked_ids", []) or []
+                done = bool(tool_input.get("done", False))
                 normalized: list[str] = []
                 for node_id in ranked_ids:
                     mapped_node_id = response_id_map.get(node_id, node_id) if response_id_map else node_id

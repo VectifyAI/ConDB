@@ -196,7 +196,7 @@ def _prewarm_all_blocks(retriever: BlockRetriever, tree_id: str, *, top_k: int) 
     """Warm all fixed block prefixes before query benchmark."""
     plan = retriever._get_or_create_plan(tree_id)
     root_id = retriever.storage.get_root_id(tree_id) or ""
-    beams = [{"node_id": root_id, "title": "root", "path": "root"}]
+    frontier = [{"node_id": root_id, "title": "root", "path": "root"}]
     warmed = 0
 
     for block in plan.blocks:
@@ -204,26 +204,16 @@ def _prewarm_all_blocks(retriever: BlockRetriever, tree_id: str, *, top_k: int) 
             continue
         # Warm prefix with the smallest dynamic payload.
         allowed_node_ids = [block.node_ids[0]]
-        k = max(1, min(top_k, len(allowed_node_ids)))
+        pick_limit = max(1, min(top_k, len(allowed_node_ids)))
         process_sig = inspect.signature(retriever._process_block)
-        if "input_beams" in process_sig.parameters:
+        if "input_frontier" in process_sig.parameters:
             retriever._process_block(
                 block=block,
                 query="[warmup]",
-                input_beams=beams,
-                previous_selected=[],
+                input_frontier=frontier,
+                previous_top_candidate_ids=[],
                 allowed_node_ids=allowed_node_ids,
-                k=k,
-            )
-        else:
-            # Compatibility with older subtree-driven BlockRetriever.
-            retriever._process_block(
-                block,
-                "[warmup]",
-                beams,
-                [],
-                k,
-                "",
+                pick_limit=pick_limit,
             )
         warmed += 1
 

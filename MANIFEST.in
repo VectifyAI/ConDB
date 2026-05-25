@@ -1,0 +1,13 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include contextdb *.py *.jinja *.yaml py.typed
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+prune tests
+prune bench
+prune data
+prune examples
+prune notes
+prune scripts

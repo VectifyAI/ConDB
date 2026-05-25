@@ -45,10 +45,12 @@ def build_strategy_retriever(
     max_tokens_per_block: int = 16000,
     cache_enabled: bool = True,
     max_parallel_blocks: int = None,
+    mode: str = "document",
+    ranker=None,
 ) -> BaseRetriever:
     """Create a retriever from the ConDB strategy selector."""
     if strategy == "beam":
-        return beam_cls(storage, llm)
+        return beam_cls(storage, llm, mode=mode)
     if strategy == "block":
         return block_cls(
             storage,
@@ -56,6 +58,8 @@ def build_strategy_retriever(
             max_tokens_per_block=max_tokens_per_block,
             cache_enabled=cache_enabled,
             max_parallel_blocks=max_parallel_blocks,
+            mode=mode,
+            ranker=ranker,
         )
     raise ValueError(f"Unknown strategy: {strategy!r}")
 
