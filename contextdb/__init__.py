@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 from contextdb.api.condb import ConDB, ConDBError, LLMNotConfiguredError, QueryResult, TreeNotFoundError
 from contextdb.api.context_tree import ContextTree
