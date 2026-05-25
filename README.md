@@ -183,23 +183,38 @@ Available rankers are `none`, `bm25`, and `vector`. The vector ranker uses
 LiteLLM embeddings (`--embedding-provider`, `--embedding-model`) and leaves
 the default `ranker=none` unchanged.
 
-#### Latest Run (Claude Sonnet 4.6, `--strategy block --ranker none`, top-k=10)
+#### Latest Run
 
-The cutoff for each query is its gold-file count: one-gold queries use top-1,
-two-gold queries use top-2, and so on. The `6+` row contains one 6-gold query
-and one 21-gold outlier.
+Claude Sonnet 4.6, `--ranker none`, `--top-k 10`, 500 queries, 0 failures.
+Block (ConDB) is compared against a **Vertical baseline** — a per-beam variant
+that expands each parent's children into separate subtree blocks (`A→B`,
+`A→C`), one LLM call per branch, losing the cross-branch view Block keeps.
+
+| variant | recall@gold | exact@gold | MRR | nDCG@10 | avg returned | avg latency |
+|---|---:|---:|---:|---:|---:|---:|
+| Vertical (baseline) | 0.382 | 0.366 | 0.466 | 0.481 | 3.00 | ~24 s |
+| **Block (ConDB)** | **0.711** | **0.672** | **0.805** | **0.813** | 7.20 | ~8 s |
+
+Block gains **+0.33 recall@gold** at ~3× lower latency.
+
+Block per-gold-count breakdown — the cutoff is the query's gold-file count
+(`6+` row contains one 6-gold query and one 21-gold outlier):
 
 | gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
-|------------|--------:|-------:|------------:|-----------:|-----------:|-------------:|
-| 1          | 430     | 1      | 0.749       | 0.749      | 0.75       | 7.00         |
-| 2          | 48      | 2      | 0.521       | 0.271      | 1.04       | 8.31         |
-| 3          | 13      | 3      | 0.410       | 0.077      | 1.23       | 8.77         |
-| 4          | 6       | 4      | 0.417       | 0.000      | 1.67       | 9.17         |
-| 5          | 1       | 5      | 0.200       | 0.000      | 1.00       | 2.00         |
-| 6+         | 2       | gold   | 0.274       | 0.000      | 2.00       | 10.00        |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 430 | 1 | 0.749 | 0.749 | 0.75 | 7.00 |
+| 2 | 48 | 2 | 0.521 | 0.271 | 1.04 | 8.31 |
+| 3 | 13 | 3 | 0.410 | 0.077 | 1.23 | 8.77 |
+| 4 | 6 | 4 | 0.417 | 0.000 | 1.67 | 9.17 |
+| 5 | 1 | 5 | 0.200 | 0.000 | 1.00 | 2.00 |
+| 6+ | 2 | gold | 0.274 | 0.000 | 2.00 | 10.00 |
 
-The full 500-query run aggregates to `recall@gold=0.711`, `exact@gold=0.672`,
-`MRR=0.805`, `nDCG@10=0.813`, `avg gold=1.24`, and `avg returned=7.20`.
+Reproduce:
+
+```bash
+python bench/run_swebench_filetree.py --tier all --strategy block    --ranker none --top-k 10
+python bench/run_swebench_filetree.py --tier all --strategy vertical --ranker none --top-k 10
+```
 
 ### Document mode — single long document
 

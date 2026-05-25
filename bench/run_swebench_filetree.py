@@ -32,6 +32,7 @@ from contextdb.api.condb import ConDB
 from contextdb.retriever.algorithm.beam_retriever import BeamRetriever
 from contextdb.retriever.algorithm.block_retriever import BlockRetriever
 from contextdb.retriever.algorithm.ranker import make_ranker
+from contextdb.retriever.algorithm.vertical_retriever import VerticalRetriever
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
@@ -43,14 +44,15 @@ def make_filesystem_retriever(db: ConDB, args, node_count: int):
         strategy = "beam" if node_count <= 50 else "block"
     if strategy == "beam":
         return BeamRetriever(db.storage, db._llm, mode="filesystem")
-    if strategy == "block":
+    if strategy in ("block", "vertical"):
         ranker = make_ranker(
             args.ranker,
             embedding_provider=args.embedding_provider,
             embedding_model=args.embedding_model,
             embedding_api_key=args.embedding_api_key,
         )
-        return BlockRetriever(
+        cls = VerticalRetriever if strategy == "vertical" else BlockRetriever
+        return cls(
             db.storage,
             db._llm,
             mode="filesystem",
@@ -482,7 +484,7 @@ def main():
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
-    p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
+    p.add_argument("--strategy", choices=["auto", "beam", "block", "vertical"], default="auto")
     p.add_argument("--ranker", choices=["bm25", "vector", "none"], default="none",
                    help="Optional path ordering for Block merge results")
     p.add_argument("--embedding-provider", default="openai")
