@@ -323,12 +323,21 @@ Only the current head of each group may be selected at each step, so different
 blocks can be interleaved while the relative order inside every $L_i$ remains
 unchanged. Without a ranker, $M'=\Call{Flatten}{\mathcal{G}}$.
 
-The optional scorer is path-only:
+The ranker interface is path-only. The lexical option uses fielded BM25:
 \[
 s(u,q)=3\,\mathrm{BM25}(q,\mathrm{basename}(u))
       +1.5\,\mathrm{BM25}(q,\mathrm{parent}(u))
       +\mathrm{BM25}(q,\mathrm{path}(u)).
 \]
+The vector option uses the same fields but replaces BM25 with embedding cosine
+similarity:
+\[
+s(u,q)=3\,\cos(e(q),e(\mathrm{basename}(u)))
+      +1.5\,\cos(e(q),e(\mathrm{parent}(u)))
+      +\cos(e(q),e(\mathrm{path}(u))).
+\]
+Both options apply a fixed boost to exact repo-relative path mentions. A ranker
+may decline to run; in that case the merge falls back to block order.
 The ordered list $M'$ is then split: files fill the remaining $k-|A|$ result
 slots, and directories are truncated to the beam width for the next frontier.
 

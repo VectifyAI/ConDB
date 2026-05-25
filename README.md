@@ -172,6 +172,17 @@ all      500 queries   no filter, includes ~48% path-signal-less queries
 Output goes to `bench/runs/<timestamp>__<tier>/`: `report.md`, `summary.json`,
 `per_query.jsonl`.
 
+Block mode can optionally rerank only the cross-block merge candidates before
+the file/directory split:
+
+```bash
+python bench/run_swebench_filetree.py --tier medium --strategy block --ranker vector
+```
+
+Available rankers are `none`, `bm25`, and `vector`. The vector ranker uses
+LiteLLM embeddings (`--embedding-provider`, `--embedding-model`) and leaves
+the default `ranker=none` unchanged.
+
 #### Latest Run (Claude Sonnet 4.6, `--strategy block --ranker none`, top-k=10)
 
 The cutoff for each query is its gold-file count: one-gold queries use top-1,

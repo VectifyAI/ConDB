@@ -8,6 +8,11 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from typing import Any
 
+from contextdb.retriever.algorithm.embeddings import (
+    EmbeddingClient,
+    LiteLLMEmbeddingClient,
+    cosine_similarity,
+)
 
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -62,6 +67,14 @@ def _candidate_path(candidate: dict[str, Any]) -> str:
 
 
 class Ranker(ABC):
+    def should_rank(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> bool:
+        return bool(candidates)
+
     @abstractmethod
     def rank(
         self,
@@ -91,6 +104,14 @@ class BM25PathRanker(Ranker):
             "parent": parent_weight,
             "full_path": full_path_weight,
         }
+
+    def should_rank(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> bool:
+        return has_path_evidence(candidates, query)
 
     def rank(
         self,
@@ -176,3 +197,170 @@ class BM25PathRanker(Ranker):
     @staticmethod
     def _is_dir(candidate: dict[str, Any]) -> bool:
         return _candidate_is_dir(candidate)
+
+
+class VectorPathRanker(Ranker):
+    """Embedding-based path ranker over the current filesystem candidates."""
+
+    def __init__(
+        self,
+        embedding_client: EmbeddingClient,
+        *,
+        basename_weight: float = 3.0,
+        parent_weight: float = 1.5,
+        full_path_weight: float = 1.0,
+        exact_path_boost: float = 20.0,
+        cache_embeddings: bool = True,
+    ) -> None:
+        self.embedding_client = embedding_client
+        self.field_weights = {
+            "basename": basename_weight,
+            "parent": parent_weight,
+            "full_path": full_path_weight,
+        }
+        self.exact_path_boost = exact_path_boost
+        self.cache_embeddings = cache_embeddings
+        self._embedding_cache: dict[str, list[float]] = {}
+
+    def should_rank(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> bool:
+        return bool(tokenize_path_text(query)) and any(_candidate_path(candidate) for candidate in candidates)
+
+    def rank(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> list[tuple[dict[str, Any], float]]:
+        if not candidates:
+            return []
+
+        query_vector = self._embed_one(self._query_text(query))
+        field_texts_by_candidate = [self._candidate_field_texts(candidate) for candidate in candidates]
+        all_field_texts = [
+            fields[field_name]
+            for fields in field_texts_by_candidate
+            for field_name in self.field_weights
+            if fields[field_name]
+        ]
+        self._embed_texts(all_field_texts)
+
+        ranked: list[tuple[dict[str, Any], float]] = []
+        for candidate, fields in zip(candidates, field_texts_by_candidate):
+            score = 0.0
+            for field_name, weight in self.field_weights.items():
+                if weight <= 0:
+                    continue
+                score += weight * cosine_similarity(query_vector, self._embed_one(fields[field_name]))
+            score += self._prior_score(candidate, query)
+            ranked.append((candidate, score))
+        return ranked
+
+    def _embed_one(self, text: str) -> list[float]:
+        return self._embed_texts([text])[0] if text else []
+
+    def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+        normalized = [self._normalize_embedding_text(text) for text in texts]
+        if not normalized:
+            return []
+
+        if not self.cache_embeddings:
+            non_empty = [text for text in normalized if text]
+            embedded = self.embedding_client.embed(non_empty) if non_empty else []
+            vectors_by_text: dict[str, list[float]] = {}
+            for text, vector in zip(non_empty, embedded):
+                vectors_by_text[text] = vector
+            return [vectors_by_text.get(text, []) for text in normalized]
+
+        missing: list[str] = []
+        seen_missing: set[str] = set()
+        for text in normalized:
+            if not text:
+                continue
+            if text in self._embedding_cache:
+                continue
+            if text in seen_missing:
+                continue
+            seen_missing.add(text)
+            missing.append(text)
+
+        if missing:
+            embedded = self.embedding_client.embed(missing)
+            if len(embedded) != len(missing):
+                raise ValueError(
+                    f"Embedding client returned {len(embedded)} vectors for {len(missing)} texts"
+                )
+            for text, vector in zip(missing, embedded):
+                self._embedding_cache[text] = vector
+
+        vectors: list[list[float]] = []
+        for text in normalized:
+            if not text:
+                vectors.append([])
+            else:
+                vectors.append(self._embedding_cache[text])
+        return vectors
+
+    def _candidate_field_texts(self, candidate: dict[str, Any]) -> dict[str, str]:
+        rel_path = _candidate_path(candidate)
+        basename = rel_path.rsplit("/", 1)[-1] if rel_path else ""
+        parent = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+        return {
+            "basename": self._path_text(basename),
+            "parent": self._path_text(parent),
+            "full_path": self._path_text(rel_path),
+        }
+
+    def _prior_score(self, candidate: dict[str, Any], query: str = "") -> float:
+        rel_path = _candidate_path(candidate)
+        return (
+            self.exact_path_boost
+            if path_matches_query(rel_path, query, is_dir=_candidate_is_dir(candidate))
+            else 0.0
+        )
+
+    @staticmethod
+    def _query_text(query: str) -> str:
+        return str(query or "").strip()
+
+    @staticmethod
+    def _path_text(path: str) -> str:
+        return " ".join(tokenize_path_text(path))
+
+    @staticmethod
+    def _normalize_embedding_text(text: str) -> str:
+        return " ".join(str(text or "").strip().split())
+
+
+def make_ranker(
+    ranker: str | Ranker | None,
+    *,
+    embedding_client: EmbeddingClient | None = None,
+    embedding_provider: str = "openai",
+    embedding_model: str | None = None,
+    embedding_api_key: str | None = None,
+) -> Ranker | None:
+    if ranker is None or ranker == "none":
+        return None
+    if isinstance(ranker, Ranker):
+        return ranker
+    if not isinstance(ranker, str):
+        if hasattr(ranker, "rank"):
+            return ranker
+        raise TypeError(f"Unsupported ranker: {ranker!r}")
+
+    name = ranker.lower()
+    if name == "bm25":
+        return BM25PathRanker()
+    if name == "vector":
+        client = embedding_client or LiteLLMEmbeddingClient(
+            provider=embedding_provider,
+            model=embedding_model,
+            api_key=embedding_api_key,
+        )
+        return VectorPathRanker(client)
+    raise ValueError(f"Unknown ranker: {ranker!r}")

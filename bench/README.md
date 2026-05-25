@@ -20,6 +20,13 @@ Outputs:
 - `report.md`: markdown report
 - `bench.sqlite`: temporary benchmark database
 
+Ranker options:
+
+- `--ranker none`: preserve traversal and block-local LLM order.
+- `--ranker bm25`: lexical path ordering for cross-block merge candidates.
+- `--ranker vector`: embedding path ordering for cross-block merge candidates;
+  configure with `--embedding-provider` and `--embedding-model`.
+
 ### Latest Full Run
 
 Claude Sonnet 4.6, `tier=all`, `strategy=block`, `ranker=none`, `top_k=10`.

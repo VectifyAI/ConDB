@@ -340,7 +340,11 @@ class BlockRetrieverFilesystemSupport(_RetrieverSupportBase):
             for node_id in node_ids
             if node_id in node_by_id
         ]
-        if not has_path_evidence(candidates, query):
+        should_rank = getattr(ranker, "should_rank", None)
+        if callable(should_rank):
+            if not should_rank(query, candidates, context={"mode": "filesystem", "tree_id": tree_id}):
+                return node_ids
+        elif not has_path_evidence(candidates, query):
             return node_ids
         scores = ranker.rank(
             query,

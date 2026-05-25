@@ -31,20 +31,25 @@ from contextdb.adapter.filesystem import FileSystemAdapter
 from contextdb.api.condb import ConDB
 from contextdb.retriever.algorithm.beam_retriever import BeamRetriever
 from contextdb.retriever.algorithm.block_retriever import BlockRetriever
-from contextdb.retriever.algorithm.ranker import BM25PathRanker
+from contextdb.retriever.algorithm.ranker import make_ranker
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_DATA_DIR = Path("data/swebench_pathonly")
 
 
 def make_filesystem_retriever(db: ConDB, args, node_count: int):
-    ranker = BM25PathRanker() if args.ranker == "bm25" else None
     strategy = args.strategy
     if strategy == "auto":
         strategy = "beam" if node_count <= 50 else "block"
     if strategy == "beam":
         return BeamRetriever(db.storage, db._llm, mode="filesystem")
     if strategy == "block":
+        ranker = make_ranker(
+            args.ranker,
+            embedding_provider=args.embedding_provider,
+            embedding_model=args.embedding_model,
+            embedding_api_key=args.embedding_api_key,
+        )
         return BlockRetriever(
             db.storage,
             db._llm,
@@ -224,6 +229,8 @@ def run(args):
         "top_k": args.top_k,
         "strategy": args.strategy,
         "ranker": args.ranker,
+        "embedding_provider": args.embedding_provider if args.ranker == "vector" else None,
+        "embedding_model": args.embedding_model if args.ranker == "vector" else None,
         "limit": args.limit,
         "num_queries": len(queries),
         "num_snapshots": len(by_snap),
@@ -476,8 +483,11 @@ def main():
     p.add_argument("--provider", default="anthropic")
     p.add_argument("--top-k", type=int, default=10)
     p.add_argument("--strategy", choices=["auto", "beam", "block"], default="auto")
-    p.add_argument("--ranker", choices=["bm25", "none"], default="none",
+    p.add_argument("--ranker", choices=["bm25", "vector", "none"], default="none",
                    help="Optional path ordering for Block merge results")
+    p.add_argument("--embedding-provider", default="openai")
+    p.add_argument("--embedding-model", default="text-embedding-3-small")
+    p.add_argument("--embedding-api-key", default=None)
     p.add_argument("--max-parallel-blocks", type=int, default=None)
     p.add_argument("--max-turns", type=int, default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = all")
