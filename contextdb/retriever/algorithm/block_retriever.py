@@ -1,5 +1,7 @@
 """Block-level beam search retriever with fixed-block prefix caching."""
 
+from __future__ import annotations
+
 import json
 import os
 import time

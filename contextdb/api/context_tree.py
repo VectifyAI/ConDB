@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import inspect
 import json
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 from contextdb.adapter.base import ChatIndexAdapter, DocumentTreeAdapter, GenericAdapter
 from contextdb.api._shared import (
@@ -24,7 +26,7 @@ from contextdb.retriever import (
     TreeFormatter,
 )
 
-TreeBuilder = Callable[..., dict[str, Any] | Awaitable[dict[str, Any]]]
+TreeBuilder = Callable[..., Union[dict[str, Any], Awaitable[dict[str, Any]]]]
 
 
 class ContextTree:

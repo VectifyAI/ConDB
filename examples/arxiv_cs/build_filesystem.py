@@ -9,6 +9,8 @@ Examples:
   python build_filesystem.py --blueprint filesystem_blueprint.json --skip-download --skip-pageindex
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
