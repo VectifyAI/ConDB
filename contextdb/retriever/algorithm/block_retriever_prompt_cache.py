@@ -1,5 +1,7 @@
 """Prompt-cache helpers for BlockRetriever."""
 
+from __future__ import annotations
+
 import hashlib
 import os
 from collections import deque

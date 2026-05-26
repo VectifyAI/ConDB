@@ -1,5 +1,7 @@
 """Filesystem-specific helpers for BlockRetriever."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 from collections import deque

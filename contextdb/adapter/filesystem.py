@@ -1,5 +1,7 @@
 """FileSystemAdapter — directory tree → ConDB tree."""
 
+from __future__ import annotations
+
 import fnmatch
 import json
 import uuid

@@ -15,6 +15,8 @@ Example:
         --config bench/queries.json
 """
 
+from __future__ import annotations
+
 import argparse
 import importlib
 import inspect
