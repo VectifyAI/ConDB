@@ -367,7 +367,7 @@ class BlockCutter:
                 meta_lines.append(f"  range: {page_start}-{page_end}")
 
             node_metadata.append(meta_lines)
-            metadata_chars += sum(len(l) for l in meta_lines)
+            metadata_chars += sum(len(line) for line in meta_lines)
 
             text = payload.get("text") or payload.get("content") or ""
             node_texts.append(text)

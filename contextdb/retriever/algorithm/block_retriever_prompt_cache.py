@@ -13,14 +13,6 @@ from jinja2 import Template
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.block_types import Block
 
-
-class _RetrieverSupportBase:
-    def __init__(self, retriever):
-        self._retriever = retriever
-
-    def __getattr__(self, name: str):
-        return getattr(self._retriever, name)
-
 log = get_logger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
@@ -40,7 +32,7 @@ FS_CACHE_STATIC_SEGMENT = (
 )
 
 
-class BlockRetrieverPromptCacheSupport(_RetrieverSupportBase):
+class BlockRetrieverPromptCacheSupport:
     """Prompt-cache support methods for BlockRetriever."""
 
     def _build_block_cache_key(self, block: Block, cache_payload: str | list[str] = "") -> str:

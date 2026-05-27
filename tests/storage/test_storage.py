@@ -5,8 +5,10 @@ create/ingest/get/delete operations.
 """
 
 import json
+
 import pytest
-from contextdb.core.storage import TreeDB, Node, Entity
+
+from contextdb.core.storage import Entity, Node, TreeDB
 
 
 @pytest.fixture
@@ -228,7 +230,7 @@ def test_entity_no_type_defaults_unknown(db):
 
 def test_entities_none(db):
     """entities=None → no entities created."""
-    tid = db.ingest_tree({"type": "leaf"})
+    db.ingest_tree({"type": "leaf"})
     assert _count(db, "entities") == 0
 
 def test_entity_payload_large(db):
@@ -255,7 +257,7 @@ def test_multiple_entities(db):
         "ea": {"type": "text", "content": "A"},
         "eb": {"type": "text", "content": "B"},
     }
-    tid = db.ingest_tree(tree, entities=entities)
+    db.ingest_tree(tree, entities=entities)
     assert _count(db, "entities") == 3
 
 

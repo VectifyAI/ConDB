@@ -9,10 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contextdb import ContextTree
 from contextdb.config import Config
-from contextdb.retriever import BeamRetriever
-from contextdb.metrics import StatisticsRecorder, LLMWithStats
 from contextdb.logger import get_logger
-
+from contextdb.metrics import LLMWithStats, StatisticsRecorder
+from contextdb.retriever import BeamRetriever
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 QUESTIONS_FILE = Path(__file__).parent / "rag_questions.json"
@@ -223,7 +222,7 @@ def compare_all():
 
     # Print formatted statistics
     print("\n" + recorder.format("Retrieval Statistics"))
-    print(f"*** Comparison Results ***")
+    print("*** Comparison Results ***")
     print(f"    Retrieval latency (greedy): {mean(greedy_times) * 1000:.0f}ms")
     print(f"    Retrieval latency (beam): {mean(beam_times) * 1000:.0f}ms")
     print(f"    LLM judge: greedy={wins['greedy']} beam={wins['beam']} tie={wins['tie']}")

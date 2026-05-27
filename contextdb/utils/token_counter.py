@@ -51,8 +51,8 @@ class TiktokenCounter:
             import tiktoken
 
             self.encoding = tiktoken.get_encoding(encoding)
-        except ImportError:
-            raise ImportError("tiktoken required: pip install tiktoken")
+        except ImportError as err:
+            raise ImportError("tiktoken required: pip install tiktoken") from err
 
     def count_tokens(self, text: str) -> int:
         return len(self.encoding.encode(text))

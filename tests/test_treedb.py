@@ -1,5 +1,6 @@
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from contextdb.core.storage import TreeDB
 
@@ -75,7 +76,7 @@ def test_ingest_with_entities():
         "doc1": {"type": "doc", "title": "Test"},
         "text1": {"type": "text", "content": "Hello"}
     }
-    tree_id = db.ingest_tree(tree, entities=entities)
+    db.ingest_tree(tree, entities=entities)
     cursor = db.conn.cursor()
     cursor.execute("SELECT COUNT(*) as count FROM entities")
     entity_count = cursor.fetchone()['count']

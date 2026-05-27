@@ -60,7 +60,7 @@ __all__ = [
 ]
 
 
-class BlockRetriever(BaseRetriever):
+class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheSupport, BaseRetriever):
 
     def __init__(
         self,
@@ -120,22 +120,14 @@ class BlockRetriever(BaseRetriever):
             self.max_tokens_per_block,
             self.min_tokens_per_block,
         )
-        self._filesystem_support = BlockRetrieverFilesystemSupport(self)
-        self._prompt_cache_support = BlockRetrieverPromptCacheSupport(self)
         self._plan_cache: dict[str, BlockTreePlan] = {}
         self._precomputed_tree_id: str = ""
-
-    def __getattr__(self, name: str):
-        if name.startswith("__"):
-            raise AttributeError(name)
-
-        for support_name in ("_filesystem_support", "_prompt_cache_support"):
-            support = self.__dict__.get(support_name)
-            if support is None:
-                continue
-            if hasattr(type(support), name):
-                return getattr(support, name)
-        raise AttributeError(f"{type(self).__name__!s} object has no attribute {name!r}")
+        self._fs_node_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._fs_attrs_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._fs_path_cache: dict[tuple[str, str], str] = {}
+        self._fs_is_dir_cache: dict[tuple[str, str], bool] = {}
+        self._fs_children_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self._fs_block_render_cache: dict[tuple[str, ...], tuple[str, int]] = {}
 
     def retrieve(
         self,
@@ -164,6 +156,7 @@ class BlockRetriever(BaseRetriever):
             return self._empty_result()
 
         if tree_id != self._precomputed_tree_id:
+            self._clear_fs_lookup_cache()
             self.token_counter.clear_cache()
             self.token_counter.precompute_tree_tokens(self.storage, tree_id)
             self._precomputed_tree_id = tree_id
@@ -783,18 +776,18 @@ class BlockRetriever(BaseRetriever):
     def _update_frontier(self, node_ids, tree_id, beam_size):
         next_frontier = []
         for node_id in node_ids:
-            node = self.storage.get_node(tree_id, node_id)
-            attrs = {}
-            if node and node.attrs_json:
-                try:
-                    attrs = json.loads(node.attrs_json)
-                except json.JSONDecodeError:
-                    attrs = {}
-
-            frontier_path = attrs.get("rel_path", "") if self.mode == "filesystem" else (node.path if node else "")
+            if self.mode == "filesystem":
+                node = self._get_cached_fs_node_dict(tree_id, node_id)
+                attrs = self._get_cached_fs_attrs(tree_id, node_id, node=node)
+                frontier_path = attrs.get("rel_path", "")
+                title = attrs.get("title", "")
+            else:
+                node = self.storage.get_node(tree_id, node_id)
+                frontier_path = node.path if node else ""
+                title = ""
             next_frontier.append({
                 "node_id": node_id,
-                "title": attrs.get("title", ""),
+                "title": title,
                 "path": frontier_path,
             })
             if beam_size and len(next_frontier) >= beam_size:
@@ -808,7 +801,13 @@ class BlockRetriever(BaseRetriever):
     def _frontier_has_children(self, tree_id: str, frontier: list[dict[str, str]]) -> bool:
         for frontier_node in frontier:
             node_id = frontier_node.get("node_id", "")
-            if node_id and self.storage.get_children(tree_id, node_id):
+            if not node_id:
+                continue
+            if self.mode == "filesystem":
+                if self._fs_node_has_children(tree_id, node_id):
+                    return True
+                continue
+            if self.storage.get_children(tree_id, node_id):
                 return True
         return False
 
@@ -831,14 +830,14 @@ class BlockRetriever(BaseRetriever):
         return self._override_done_if_frontier_dirs(result, tree_id, beams)
 
     def _is_fs_directory_id(self, tree_id: str, node_id: str) -> bool:
-        node = self.storage.get_node(tree_id, node_id)
-        if not node or not node.attrs_json:
-            return False
-        try:
-            attrs = json.loads(node.attrs_json)
-        except json.JSONDecodeError:
-            return False
-        return bool(attrs.get("is_dir", False))
+        key = (tree_id, node_id)
+        if key in self._fs_is_dir_cache:
+            return self._fs_is_dir_cache[key]
+
+        attrs = self._get_cached_fs_attrs(tree_id, node_id)
+        is_dir = bool(attrs.get("is_dir", False))
+        self._fs_is_dir_cache[key] = is_dir
+        return is_dir
 
     # ---- allowed node filtering (dynamic, but content stays fixed) ----
 
@@ -876,19 +875,120 @@ class BlockRetriever(BaseRetriever):
 
         cursor = self.storage.conn.cursor()
         path_map: dict[str, str] = {}
+        missing: list[str] = []
+        seen_missing: set[str] = set()
+
+        for node_id in node_ids:
+            key = (tree_id, node_id)
+            cached_path = self._fs_path_cache.get(key)
+            if cached_path is not None:
+                path_map[node_id] = cached_path
+            elif node_id not in seen_missing:
+                seen_missing.add(node_id)
+                missing.append(node_id)
+
+        if not missing:
+            return {node_id: path_map[node_id] for node_id in node_ids if node_id in path_map}
+
         chunk_size = 500
 
-        for i in range(0, len(node_ids), chunk_size):
-            chunk = node_ids[i:i + chunk_size]
+        for i in range(0, len(missing), chunk_size):
+            chunk = missing[i:i + chunk_size]
             placeholders = ",".join("?" for _ in chunk)
             cursor.execute(
                 f"SELECT node_id, path FROM nodes WHERE tree_id = ? AND node_id IN ({placeholders})",
                 (tree_id, *chunk),
             )
             for row in cursor.fetchall():
-                path_map[row["node_id"]] = row["path"]
+                node_id = row["node_id"]
+                path = row["path"]
+                self._fs_path_cache[(tree_id, node_id)] = path
+                path_map[node_id] = path
 
-        return path_map
+        return {node_id: path_map[node_id] for node_id in node_ids if node_id in path_map}
+
+    @staticmethod
+    def _parse_fs_attrs(attrs_value: Any) -> dict[str, Any]:
+        if isinstance(attrs_value, dict):
+            return attrs_value
+        if isinstance(attrs_value, str) and attrs_value:
+            try:
+                parsed = json.loads(attrs_value)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    def _remember_fs_node(self, tree_id: str, node: dict[str, Any]) -> dict[str, Any]:
+        node_id = node.get("node_id")
+        if not node_id:
+            return node
+
+        key = (tree_id, node_id)
+        existing = self._fs_node_cache.get(key)
+        if existing:
+            merged = {**existing, **node}
+            if "entity" not in node and "entity" in existing:
+                merged["entity"] = existing["entity"]
+            node = merged
+
+        self._fs_node_cache[key] = node
+        path = node.get("path")
+        if isinstance(path, str):
+            self._fs_path_cache[key] = path
+
+        attrs = self._parse_fs_attrs(node.get("attrs") if "attrs" in node else node.get("attrs_json"))
+        self._fs_attrs_cache[key] = attrs
+        self._fs_is_dir_cache[key] = bool(attrs.get("is_dir", False))
+        return node
+
+    def _get_cached_fs_node_dict(self, tree_id: str, node_id: str) -> dict[str, Any] | None:
+        key = (tree_id, node_id)
+        cached = self._fs_node_cache.get(key)
+        if cached is not None:
+            return cached
+
+        node = self.storage.get_node(tree_id, node_id)
+        if not node:
+            return None
+        return self._remember_fs_node(tree_id, node.to_dict())
+
+    def _get_cached_fs_attrs(
+        self,
+        tree_id: str,
+        node_id: str,
+        node: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        key = (tree_id, node_id)
+        cached = self._fs_attrs_cache.get(key)
+        if cached is not None:
+            return cached
+
+        node = node or self._get_cached_fs_node_dict(tree_id, node_id)
+        if not node:
+            attrs: dict[str, Any] = {}
+        else:
+            attrs = self._parse_fs_attrs(node.get("attrs") if "attrs" in node else node.get("attrs_json"))
+            self._remember_fs_node(tree_id, node)
+
+        self._fs_attrs_cache[key] = attrs
+        self._fs_is_dir_cache[key] = bool(attrs.get("is_dir", False))
+        return attrs
+
+    def _fs_node_has_children(self, tree_id: str, node_id: str) -> bool:
+        key = (tree_id, node_id)
+        cached = self._fs_children_cache.get(key)
+        if cached is not None:
+            return bool(cached)
+        return bool(self._get_direct_children_nodes(tree_id, node_id))
+
+    def _clear_fs_lookup_cache(self) -> None:
+        self._fs_node_cache.clear()
+        self._fs_attrs_cache.clear()
+        self._fs_path_cache.clear()
+        self._fs_is_dir_cache.clear()
+        self._fs_children_cache.clear()
+        self._fs_block_render_cache.clear()
 
     # ---- DB helpers ----
 
@@ -922,12 +1022,14 @@ class BlockRetriever(BaseRetriever):
 
     def clear_cache(self):
         self._plan_cache.clear()
+        self._clear_fs_lookup_cache()
 
     def clear_plan_cache(self, tree_id=None):
         if tree_id:
             self._plan_cache.pop(tree_id, None)
         else:
             self._plan_cache.clear()
+        self._clear_fs_lookup_cache()
 
     def get_cache_stats(self):
         return {"plan_cache_size": len(self._plan_cache)}
