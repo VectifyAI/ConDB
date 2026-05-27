@@ -1,13 +1,12 @@
 """Test BeamRetriever with context carrying and leaf node handling."""
-import sys
-import os
 import json
+import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from contextdb import ContextTree
 from contextdb.config import Config
-from contextdb.retriever import BeamRetriever
 
 
 def load_test_data():

@@ -10,8 +10,8 @@ Strict mode (default on):
 
 from __future__ import annotations
 
-import json
 import inspect
+import json
 import os
 import socket
 import statistics

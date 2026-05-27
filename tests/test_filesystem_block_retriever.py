@@ -395,6 +395,19 @@ def _replace_node_payload(db, tree_id, node_id, payload):
     db.conn.commit()
 
 
+class CountingStorage:
+    def __init__(self, storage):
+        self.storage = storage
+        self.get_node_calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self.storage, name)
+
+    def get_node(self, tree_id, node_id):
+        self.get_node_calls += 1
+        return self.storage.get_node(tree_id, node_id)
+
+
 def test_filesystem_retriever_splits_wide_directory_into_multiple_blocks(tmp_path):
     src_dir = tmp_path / "src"
     src_dir.mkdir()
@@ -424,6 +437,42 @@ def test_filesystem_retriever_splits_wide_directory_into_multiple_blocks(tmp_pat
         assert result.blocks_processed >= 3
         assert any(t.get("type") == "subtree_split" for t in result.trace)
         assert any(bt.get("type") == "subtree_horizontal" for bt in result.block_traces)
+    finally:
+        db.close()
+
+
+def test_filesystem_lookup_cache_reuses_nodes_attrs_and_paths(tmp_path):
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "needle.py").write_text("pass\n", encoding="utf-8")
+
+    adapter = FileSystemAdapter(str(tmp_path))
+    db = TreeDB(":memory:")
+
+    try:
+        tree_id = adapter.ingest(db)
+        counting_storage = CountingStorage(db)
+        retriever = BlockRetriever(
+            counting_storage,
+            PathMatchLLM(),
+            cache_enabled=False,
+            mode="filesystem",
+        )
+
+        root_id = db.get_root_id(tree_id)
+        src_node = db.get_children(tree_id, root_id)[0]
+
+        assert retriever._is_fs_directory_id(tree_id, src_node.node_id) is True
+        assert retriever._is_fs_directory_id(tree_id, src_node.node_id) is True
+        assert counting_storage.get_node_calls == 1
+
+        children = retriever._get_direct_children_nodes(tree_id, src_node.node_id)
+        child_ids = [node["node_id"] for node in children]
+        assert retriever._get_nodes_by_ids(tree_id, child_ids) == children
+        assert retriever._get_node_paths(tree_id, child_ids) == {
+            node["node_id"]: node["path"] for node in children
+        }
+        assert counting_storage.get_node_calls == 1
     finally:
         db.close()
 
