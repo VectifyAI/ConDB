@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import shutil
 import sys
 import tempfile
@@ -128,32 +127,25 @@ def extract_retrieved_paths(db: ConDB, tree_id: str, node_ids: list[str]) -> lis
 
 
 # ── Metrics ──────────────────────────────────────────────────────────
+# Set-based: the retriever returns what it thinks are the right files; no
+# artificial top-K truncation. Reported as precision / recall / F1 over the
+# returned set, plus a strict exact-match flag.
 
 
-def found_at_k(preds: list[str], golds: set[str], k: int) -> int:
-    return len(set(preds[:k]).intersection(golds))
-
-
-def recall_at_k(preds: list[str], golds: set[str], k: int) -> float:
+def set_metrics(preds: list[str], golds: set[str]) -> dict[str, float | int]:
+    pset = set(preds)
     if not golds:
-        return 0.0
-    return found_at_k(preds, golds, k) / len(golds)
-
-
-def exact_at_k(preds: list[str], golds: set[str], k: int) -> int:
-    return int(bool(golds) and golds.issubset(set(preds[:k])))
-
-
-def gold_cutoff(golds: set[str]) -> int:
-    return max(1, len(golds))
-
-
-def gold_cutoff_metrics(preds: list[str], golds: set[str]) -> dict[str, float | int]:
-    cutoff = gold_cutoff(golds)
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "exact_match": 0, "hit": 0}
+    hit = len(pset & golds)
+    precision = hit / len(pset) if pset else 0.0
+    recall = hit / len(golds)
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     return {
-        "found@gold": found_at_k(preds, golds, cutoff),
-        "recall@gold": recall_at_k(preds, golds, cutoff),
-        "exact@gold": exact_at_k(preds, golds, cutoff),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "exact_match": int(pset == golds),
+        "hit": hit,
     }
 
 
@@ -164,32 +156,22 @@ def reciprocal_rank(preds: list[str], golds: set[str]) -> float:
     return 0.0
 
 
-def ndcg_at_k(preds: list[str], golds: set[str], k: int = 10) -> float:
-    dcg = sum(1.0 / math.log2(i + 1) for i, p in enumerate(preds[:k], 1) if p in golds)
-    ideal_hits = min(len(golds), k)
-    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, ideal_hits + 1))
-    return dcg / idcg if idcg > 0 else 0.0
-
-
 def aggregate(records: list[dict]) -> dict:
     n = len(records)
     if n == 0:
         return {"n": 0}
-    cutoff_metrics = [gold_cutoff_metrics(r.get("top_k_preds", []), set(r.get("gold", []))) for r in records]
-    out = {"n": n}
-    out["mrr"] = sum(
-        reciprocal_rank(r.get("top_k_preds", []), set(r.get("gold", []))) for r in records
-    ) / n
-    out["ndcg@10"] = sum(
-        ndcg_at_k(r.get("top_k_preds", []), set(r.get("gold", [])), 10) for r in records
-    ) / n
-    out["failed"] = sum(1 for r in records if r.get("error"))
-    out["avg_gold"] = sum(len(set(r.get("gold", []))) for r in records) / n
-    out["avg_returned"] = sum(r.get("num_preds", len(r.get("top_k_preds", []))) for r in records) / n
-    out["found@gold"] = sum(m["found@gold"] for m in cutoff_metrics) / n
-    out["recall@gold"] = sum(m["recall@gold"] for m in cutoff_metrics) / n
-    out["exact@gold"] = sum(m["exact@gold"] for m in cutoff_metrics) / n
-    return out
+    metrics = [set_metrics(r.get("preds", []), set(r.get("gold", []))) for r in records]
+    return {
+        "n": n,
+        "precision": sum(m["precision"] for m in metrics) / n,
+        "recall": sum(m["recall"] for m in metrics) / n,
+        "f1": sum(m["f1"] for m in metrics) / n,
+        "exact_match": sum(m["exact_match"] for m in metrics) / n,
+        "mrr": sum(reciprocal_rank(r.get("preds", []), set(r.get("gold", []))) for r in records) / n,
+        "avg_gold": sum(len(set(r.get("gold", []))) for r in records) / n,
+        "avg_returned": sum(r.get("num_preds", len(r.get("preds", []))) for r in records) / n,
+        "failed": sum(1 for r in records if r.get("error")),
+    }
 
 
 # ── Main loop ────────────────────────────────────────────────────────
@@ -228,7 +210,7 @@ def run(args):
         "tier": args.tier,
         "model": args.model,
         "provider": args.provider,
-        "top_k": args.top_k,
+        "max_results": args.max_results,
         "strategy": args.strategy,
         "ranker": args.ranker,
         "embedding_provider": args.embedding_provider if args.ranker == "vector" else None,
@@ -277,7 +259,7 @@ def run(args):
                         tree_id,
                         question=q["text"],
                         strategy=args.strategy,
-                        select_k=args.top_k,
+                        select_k=args.max_results,
                         max_turns=args.max_turns,
                         max_parallel_blocks=args.max_parallel_blocks,
                         retriever=retriever,
@@ -299,29 +281,28 @@ def run(args):
                     "path_signal_level": signal_map.get(qid, -1),
                     "gold": sorted(gold),
                     "gold_count": len(gold),
-                    "top_k_preds": preds[: args.top_k],
+                    "preds": preds,
                     "num_preds": len(preds),
                     "latency_ms": dt_ms,
                     "llm_calls": getattr(res, "llm_calls", 0) if res else 0,
                     "turns": getattr(res, "turns", 0) if res else 0,
                     "error": err,
                 }
-                rec.update(gold_cutoff_metrics(preds, gold))
+                rec.update(set_metrics(preds, gold))
                 rec["rr"] = reciprocal_rank(preds, gold)
-                rec["ndcg@10"] = ndcg_at_k(preds, gold, 10)
                 per_query_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 per_query_f.flush()
                 records.append(rec)
                 done += 1
-                if rec["exact@gold"]:
+                if rec["exact_match"]:
                     mark = "✓"
-                elif rec["found@gold"]:
+                elif rec["hit"]:
                     mark = "~"
                 else:
                     mark = "E" if err else "x"
                 print(f"[{done:4d}/{len(queries)}] {mark} {qid:40s} "
-                      f"found={rec['found@gold']}/{rec['gold_count']} "
-                      f"recall={rec['recall@gold']:.3f} "
+                      f"hit={rec['hit']}/{rec['gold_count']} "
+                      f"P={rec['precision']:.2f} R={rec['recall']:.2f} F1={rec['f1']:.2f} "
                       f"nodes={info['node_count']:5d} {dt_ms}ms")
 
             # cleanup this tree to keep sqlite small
@@ -352,13 +333,15 @@ def run(args):
     (out_dir / "report.md").write_text(render_report(summary, records))
 
     print(f"\n=== OVERALL ({overall['n']} queries) ===")
-    print(f"  recall@gold {overall['recall@gold']:.3f}")
-    print(f"  exact@gold  {overall['exact@gold']:.3f}")
-    print(f"  found@gold  {overall['found@gold']:.2f}")
+    print(f"  precision   {overall['precision']:.3f}")
+    print(f"  recall      {overall['recall']:.3f}")
+    print(f"  f1          {overall['f1']:.3f}")
+    print(f"  exact_match {overall['exact_match']:.3f}")
     print(f"  mrr         {overall['mrr']:.3f}")
-    print(f"  ndcg@10     {overall['ndcg@10']:.3f}")
+    print(f"  avg_gold    {overall['avg_gold']:.2f}")
+    print(f"  avg_returned {overall['avg_returned']:.2f}")
     if overall.get("failed"):
-        print(f"  failed  {overall['failed']}")
+        print(f"  failed      {overall['failed']}")
     print(f"\nreport: {out_dir}/report.md")
 
 
@@ -409,7 +392,7 @@ def render_report(summary, records) -> str:
         "",
         f"- timestamp: {cfg['timestamp']}",
         f"- model: `{cfg['provider']}/{cfg['model']}`",
-        f"- strategy: `{cfg['strategy']}`  top-k: {cfg['top_k']}",
+        f"- strategy: `{cfg['strategy']}`",
     ]
     if cfg.get("ranker"):
         lines.append(f"- ranker: `{cfg['ranker']}`")
@@ -420,39 +403,30 @@ def render_report(summary, records) -> str:
         "",
         "| metric | value |",
         "|---|---|",
-    ]
-    lines += [
-        f"| recall@gold | {o.get('recall@gold', 0.0):.3f} |",
-        f"| exact@gold | {o.get('exact@gold', 0.0):.3f} |",
-        f"| found@gold | {o.get('found@gold', 0.0):.2f} |",
+        f"| precision | {o['precision']:.3f} |",
+        f"| recall | {o['recall']:.3f} |",
+        f"| f1 | {o['f1']:.3f} |",
+        f"| exact_match | {o['exact_match']:.3f} |",
         f"| mrr | {o['mrr']:.3f} |",
-        f"| ndcg@10 | {o['ndcg@10']:.3f} |",
-        f"| avg_gold | {o.get('avg_gold', 0.0):.2f} |",
-        f"| avg_returned | {o.get('avg_returned', 0.0):.2f} |",
+        f"| avg_gold | {o['avg_gold']:.2f} |",
+        f"| avg_returned | {o['avg_returned']:.2f} |",
         "",
     ]
 
     def table(title, d, key_label):
         lines.append(f"## {title}")
         lines.append("")
-        lines.append(
-            f"| {key_label} | n | cutoff | recall@gold | exact@gold | found@gold | "
-            "avg gold | avg returned |"
-        )
+        lines.append(f"| {key_label} | n | precision | recall | f1 | exact_match | avg gold | avg returned |")
         lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
 
         def sort_key(item):
             return gold_bucket_sort_key(item[0]) if title == "Per gold count" else -item[1]["n"]
 
-        items = sorted(d.items(), key=sort_key)
-        for k, v in items:
-            cutoff = "gold" if title == "Per gold count" and str(k).endswith("+") else (
-                str(k) if title == "Per gold count" else "gold"
-            )
+        for k, v in sorted(d.items(), key=sort_key):
             lines.append(
-                f"| {k} | {v['n']} | {cutoff} | {v.get('recall@gold', 0.0):.3f} | "
-                f"{v.get('exact@gold', 0.0):.3f} | {v.get('found@gold', 0.0):.2f} | "
-                f"{v.get('avg_gold', 0.0):.2f} | {v.get('avg_returned', 0.0):.2f} |"
+                f"| {k} | {v['n']} | {v['precision']:.3f} | {v['recall']:.3f} | "
+                f"{v['f1']:.3f} | {v['exact_match']:.3f} | "
+                f"{v['avg_gold']:.2f} | {v['avg_returned']:.2f} |"
             )
         lines.append("")
 
@@ -461,7 +435,7 @@ def render_report(summary, records) -> str:
     table("Per path_signal_level", summary["per_path_signal_level"], "level")
     table("Per snapshot size", summary["per_snapshot_size_bucket"], "bucket")
 
-    misses = [r for r in records if r.get("recall@gold", 0.0) < 1.0 and not r.get("error")]
+    misses = [r for r in records if r.get("recall", 0.0) < 1.0 and not r.get("error")]
     if misses:
         lines += ["## Miss samples", ""]
         for r in misses[:5]:
@@ -469,7 +443,7 @@ def render_report(summary, records) -> str:
                 f"### {r['query_id']}  ({r['repo']}@{r['commit']})",
                 f"- signal level: {r['path_signal_level']}",
                 f"- gold: {r['gold']}",
-                f"- returned: {r['top_k_preds']}",
+                f"- returned: {r['preds']}",
                 "",
             ]
     return "\n".join(lines)
@@ -483,7 +457,8 @@ def main():
     p.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     p.add_argument("--model", default=DEFAULT_MODEL)
     p.add_argument("--provider", default="anthropic")
-    p.add_argument("--top-k", type=int, default=10)
+    p.add_argument("--max-results", type=int, default=50,
+                   help="Safety cap on retriever output. Retriever stops naturally on LLM done=true.")
     p.add_argument("--strategy", choices=["auto", "beam", "block", "vertical"], default="auto")
     p.add_argument("--ranker", choices=["bm25", "vector", "none"], default="none",
                    help="Optional path ordering for Block merge results")

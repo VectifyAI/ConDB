@@ -9,9 +9,12 @@ PYTHONPATH=. python bench/run_swebench_filetree.py \
   --tier all \
   --strategy block \
   --ranker none \
-  --top-k 10 \
   --output-dir bench/runs/block_none_all
 ```
+
+`--max-results` (default 50) is a safety cap; the retriever stops naturally
+when the LLM signals `done=true`. The bench compares the returned set
+against the gold set — no fixed top-K cutoff is applied at scoring time.
 
 Outputs:
 
@@ -36,47 +39,50 @@ Ranker options (apply to `block` / `vertical`):
 
 ### Latest Full Run
 
-Claude Sonnet 4.6, `tier=all`, `ranker=none`, `top_k=10`, 500 queries, 0 failures.
+Claude Sonnet 4.6, `tier=all`, `ranker=none`, 500 queries, 0 failures.
 
-Metric notes:
+Metrics are set-based on the actual returned file set — no top-K cutoff:
 
-- `recall@gold`: fraction of gold files recovered when the cutoff is the
-  query's gold-file count.
-- `exact@gold`: all gold files are recovered within that same cutoff.
-- `found@gold`: average number of gold files recovered within that cutoff.
+- `precision`: |returned ∩ gold| / |returned|
+- `recall`: |returned ∩ gold| / |gold|
+- `f1`: harmonic mean of precision and recall
+- `exact_match`: returned set equals gold set exactly
+- `MRR`: reciprocal rank of the first gold hit in the returned order
 
 #### Block (ConDB) vs Vertical (baseline)
 
 Vertical is a per-beam-branch variant: each parent expands its children into
 separate subtree blocks (`A→B`, `A→C`), one LLM call per branch. It removes
-the cross-branch view that Block keeps, so it serves as a direct baseline
-for the merged-pool design used in ConDB.
+the cross-branch view Block keeps and serves as a direct baseline.
 
-| variant | recall@gold | exact@gold | MRR | nDCG@10 | avg returned | avg latency |
-|---|---:|---:|---:|---:|---:|---:|
-| Vertical (baseline) | 0.382 | 0.366 | 0.466 | 0.481 | 3.00 | ~24 s |
-| **Block (ConDB)** | **0.711** | **0.672** | **0.805** | **0.813** | 7.20 | ~8 s |
+| variant | precision | recall | F1 | exact_match | MRR | avg returned | avg latency |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Vertical (baseline) | 0.262 | 0.560 | 0.319 | 0.130 | 0.466 | 3.00 | ~24 s |
+| **Block (ConDB)** | **0.410** | **0.903** | **0.534** | 0.106 | **0.849** | 2.86 | ~8 s |
 
-Block is **+0.33 recall@gold** at ~3× lower latency.
+Block recall jumps from 0.56 to 0.90 at ~3× lower latency. Low
+`exact_match` on both sides reflects the retriever's tendency to return
+~3 candidates against `avg_gold ≈ 1.24` — i.e. it picks up the gold file
+plus one or two plausible neighbours.
 
 #### Block — per-gold-count breakdown
 
-| gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
+| gold files | queries | precision | recall | F1 | exact_match | avg returned |
 |---|---:|---:|---:|---:|---:|---:|
-| 1 | 430 | 1 | 0.749 | 0.749 | 0.75 | 7.00 |
-| 2 | 48 | 2 | 0.521 | 0.271 | 1.04 | 8.31 |
-| 3 | 13 | 3 | 0.410 | 0.077 | 1.23 | 8.77 |
-| 4 | 6 | 4 | 0.417 | 0.000 | 1.67 | 9.17 |
-| 5 | 1 | 5 | 0.200 | 0.000 | 1.00 | 2.00 |
-| 6+ | 2 | gold | 0.274 | 0.000 | 2.00 | 10.00 |
+| 1 | 430 | 0.399 | 0.951 | 0.537 | 0.112 | 2.82 |
+| 2 | 48  | 0.469 | 0.677 | 0.544 | 0.062 | 3.12 |
+| 3 | 13  | 0.477 | 0.487 | 0.481 | 0.154 | 3.00 |
+| 4 | 6   | 0.581 | 0.500 | 0.532 | 0.000 | 3.50 |
+| 5 | 1   | 0.333 | 0.200 | 0.250 | 0.000 | 3.00 |
+| 6+ | 2  | 0.500 | 0.190 | 0.264 | 0.000 | 3.00 |
 
 #### Vertical — per-gold-count breakdown
 
-| gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
+| gold files | queries | precision | recall | F1 | exact_match | avg returned |
 |---|---:|---:|---:|---:|---:|---:|
-| 1 | 430 | 1 | 0.412 | 0.412 | 0.41 | 3.07 |
-| 2 | 48 | 2 | 0.250 | 0.125 | 0.50 | 2.67 |
-| 3 | 13 | 3 | 0.103 | 0.000 | 0.31 | 2.54 |
-| 4 | 6 | 4 | 0.042 | 0.000 | 0.17 | 2.50 |
-| 5 | 1 | 5 | 0.400 | 0.000 | 2.00 | 5.00 |
-| 6+ | 2 | gold | 0.000 | 0.000 | 0.00 | 0.00 |
+| 1 | 430 | 0.275 | 0.612 | 0.340 | 0.147 | 3.07 |
+| 2 | 48  | 0.211 | 0.312 | 0.232 | 0.042 | 2.67 |
+| 3 | 13  | 0.131 | 0.103 | 0.102 | 0.000 | 2.54 |
+| 4 | 6   | 0.083 | 0.042 | 0.056 | 0.000 | 2.50 |
+| 5 | 1   | 0.400 | 0.400 | 0.400 | 0.000 | 5.00 |
+| 6+ | 2  | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 |
