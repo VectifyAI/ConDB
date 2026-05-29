@@ -185,35 +185,44 @@ the default `ranker=none` unchanged.
 
 #### Latest Run
 
-Claude Sonnet 4.6, `--ranker none`, `--top-k 10`, 500 queries, 0 failures.
-Block (ConDB) is compared against a **Vertical baseline** — a per-beam variant
-that expands each parent's children into separate subtree blocks (`A→B`,
-`A→C`), one LLM call per branch, losing the cross-branch view Block keeps.
+Claude Sonnet 4.6, `--ranker none`, 500 queries, 0 failures. The retriever
+returns the file set it deems relevant — no fixed top-K cutoff. Metrics
+compare the returned set against the gold set:
 
-| variant | recall@gold | exact@gold | MRR | nDCG@10 | avg returned | avg latency |
+- `precision = |returned ∩ gold| / |returned|`
+- `recall    = |returned ∩ gold| / |gold|`
+- `f1`, `exact_match` (set equality), `MRR` (rank of first hit)
+
+Block (ConDB) is compared against a **Vertical baseline** — a per-beam
+variant that expands each parent's children into separate subtree blocks
+(`A→B`, `A→C`), one LLM call per branch.
+
+| variant | precision | recall | F1 | exact_match | MRR | avg returned | avg latency |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Vertical (baseline) | 0.262 | 0.560 | 0.319 | 0.130 | 0.466 | 3.00 | ~24 s |
+| **Block (ConDB)** | **0.410** | **0.903** | **0.534** | 0.106 | **0.849** | 2.86 | ~8 s |
+
+Block lifts recall from 0.56 to **0.90** at ~3× lower latency. Both runs
+return ~3 candidates per query against an `avg_gold = 1.24` — explaining
+the low `exact_match`: the retrievers tend to return one extra plausible
+file alongside the actual gold.
+
+Block per-gold-count breakdown:
+
+| gold files | queries | precision | recall | F1 | exact_match | avg returned |
 |---|---:|---:|---:|---:|---:|---:|
-| Vertical (baseline) | 0.382 | 0.366 | 0.466 | 0.481 | 3.00 | ~24 s |
-| **Block (ConDB)** | **0.711** | **0.672** | **0.805** | **0.813** | 7.20 | ~8 s |
-
-Block gains **+0.33 recall@gold** at ~3× lower latency.
-
-Block per-gold-count breakdown — the cutoff is the query's gold-file count
-(`6+` row contains one 6-gold query and one 21-gold outlier):
-
-| gold files | queries | cutoff | recall@gold | exact@gold | found@gold | avg returned |
-|---|---:|---:|---:|---:|---:|---:|
-| 1 | 430 | 1 | 0.749 | 0.749 | 0.75 | 7.00 |
-| 2 | 48 | 2 | 0.521 | 0.271 | 1.04 | 8.31 |
-| 3 | 13 | 3 | 0.410 | 0.077 | 1.23 | 8.77 |
-| 4 | 6 | 4 | 0.417 | 0.000 | 1.67 | 9.17 |
-| 5 | 1 | 5 | 0.200 | 0.000 | 1.00 | 2.00 |
-| 6+ | 2 | gold | 0.274 | 0.000 | 2.00 | 10.00 |
+| 1 | 430 | 0.399 | 0.951 | 0.537 | 0.112 | 2.82 |
+| 2 | 48  | 0.469 | 0.677 | 0.544 | 0.062 | 3.12 |
+| 3 | 13  | 0.477 | 0.487 | 0.481 | 0.154 | 3.00 |
+| 4 | 6   | 0.581 | 0.500 | 0.532 | 0.000 | 3.50 |
+| 5 | 1   | 0.333 | 0.200 | 0.250 | 0.000 | 3.00 |
+| 6+ | 2  | 0.500 | 0.190 | 0.264 | 0.000 | 3.00 |
 
 Reproduce:
 
 ```bash
-python bench/run_swebench_filetree.py --tier all --strategy block    --ranker none --top-k 10
-python bench/run_swebench_filetree.py --tier all --strategy vertical --ranker none --top-k 10
+python bench/run_swebench_filetree.py --tier all --strategy block    --ranker none
+python bench/run_swebench_filetree.py --tier all --strategy vertical --ranker none
 ```
 
 ### Document mode — single long document
