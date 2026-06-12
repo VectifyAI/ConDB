@@ -73,6 +73,15 @@ bench/results
 # Bench output
 bench/runs/
 
+# DB benchmark: generated datasets + scratch result DBs (keep the scripts)
+bench/db/data/
+bench/db/runs/
+bench/db/.venv/
+bench/db/report/*.aux
+bench/db/report/*.log
+bench/db/report/*.out
+bench/db/report/overleaf_report.zip
+
 # Dataset local copy (fetched from HF)
 data/
 
