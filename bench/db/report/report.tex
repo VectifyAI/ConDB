@@ -68,15 +68,15 @@ document store (MongoDB) is the right home for this data and, if so, what to
 optimize. This report answers both with measurements and a concrete plan.
 
 We deliberately benchmark only the operations ConDB actually issues. Generic
-database operations that the retrieval path never performs (GROUP-BY
-aggregation, ancestor-to-root walks, page-range filters, naive substring scans)
-are excluded, because their results would not inform the optimization.
+database operations that the retrieval path never performs (ancestor-to-root
+walks, page-range filters, naive substring scans) are excluded, because their
+results would not inform the optimization.
 
 \section{Workload and methodology}
 
 \paragraph{Operations.} The retrievers
 (\code{beam\_retriever.py}, \code{block\_retriever.py}) reach storage through
-exactly four calls (Table~\ref{tab:ops}). Everything measured below is one of
+four calls (Table~\ref{tab:ops}). Everything measured below is one of
 these, plus the storage footprint, the write path (incremental index and
 reasoning-trace edits), and concurrency.
 
@@ -179,8 +179,11 @@ tables. PostgreSQL and SQLite are several times larger on disk.
 \subsection{Retrieval operations}
 
 The navigation reads (point lookup, children, content fetch) are sub-millisecond
-on every engine but DuckDB, which is not built for OLTP point reads; here MongoDB
-keeps pace with the relational engines (Table~\ref{tab:read}). Only \code{get\_subtree}
+on every engine but DuckDB, which is not built for OLTP point reads. MongoDB runs
+roughly $3{\times}$ behind PostgreSQL per call on these reads
+(Table~\ref{tab:read}), part of it per-call client overhead, but at well under a
+millisecond everywhere the gap carries no practical cost; the optimization space
+is not here. Only \code{get\_subtree}
 costs at scale, and the gap is widest at the tail: a large subtree returns tens
 of thousands of documents, and MongoDB's P95 runs to seconds while the others
 stay under ${\sim}150$\,ms (Figure~\ref{fig:subtree}). The materialized-path
@@ -332,6 +335,46 @@ Point, children, and content reads, the write path, concurrency, and storage are
 already MongoDB's strengths and need no work. Ad-hoc analytics over the whole
 corpus (which PageIndex retrieval does not perform) would require a columnar side
 store rather than a change to MongoDB.
+
+\section{Open questions for the optimization discussion}
+
+This report establishes where the optimization effort should go. The following
+points are open, and we propose them as the agenda for the follow-up
+discussion.
+
+\begin{enumerate}
+\item \textbf{Does the covering index win in practice?} The 1024-byte
+index-key limit was removed in MongoDB~4.2, so an index carrying \code{title}
+and \code{summary} is legal. But covered queries are fast because index keys
+are typically small and cache-resident; multi-kilobyte summaries as index keys
+grow the index toward the size of the collection itself, and we are not aware
+of published measurements with keys this wide. The first experiment is the
+before/after of optimization~1 on the large dataset, confirming via
+\code{explain} that the plan is covered (the projection must exclude
+\code{\_id}) and watching index size and cache pressure.
+\item \textbf{Bucket sizing for the nested-subtree model.} At the measured
+${\sim}1.5$\,kB of logical BSON per node, the benchmark's large subtree
+(${\sim}36$k nodes) is roughly 55\,MB as a single document, several times the
+16\,MB cap. Structure-and-summary buckets of a few levels are comfortably
+small on this synthetic corpus, but real summaries vary; bucket depth should
+be set from worst-case real documents, not synthetic averages.
+\item \textbf{Nested Sets as an alternative.} MongoDB's documentation names
+the Nested Sets pattern as the efficient subtree read for static trees.
+PageIndex trees are effectively write-once after ingest, which fits; the
+conflict is the incremental-insert path, which Nested Sets turns into a
+renumbering. Whether ConDB's insert rate is compatible is a question for this
+discussion.
+\item \textbf{The memory-constrained regime.} The benchmark host holds every
+engine's data in RAM. The text split of optimization~2 pays off mainly by
+shrinking the working set, a benefit cache-resident measurements cannot show.
+A re-run with server memory capped below the data size would measure it, and
+that is also the regime where MongoDB's on-disk compactness should pay.
+\item \textbf{Batched reads.} Beyond the four calls of Table~\ref{tab:ops},
+the block retriever's dynamic filter issues batched id-list lookups (chunks of
+up to 500 ids; \code{\$in} on MongoDB). The shape is cheap to add to the
+harness and worth covering before the optimization work starts, since
+optimizations 2 and 3 change its cost.
+\end{enumerate}
 
 \section{Conclusion}
 
