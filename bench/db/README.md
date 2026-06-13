@@ -32,7 +32,7 @@ Content is random; only the tree *shape* matters.
 ```bash
 python bench/db/gen_pageindex.py --scale small  --out bench/db/data/small.json   # ~5k nodes, 5 MB
 python bench/db/gen_pageindex.py --scale medium --out bench/db/data/medium.json  # ~71k nodes, 85 MB
-python bench/db/gen_pageindex.py --scale large  --out bench/db/data/large.json   # ~819k nodes, 1.15 GB
+python bench/db/gen_pageindex.py --scale large  --out bench/db/data/large.json   # ~10M nodes, ~14 GB
 ```
 
 ## 2. Start the databases (docker)
