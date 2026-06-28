@@ -855,7 +855,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             return []
 
         beam_id_set = set(beam_ids)
-        beam_paths = list(beam_path_map.values())
+        beam_path_prefixes = tuple(f"{beam_path}/" for beam_path in beam_path_map.values())
         allowed: list[str] = []
 
         for node_id in block.node_ids:
@@ -864,7 +864,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             node_path = block_path_map.get(node_id)
             if not node_path:
                 continue
-            if any(node_path.startswith(f"{beam_path}/") for beam_path in beam_paths):
+            if node_path.startswith(beam_path_prefixes):
                 allowed.append(node_id)
 
         return allowed
@@ -873,7 +873,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         if not node_ids:
             return {}
 
-        cursor = self.storage.conn.cursor()
         path_map: dict[str, str] = {}
         missing: list[str] = []
         seen_missing: set[str] = set()
@@ -890,6 +889,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         if not missing:
             return {node_id: path_map[node_id] for node_id in node_ids if node_id in path_map}
 
+        cursor = self.storage.conn.cursor()
         chunk_size = 500
 
         for i in range(0, len(missing), chunk_size):

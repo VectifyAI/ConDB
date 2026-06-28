@@ -2,7 +2,7 @@ import json
 import sqlite3
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from contextdb.logger import get_logger
@@ -26,7 +26,21 @@ class Node:
     updated_at: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
-        result = {k: v for k, v in asdict(self).items() if v is not None}
+        result = {
+            "tree_id": self.tree_id,
+            "node_id": self.node_id,
+            "parent_id": self.parent_id,
+            "slot": self.slot,
+            "node_type": self.node_type,
+            "depth": self.depth,
+            "path": self.path,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "attrs_json": self.attrs_json,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        result = {k: v for k, v in result.items() if v is not None}
         if "attrs_json" in result:
             if result["attrs_json"]:
                 result["attrs"] = json.loads(result["attrs_json"])
@@ -208,7 +222,7 @@ class TreeDB:
         if not with_entities:
             return [n.to_dict() for n in nodes]
 
-        entity_ids = [n.entity_id for n in nodes if n.entity_id]
+        entity_ids = list(dict.fromkeys(n.entity_id for n in nodes if n.entity_id))
         if not entity_ids:
             return [n.to_dict() for n in nodes]
 
@@ -226,11 +240,15 @@ class TreeDB:
 
     def get_entity(self, tree_id: str, node_id: str) -> Optional[Entity]:
         cursor = self.conn.cursor()
-        cursor.execute("SELECT entity_id FROM nodes WHERE tree_id = ? AND node_id = ?", (tree_id, node_id))
-        row = cursor.fetchone()
-        if not row or not row["entity_id"]:
-            return None
-        cursor.execute("SELECT * FROM entities WHERE entity_id = ?", (row["entity_id"],))
+        cursor.execute(
+            """
+            SELECT e.*
+            FROM nodes n
+            JOIN entities e ON n.entity_id = e.entity_id
+            WHERE n.tree_id = ? AND n.node_id = ?
+        """,
+            (tree_id, node_id),
+        )
         ent_row = cursor.fetchone()
         return Entity(**dict(ent_row)) if ent_row else None
 
@@ -310,7 +328,7 @@ class TreeDB:
         except Exception as e:
             log.error(f"ingest_tree failed: {e}")
             self.conn.rollback()
-            raise e
+            raise
 
     def delete_tree(self, tree_id: str):
         cursor = self.conn.cursor()

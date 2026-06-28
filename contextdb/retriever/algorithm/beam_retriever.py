@@ -37,6 +37,9 @@ class BeamRetriever(BaseRetriever):
         super().__init__(storage, llm)
         self.mode = mode
         self._entity_cache: dict[str, dict[str, Any]] = {}
+        self._node_cache: dict[str, Any] = {}
+        self._children_cache: dict[str, list[Any]] = {}
+        self._attrs_cache: dict[str, dict[str, Any]] = {}
         self._cached_tree_id: str = ""
 
     def retrieve(
@@ -53,7 +56,7 @@ class BeamRetriever(BaseRetriever):
             return RetrievalResult([], [], [], 0)
 
         if tree_id != self._cached_tree_id:
-            self._entity_cache.clear()
+            self._clear_lookup_cache()
             self._cached_tree_id = tree_id
 
         if max_turns is None:
@@ -68,18 +71,21 @@ class BeamRetriever(BaseRetriever):
 
         for turn in range(max_turns):
             candidate_set = []
+            frontier_children: dict[str, list[Any]] = {}
 
             # Expand frontier nodes into the candidate set shown to the LLM.
             log.debug("turn %d: expanding %d frontier nodes", turn, len(frontier))
             for frontier_node in frontier:
                 # Get parent node's summary for context carrying
                 parent_summary = frontier_node.get("parent_summary", "")
-                children = self.storage.get_children(tree_id, frontier_node["node_id"])
+                frontier_node_id = frontier_node["node_id"]
+                children = self._get_children(tree_id, frontier_node_id)
+                frontier_children[frontier_node_id] = children
                 if not children:
                     # Leaf node: mark is_leaf=True to exclude from next frontier.
                     candidate_set.append(self._candidate_from_node(
-                        tree_id, frontier_node["node_id"], frontier_node["titles"], parent_summary, is_leaf=True))
-                    log.debug("  leaf: %s", frontier_node["node_id"][:8])
+                        tree_id, frontier_node_id, frontier_node["titles"], parent_summary, is_leaf=True))
+                    log.debug("  leaf: %s", frontier_node_id[:8])
                     continue
 
                 for child in children:
@@ -93,7 +99,7 @@ class BeamRetriever(BaseRetriever):
             # Check if all frontier nodes are leaves (no children to expand)
             # If so, stop early - no point asking LLM whether to continue
             all_leaves = all(
-                not self.storage.get_children(tree_id, frontier_node["node_id"]) for frontier_node in frontier
+                not frontier_children.get(frontier_node["node_id"], []) for frontier_node in frontier
             )
             if all_leaves and len(frontier) > 0:
                 log.debug("turn %d: all frontier nodes are leaves, stopping early", turn)
@@ -210,14 +216,10 @@ class BeamRetriever(BaseRetriever):
         if self.mode == "filesystem":
             file_top_candidate_ids = []
             for node_id in top_candidate_ids:
-                node = self.storage.get_node(tree_id, node_id)
-                if node and node.attrs_json:
-                    try:
-                        attrs = json.loads(node.attrs_json)
-                    except json.JSONDecodeError:
-                        attrs = {}
-                    if attrs.get("is_dir", False):
-                        continue
+                node = self._get_node(tree_id, node_id)
+                attrs = self._node_attrs(node) if node else {}
+                if attrs.get("is_dir", False):
+                    continue
                 file_top_candidate_ids.append(node_id)
             top_candidate_ids = file_top_candidate_ids if file_top_candidate_ids else top_candidate_ids
 
@@ -306,7 +308,7 @@ class BeamRetriever(BaseRetriever):
         self, tree_id: str, node_id: str, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False
     ) -> dict[str, Any]:
         """Build a candidate dict from an existing node id (leaf case)."""
-        node = self.storage.get_node(tree_id, node_id)
+        node = self._get_node(tree_id, node_id)
         if not node:
             return {
                 "node_id": node_id,
@@ -322,12 +324,20 @@ class BeamRetriever(BaseRetriever):
 
     def _node_attrs(self, node) -> dict[str, Any]:
         """Parse attrs_json from Node into a dict (safe for None)."""
+        node_id = getattr(node, "node_id", "")
+        if node_id in self._attrs_cache:
+            return self._attrs_cache[node_id]
         if not getattr(node, "attrs_json", None):
+            if node_id:
+                self._attrs_cache[node_id] = {}
             return {}
         try:
-            return json.loads(node.attrs_json) if node.attrs_json else {}
+            attrs = json.loads(node.attrs_json) if node.attrs_json else {}
         except json.JSONDecodeError:
-            return {}
+            attrs = {}
+        if node_id:
+            self._attrs_cache[node_id] = attrs
+        return attrs
 
     def _node_text(self, tree_id: str, node_id: str) -> str:
         """Fetch text/content from entity payload if present (cached)."""
@@ -338,6 +348,27 @@ class BeamRetriever(BaseRetriever):
             payload = json.loads(entity.payload_json) if entity else {}
             self._entity_cache[node_id] = payload
         return payload.get("text") or payload.get("content") or ""
+
+    def _get_node(self, tree_id: str, node_id: str):
+        if node_id in self._node_cache:
+            return self._node_cache[node_id]
+        node = self.storage.get_node(tree_id, node_id)
+        if node:
+            self._node_cache[node_id] = node
+        return node
+
+    def _get_children(self, tree_id: str, node_id: str):
+        if node_id in self._children_cache:
+            return list(self._children_cache[node_id])
+        children = self.storage.get_children(tree_id, node_id)
+        self._children_cache[node_id] = children
+        return list(children)
+
+    def _clear_lookup_cache(self) -> None:
+        self._entity_cache.clear()
+        self._node_cache.clear()
+        self._children_cache.clear()
+        self._attrs_cache.clear()
 
     def _tree_max_depth(self, tree_id: str) -> int:
         """Fetch the deepest node depth in this tree (upper bound for steps)."""
