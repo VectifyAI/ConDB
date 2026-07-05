@@ -59,9 +59,13 @@ run suggested; the seconds-level figure was a contention artifact of the
 concurrent multi-engine run, not a steady-state cost. We trace the remaining gap to
 MongoDB's document-at-a-time read model: each matched node is a separate
 \code{FETCH}, so the cost tracks the number of nodes in the subtree. We also
-measure fixes on Community Edition (Section~\ref{sec:opt}): because the cost is the
-\emph{number} of fetches, only removing them helps, and only modestly---a covering
-index buys ${\sim}1.4{\times}$---since the sub-second baseline leaves little to gain.
+measure fixes on Community Edition (Section~\ref{sec:opt}). In the measured
+resident-cache regime, because the cost is the \emph{number} of fetches, only
+removing them helps, and only modestly---a covering index buys
+${\sim}1.4{\times}$---since the sub-second baseline leaves little to gain. That
+ranking does not replace the production-scale schema rule: when many trees make
+the hot working set larger than RAM, split \code{text} first so
+structure/title/summary can stay cached.
 \end{abstract}
 
 \section{Introduction}
@@ -487,9 +491,11 @@ advantages elsewhere.
 
 Because the harness was already in place, we did not stop at recommending fixes---we
 ran them on the ten-million-node tree and measured (Table~\ref{tab:opt}). Each keeps
-MongoDB on Community Edition with no engine change. The short version: the document
-model's cost is the \emph{number} of fetches, so only removing fetches helps, and
-even that is modest because the steady-state baseline is already sub-second.
+MongoDB on Community Edition with no engine change. The short version for this
+measurement is deliberately narrow: with the collection fully resident in cache,
+the document model's cost is the \emph{number} of fetches, so only removing fetches
+helps, and even that is modest because the steady-state baseline is already
+sub-second.
 
 \begin{table}[h]
 \caption{\code{get\_subtree} fixes measured on the 10M tree (one client; view returns
@@ -510,18 +516,32 @@ Lean covering ${+}$ batched \code{\$in}, view & 137 & 1314 & ${\sim}3{\times}$ s
 \end{ctab}
 \end{table}
 
+\noindent Table~\ref{tab:opt} is therefore a \emph{resident-cache} optimization
+ranking, not a full deployment ranking. In a large deployment with many trees or
+tenants, the constraint can reverse: the working set may exceed RAM, and then the
+first-order question is which bytes remain cache-resident. Under that condition,
+splitting \code{text} out of the hot node collection is the first schema
+requirement, followed by \code{tree\_id}-led indexes/sharding so each query stays
+tenant-local, and then by lean covering indexes or denormalized subtree views. The
+experiment below does not quantify that cache-constrained benefit; it only shows
+that the benefit cannot appear when both schemas already fit in cache.
+
 \subsection{What the measurements say}
 
-\paragraph{Splitting the \code{text} field does nothing.} The intuitive fix---move
-the large \code{text} into a separate collection so the scanned documents are
-small---was the leading hypothesis, and it is wrong here. It shrinks the collection
-by ${\sim}75\%$ ($4.97\to1.25$\,GB) yet leaves \code{get\_subtree} P95 unchanged
-($419\to419$\,ms). The reason is the cache: at $540$\,GB it holds the whole
-collection many times over (Section~\ref{sec:remeasure}), so document \emph{size}
-never gates the scan---document \emph{count} does. Each of the ${\sim}36$k matched
-nodes is a separate \code{FETCH}, and shrinking each one does not reduce their
-number. The Subset Pattern's premise---a working set too large for RAM---does not
-hold on this host.
+\paragraph{Splitting the \code{text} field does nothing in this resident-cache
+experiment.} The intuitive fix---move the large \code{text} into a separate
+collection so the scanned documents are small---was the leading hypothesis, and it
+is wrong here. It shrinks the collection by ${\sim}75\%$ ($4.97\to1.25$\,GB) yet
+leaves \code{get\_subtree} P95 unchanged ($419\to419$\,ms). The reason is the cache:
+at $540$\,GB it holds the whole collection many times over
+(Section~\ref{sec:remeasure}), so document \emph{size} never gates the
+scan---document \emph{count} does. Each of the ${\sim}36$k matched nodes is a
+separate \code{FETCH}, and shrinking each one does not reduce their number. The
+Subset Pattern's premise---a working set too large for RAM---does not hold on this
+host. For production scale, this is exactly the boundary condition to watch: if
+inline \code{text} pushes the structure/title/summary working set out of cache, the
+split becomes a cache-residency requirement even though it did not move this
+resident-cache latency number.
 
 \paragraph{A covering index is the only real lever, and a modest one.} Removing the
 \code{FETCH} is the one thing that helps. A lean \code{\{path,node\_id\}} index
@@ -574,14 +594,17 @@ storage configuration---all on Community.
 
 \subsection{What remains open}
 
-Two things the measurements did not pin down. First, the exact origin of the
+Three things the measurements did not pin down. First, the exact origin of the
 original 2478\,ms---whole-system contention during the multi-engine run, or a
 cold-cache first touch before the collection was warm; point-lookup contention alone
 does not reproduce it (Section~\ref{sec:remeasure}), so the cause is heavier than the
-concurrency the workload itself generates. Second, the measured payoff of the
-structural-denormalization options above. Neither changes the practical conclusion:
+concurrency the workload itself generates. Second, the Subset Pattern under a
+cache-constrained host, where the inline-\code{text} collection spills RAM but the
+structure/title/summary collection fits; that is the production-scale premise this
+resident-cache experiment could not exercise. Third, the measured payoff of the
+structural-denormalization options above. None changes the measured conclusion:
 \code{get\_subtree} is a sub-second, ${\sim}3{\times}$-PostgreSQL operation whose only
-cheap fix---a covering index---has limited upside.
+cheap resident-cache fix---a covering index---has limited upside.
 
 \section{Conclusion}
 
@@ -594,10 +617,16 @@ re-measurement puts its steady-state P95 at ${\sim}0.4$\,s, roughly $3{\times}$
 PostgreSQL and ${\sim}3{\times}$ at the median too---not the multi-second tail the
 first run recorded, which we trace to contention rather than to the query. The cost
 is the per-node \code{FETCH} count, which tracks the number of nodes in the
-subtree. The practical reading: \code{get\_subtree} is the one place MongoDB trails,
-the gap is ${\sim}3{\times}$ on a sub-second, infrequent operation, and not a reason
-against MongoDB for this workload. Its optimization space is narrow: because the
-cost is the \emph{number} of per-node fetches, only removing them helps, and a
-covering index---the one cheap lever---buys just ${\sim}1.4{\times}$ (Section~\ref{sec:opt}).
+subtree. The practical reading splits by regime. In the measured resident-cache
+regime, \code{get\_subtree} is the one place MongoDB trails, the gap is
+${\sim}3{\times}$ on a sub-second, infrequent operation, and not a reason against
+MongoDB for this workload; the only cheap lever is a covering index, worth just
+${\sim}1.4{\times}$ (Section~\ref{sec:opt}). In a production-scale,
+cache-constrained deployment, the priority order reverses: split \code{text} first
+so the hot structure/title/summary working set can remain cached, keep every
+index and shard key led by \code{tree\_id}, and then consider covering indexes or
+denormalized subtree views. That production ordering is a schema requirement to
+protect cache residency, not a latency gain quantified by this resident-cache
+experiment.
 
 \end{document}
