@@ -466,27 +466,6 @@ was warm---not of the query in steady state. The mechanism from the previous sec
 still holds (each matched node is a separate \code{FETCH}, so cost grows with subtree
 size), but its steady-state magnitude is sub-second.
 
-\section{Is MongoDB the wrong tool?}
-
-The introduction asked whether a document store is the right home for this data,
-and \code{get\_subtree} is where the question bites: a relational or columnar engine
-does this operation natively, reading one column and never touching the \code{text}
-blob, which is why PostgreSQL posts a ${\sim}123$\,ms tail to MongoDB's ${\sim}0.4$\,s
-(Section~\ref{sec:remeasure}). On the bare operation the relational model is the
-better fit, and this report does not pretend otherwise.
-
-But the gap is ${\sim}3{\times}$ on a sub-second, infrequent operation---not the order
-of magnitude the first run implied---and it sits against MongoDB's wins on every
-other operation the workload issues: point, children, and content reads;
-vacuum-free updates; concurrency; footprint. Three workload facts keep it in
-proportion. The subtree view needs only \code{node\_id}, \code{title}, and
-\code{summary}, never the large \code{text}. The tree is largely write-once after
-ingest. And the largest subtrees sit near the root, which a top-down traversal
-pulls at most once or twice per query before descending into progressively smaller,
-faster ones. The verdict is conditional but, for \emph{this} workload, clear: a
-${\sim}3{\times}$ tail on the one projection-heavy scan does not outweigh MongoDB's
-advantages elsewhere.
-
 \section{Optimizing \code{get\_subtree}}\label{sec:opt}
 
 Because the harness was already in place, we did not stop at recommending fixes---we
@@ -605,6 +584,27 @@ resident-cache experiment could not exercise. Third, the measured payoff of the
 structural-denormalization options above. None changes the measured conclusion:
 \code{get\_subtree} is a sub-second, ${\sim}3{\times}$-PostgreSQL operation whose only
 cheap resident-cache fix---a covering index---has limited upside.
+
+\section{Is MongoDB the wrong tool?}
+
+The introduction asked whether a document store is the right home for this data,
+and \code{get\_subtree} is where the question bites: a relational or columnar engine
+does this operation natively, reading one column and never touching the \code{text}
+blob, which is why PostgreSQL posts a ${\sim}123$\,ms tail to MongoDB's ${\sim}0.4$\,s
+(Section~\ref{sec:remeasure}). On the bare operation the relational model is the
+better fit, and this report does not pretend otherwise.
+
+But the gap is ${\sim}3{\times}$ on a sub-second, infrequent operation---not the order
+of magnitude the first run implied---and it sits against MongoDB's wins on every
+other operation the workload issues: point, children, and content reads;
+vacuum-free updates; concurrency; footprint. Three workload facts keep it in
+proportion. The subtree view needs only \code{node\_id}, \code{title}, and
+\code{summary}, never the large \code{text}. The tree is largely write-once after
+ingest. And the largest subtrees sit near the root, which a top-down traversal
+pulls at most once or twice per query before descending into progressively smaller,
+faster ones. The verdict is conditional but, for \emph{this} workload, clear: a
+${\sim}3{\times}$ tail on the one projection-heavy scan does not outweigh MongoDB's
+advantages elsewhere.
 
 \section{Conclusion}
 
