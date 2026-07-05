@@ -35,8 +35,8 @@
   \par\medskip\noindent{\bfseries\abstractname.}\enspace\ignorespaces
 }{\par\medskip}
 
-\title{\textbf{Storage Engines for PageIndex Retrieval:\\ A Workload-Grounded
-Benchmark of MongoDB, PostgreSQL, DuckDB, and SQLite}}
+\title{\textbf{MongoDB for PageIndex Retrieval:\\ Preliminary Benchmark,
+Diagnosis, and Deployment Optimization Plan}}
 \author{Junyao Dong}
 \date{}
 
@@ -44,28 +44,26 @@ Benchmark of MongoDB, PostgreSQL, DuckDB, and SQLite}}
 \maketitle
 
 \begin{abstract}
-PageIndex turns documents into large hierarchical JSON trees that an agent
-navigates from the root to the relevant nodes. We benchmark four storage engines
-(MongoDB, PostgreSQL/JSONB, DuckDB, and SQLite, ConDB's current engine) on the
-exact operations ConDB's retrievers issue against storage, at scales up to ten
-million nodes. Across navigation reads, content fetch, writes, concurrency, and
-storage footprint, MongoDB is competitive on every operation except one:
-fetching a large subtree (\code{get\_subtree}), a materialized-path range scan
-matching tens of thousands of nodes. The initial benchmark recorded a multi-second
-P95 there, but a controlled re-measurement---in isolation and under concurrent
-load, with the collection fully resident in cache---finds a stable P95 of roughly
-$0.4$\,s, about $3{\times}$ PostgreSQL rather than the order of magnitude the first
-run suggested; the seconds-level figure was a contention artifact of the
-concurrent multi-engine run, not a steady-state cost. We trace the remaining gap to
-MongoDB's document-at-a-time read model: each matched node is a separate
-\code{FETCH}, so the cost tracks the number of nodes in the subtree. We also
-measure fixes on Community Edition (Section~\ref{sec:opt}). In the measured
-resident-cache regime, because the cost is the \emph{number} of fetches, only
-removing them helps, and only modestly---a covering index buys
-${\sim}1.4{\times}$---since the sub-second baseline leaves little to gain. That
-ranking does not replace the production-scale schema rule: when many trees make
-the hot working set larger than RAM, split \code{text} first so
-structure/title/summary can stay cached.
+PageIndex stores documents as large hierarchical JSON trees that an agent
+navigates from the root to relevant nodes. This report first presents a
+preliminary benchmark of the exact storage calls issued by ConDB's retrievers on
+MongoDB, PostgreSQL/JSONB, DuckDB, and SQLite, at scales up to ten million nodes.
+MongoDB is competitive on navigation reads, content fetch, writes, concurrency,
+and storage footprint; the only material weakness is \code{get\_subtree}, a
+materialized-path range scan over tens of thousands of nodes. The initial
+multi-engine run recorded a 2.5\,s MongoDB P95 for that operation, but a
+controlled re-measurement with the collection resident in cache gives a stable
+P95 of roughly 0.4\,s, about $3{\times}$ PostgreSQL rather than the
+${\sim}20{\times}$ implied by the first tail. The diagnosis is MongoDB's
+document-at-a-time read model: a non-covering subtree scan performs one
+\code{FETCH} per matched node. A resident-cache A/B test shows the consequence:
+splitting \code{text} out of the node document does not change latency when both
+schemas already fit in cache, while a lean covering index gives a modest
+${\sim}1.4{\times}$ improvement by removing \code{FETCH}. The deployment plan is
+therefore ordered by production constraints, not by the resident-cache A/B:
+split \code{text} first to protect cache residency, keep sharding and compound
+indexes led by \code{tree\_id}, add lean covering indexes where useful, and
+denormalize hot subtree views only if \code{get\_subtree} remains a bottleneck.
 \end{abstract}
 
 \section{Introduction}
@@ -74,10 +72,11 @@ ConDB indexes a document as a PageIndex tree: a hierarchy of nodes carrying a
 title, a summary, page indices, and (at the leaves) text. Retrieval is a
 top-down traversal: the retriever starts at the root, lists a node's children to
 decide where to descend, pulls a subtree for the language model to read, and
-fetches the content of the nodes it selects. The project question is whether a
-document store (MongoDB) is the right home for this data and, if so, what to
-optimize. This report answers both with measurements, including a measured
-optimization plan for the one weak spot (Section~\ref{sec:opt}).
+fetches the content of the nodes it selects. This report is organized as an
+experiment-to-plan document. Section~\ref{sec:prelim} presents the preliminary
+benchmark, the MongoDB bottleneck diagnosis, and the resident-cache optimization
+A/B. Section~\ref{sec:opt} converts those measurements into a deployment
+optimization plan.
 
 We deliberately benchmark only the operations ConDB actually issues. Generic
 database operations that the retrieval path never performs (ancestor-to-root
@@ -162,9 +161,11 @@ All measurements are single-host. The operations through concurrency use one
 tree per database; multi-tenancy, batched reads, and deletion are measured
 separately below on 25 co-resident trees.
 
-\section{Results}
+\section{Preliminary experiments and diagnosis}\label{sec:prelim}
 
-\subsection{Storage and ingest}
+\subsection{Baseline benchmark}\label{sec:baseline}
+
+\subsubsection{Storage and ingest}
 
 \begin{table}[h]
 \caption{Storage and ingest (large dataset). On-disk totals include the indexes.
@@ -190,7 +191,7 @@ through columnar encoding and MongoDB through compression; even uncompressed,
 MongoDB's 15.21\,GB of BSON is no larger than the relational engines' raw
 tables. PostgreSQL and SQLite are several times larger on disk.
 
-\subsection{Retrieval operations}
+\subsubsection{Retrieval operations}
 
 The navigation reads (point lookup, children, content fetch) are sub-millisecond
 on every engine but DuckDB, which is not built for OLTP point reads. MongoDB runs
@@ -241,7 +242,7 @@ run; in isolation and under concurrent load it is ${\sim}0.4$\,s
 \label{fig:subtree}
 \end{figure}
 
-\subsection{Write path}
+\subsubsection{Write path}
 
 On the write path (Table~\ref{tab:write}), PostgreSQL posts the lower update
 latency of the two servers, but each \code{jsonb\_set} versions the row and leaves
@@ -268,7 +269,7 @@ SQLite             & \best{0.017} & \best{40{,}442} & \best{21{,}815} & \best{0\
 \end{ctab}
 \end{table}
 
-\subsection{Concurrency}
+\subsubsection{Concurrency}
 
 Single-call latency understates the server engines. Driving point lookups from a
 growing pool of independent OS processes (no GIL bottleneck), both server engines
@@ -286,7 +287,7 @@ peak positions and heights somewhat; the shapes hold.
 \label{fig:conc}
 \end{figure}
 
-\subsection{Multi-tenancy, batched reads, and deletion}
+\subsubsection{Multi-tenancy, batched reads, and deletion}
 
 Mapping the retriever's calls to storage surfaces three operations the sections
 above leave out: a per-query tenant filter when many trees share one store, the
@@ -380,11 +381,13 @@ DuckDB             & 20{,}171  & checkpoint         & --      & 790\,MB, no shri
 \end{ctab}
 \end{table}
 
-None of the three shifts the report's conclusion: MongoDB holds the tenant filter
-at scale, wins the batched read outright, and on deletion trails only on a
-locking-free shrink that retrieval never triggers.
+None of the three changes the benchmark conclusion: a \code{tree\_id}-led index
+keeps tenant selectivity stable, batched reads remove the point-lookup loop cost,
+and deletion behavior affects lifecycle maintenance rather than retrieval.
 
-\section{Why MongoDB trails on \code{get\_subtree}}
+\subsection{MongoDB \code{get\_subtree} diagnosis}\label{sec:diagnosis}
+
+\subsubsection{Root cause}
 
 The cause is structural, not a configuration mistake. MongoDB's unit of read is
 the whole document. A secondary index (here on \code{path}) is a separate
@@ -413,14 +416,13 @@ requested column in vectorized batches. Both could go further still with a
 covering index that answers the range from the index alone (Section~\ref{sec:opt}).
 All of these do far less per-row work than a per-document fetch.
 
-This is the price of the document model, and it is also why MongoDB wins
-elsewhere: storing all of a node's fields together makes ``fetch one whole
-entity'' fast (point and children reads), in-place field updates cheap (the
-write path), the layout shard-friendly (concurrency), and the on-disk form
-compact (storage). MongoDB is optimized for a different access pattern, and the
-PageIndex workload plays to it on every operation but one.
+This is the trade-off of the document model. It is unfavorable for a
+projection-heavy range scan over many nodes, but favorable for operations that
+read or update a whole node: point reads, children reads, content fetches, field
+updates, tenant-local sharding, and compressed storage. The PageIndex workload
+matches that model on every measured operation except the large-subtree scan.
 
-\section{Re-measuring the tail}\label{sec:remeasure}
+\subsubsection{Controlled tail re-measurement}\label{sec:remeasure}
 
 The original \code{get\_subtree} figure (P95 2478\,ms) was recorded while the other
 three engines, the write benchmark, and the concurrency sweep ran on the same host.
@@ -466,18 +468,18 @@ was warm---not of the query in steady state. The mechanism from the previous sec
 still holds (each matched node is a separate \code{FETCH}, so cost grows with subtree
 size), but its steady-state magnitude is sub-second.
 
-\section{Optimizing \code{get\_subtree}}\label{sec:opt}
+\subsection{Resident-cache optimization A/B}\label{sec:resident-ab}
 
-Because the harness was already in place, we did not stop at recommending fixes---we
-ran them on the ten-million-node tree and measured (Table~\ref{tab:opt}). Each keeps
-MongoDB on Community Edition with no engine change. The short version for this
-measurement is deliberately narrow: with the collection fully resident in cache,
-the document model's cost is the \emph{number} of fetches, so only removing fetches
-helps, and even that is modest because the steady-state baseline is already
-sub-second.
+The diagnosis above separates two regimes. The first is the resident-cache
+experiment: which schema/index variants change \code{get\_subtree} when the whole
+collection already fits in cache? The second is production deployment: which
+schema choices are required when the working set no longer fits RAM? This section
+answers only the resident-cache question. Each variant below stays on MongoDB
+Community Edition and was measured on the ten-million-node tree
+(Table~\ref{tab:opt}).
 
 \begin{table}[h]
-\caption{\code{get\_subtree} fixes measured on the 10M tree (one client; view returns
+\caption{\code{get\_subtree} variants measured on the 10M tree (one client; view returns
 \code{node\_id}+\code{title}+\code{summary}, id returns \code{node\_id} only; ms).}
 \label{tab:opt}
 \begin{ctab}
@@ -498,20 +500,20 @@ Lean covering ${+}$ batched \code{\$in}, view & 137 & 1314 & ${\sim}3{\times}$ s
 \noindent Table~\ref{tab:opt} is therefore a \emph{resident-cache} optimization
 ranking, not a full deployment ranking. In a large deployment with many trees or
 tenants, the constraint can reverse: the working set may exceed RAM, and then the
-first-order question is which bytes remain cache-resident. Under that condition,
+dominant constraint is which bytes remain cache-resident. Under that condition,
 splitting \code{text} out of the hot node collection is the first schema
 requirement, followed by \code{tree\_id}-led indexes/sharding so each query stays
 tenant-local, and then by lean covering indexes or denormalized subtree views. The
 experiment below does not quantify that cache-constrained benefit; it only shows
 that the benefit cannot appear when both schemas already fit in cache.
 
-\subsection{What the measurements say}
+\subsubsection{Measured resident-cache variants}
 
-\paragraph{Splitting the \code{text} field does nothing in this resident-cache
-experiment.} The intuitive fix---move the large \code{text} into a separate
-collection so the scanned documents are small---was the leading hypothesis, and it
-is wrong here. It shrinks the collection by ${\sim}75\%$ ($4.97\to1.25$\,GB) yet
-leaves \code{get\_subtree} P95 unchanged ($419\to419$\,ms). The reason is the cache:
+\paragraph{Subset Pattern: no latency change while resident.} Moving the large
+\code{text} field into a separate collection shrinks the scanned documents, but in
+this resident-cache experiment it does not reduce latency. It shrinks the
+collection by ${\sim}75\%$ ($4.97\to1.25$\,GB) yet leaves \code{get\_subtree} P95
+unchanged ($419\to419$\,ms). The reason is the cache:
 at $540$\,GB it holds the whole collection many times over
 (Section~\ref{sec:remeasure}), so document \emph{size} never gates the
 scan---document \emph{count} does. Each of the ${\sim}36$k matched nodes is a
@@ -522,14 +524,15 @@ inline \code{text} pushes the structure/title/summary working set out of cache, 
 split becomes a cache-residency requirement even though it did not move this
 resident-cache latency number.
 
-\paragraph{A covering index is the only real lever, and a modest one.} Removing the
-\code{FETCH} is the one thing that helps. A lean \code{\{path,node\_id\}} index
-serves the id-only subtree query index-only (\code{explain} confirms
+\paragraph{Covering index: modest improvement by removing \code{FETCH}.} Covered
+execution is the only measured resident-cache variant that reduces latency. A
+lean \code{\{path,node\_id\}} index serves the id-only subtree query index-only
+(\code{explain} confirms
 \code{PROJECTION\_COVERED}, \code{totalDocsExamined:\,0}) for ${\sim}1.4{\times}$. But
 the tree view also needs \code{title} and \code{summary}: extending the index to
 cover them works (${\sim}1.2{\times}$) yet inflates it to $4.66$\,GB---as large as the
-collection's own data---because \code{summary} is a multi-kilobyte key, confirming
-the fat-key concern. Resolving the view with a covered id scan plus a batched
+collection's own data---because \code{summary} is a multi-kilobyte key. Resolving
+the view with a covered id scan plus a batched
 \code{\$in} is worse, not better (${\sim}3{\times}$ slower): a ${\sim}36$k-id
 \code{\$in} overflows the 16\,MB command limit (forcing ${\sim}36$ chunked round
 trips) and re-fetches the same documents anyway. Keep the anchored
@@ -537,20 +540,20 @@ materialized-path range as the predicate---an unanchored regex cannot form a ran
 and must scan the whole index---and treat cache sizing and \code{zstd} as
 irrelevant here: the data is already resident, so neither touches the per-fetch cost.
 
-\paragraph{A larger win needs structural denormalization, untested here.} Nested
+\paragraph{Structural denormalization: larger but unmeasured.} Nested
 Sets or a tree-order \code{\_id} on a clustered collection turns the subtree into one
 range query or a sequential read; a pre-computed subtree document turns it into a
 point read. All are viable precisely because the tree is write-once (their cost is
 paid once at ingest), and all remove fetches wholesale rather than shrinking them.
-We did not measure them: with the baseline already at ${\sim}0.4$\,s, the open
-question is whether the schema complexity is worth shaving a sub-second, infrequent
-operation. (\code{\$graphLookup} is not a candidate---it re-traverses
+They were not measured in this pass. With the baseline already at ${\sim}0.4$\,s,
+the remaining decision is whether the added schema complexity is justified for a
+sub-second, infrequent operation. (\code{\$graphLookup} is not a candidate---it re-traverses
 \code{parent\_id}, still materializes documents, and in 7.0 is capped at 100\,MB and
 ignores \code{allowDiskUse}.)
 
-\subsection{What will not help}
+\subsubsection{Out-of-scope levers for this bottleneck}
 
-\paragraph{A newer MongoDB version does not close the gap.} Upgrading the engine
+\paragraph{MongoDB version upgrade.} Upgrading the engine
 does not fix this without a schema change. Against this operation---a
 projection-heavy range scan over ordinary documents---the 8.0--8.3 line offers
 nothing: the 8.0 \emph{Express} path is a point/equality fast path on a single
@@ -560,73 +563,78 @@ is scoped to time-series collections, and the \code{\$graphLookup} disk-spill fi
 recursive alternative anyway. The document-at-a-time \code{FETCH} is unchanged
 across the line.
 
-\paragraph{What Community Edition does not offer.} The feature that would fix this
-most cleanly---a column-store index, so a projection-heavy scan reads only the
+\paragraph{Atlas/Enterprise-only features.} The most direct engine feature for
+this access pattern is a column-store index, so a projection-heavy scan reads only the
 projected column, as the relational engines do---is Atlas-only. But PageIndex never
 scans the whole corpus, so a column store solves a problem this workload does not
-have; the schema fixes above address the one it does. Self-managed Search and
+have; the schema changes above address the one it does. Self-managed Search and
 Vector Search run on Community since 8.2 (a separate \code{mongot} process, public
 preview, replica set required) but serve relevance retrieval, not a
 range-projection scan. No Atlas- or Enterprise-only feature addresses the
 document-at-a-time read model itself, so the only levers are schema, index, and
 storage configuration---all on Community.
 
-\subsection{What remains open}
+\section{Deployment optimization plan}\label{sec:opt}
 
-Three things the measurements did not pin down. First, the exact origin of the
-original 2478\,ms---whole-system contention during the multi-engine run, or a
-cold-cache first touch before the collection was warm; point-lookup contention alone
-does not reproduce it (Section~\ref{sec:remeasure}), so the cause is heavier than the
-concurrency the workload itself generates. Second, the Subset Pattern under a
-cache-constrained host, where the inline-\code{text} collection spills RAM but the
-structure/title/summary collection fits; that is the production-scale premise this
-resident-cache experiment could not exercise. Third, the measured payoff of the
-structural-denormalization options above. None changes the measured conclusion:
-\code{get\_subtree} is a sub-second, ${\sim}3{\times}$-PostgreSQL operation whose only
-cheap resident-cache fix---a covering index---has limited upside.
+The measured A/B in Section~\ref{sec:resident-ab} ranks variants only for a
+cache-resident host. A production deployment has the opposite constraint: many
+trees or tenants can make the working set larger than RAM, so the first goal is
+to keep the hot navigation data in cache. The deployment plan is therefore:
 
-\section{Is MongoDB the wrong tool?}
+\begin{enumerate}\itemsep2pt
+\item \textbf{Split \code{text} from the hot node collection.} Store
+  \code{tree\_id}, \code{node\_id}, structure, \code{title}, and \code{summary} in
+  the navigation collection, and store large body text in a separate collection
+  keyed by \code{(tree\_id,node\_id)}. The resident-cache experiment shows this is
+  not a latency improvement when both layouts fit in RAM. At production scale it is still
+  the first schema requirement, because \code{get\_subtree} and navigation never
+  need body text; keeping text inline only makes cold payload bytes compete with
+  hot structure bytes for cache.
+\item \textbf{Lead every index and shard key with \code{tree\_id}.} Multi-tenant
+  reads must remain tenant-local: point lookup, children lookup, subtree range
+  scan, and content fetch should all be served by compound indexes beginning with
+  \code{tree\_id}. This preserves selectivity as the number of trees grows and is
+  the natural shard key for horizontal scale.
+\item \textbf{Add lean covering indexes on the navigation collection.} A
+  \code{\{tree\_id,path,node\_id\}} index can serve id-only subtree scans without
+  document fetch. Avoid putting multi-kilobyte \code{summary} into the default
+  covering key unless the measured workload requires it: the resident-cache A/B
+  shows the fat index works, but the 4.66\,GB index buys only a small additional
+  gain.
+\item \textbf{Denormalize hot subtree views only after measuring demand.} If
+  \code{get\_subtree} remains a top latency contributor, use write-once structure
+  to precompute bounded structure+summary subtree views, or add Nested Sets /
+  tree-order \code{\_id} for range-locality. These are the only options that remove
+  the many-fetch shape entirely, but they add storage amplification and more
+  complicated ingest.
+\end{enumerate}
 
-The introduction asked whether a document store is the right home for this data,
-and \code{get\_subtree} is where the question bites: a relational or columnar engine
-does this operation natively, reading one column and never touching the \code{text}
-blob, which is why PostgreSQL posts a ${\sim}123$\,ms tail to MongoDB's ${\sim}0.4$\,s
-(Section~\ref{sec:remeasure}). On the bare operation the relational model is the
-better fit, and this report does not pretend otherwise.
-
-But the gap is ${\sim}3{\times}$ on a sub-second, infrequent operation---not the order
-of magnitude the first run implied---and it sits against MongoDB's wins on every
-other operation the workload issues: point, children, and content reads;
-vacuum-free updates; concurrency; footprint. Three workload facts keep it in
-proportion. The subtree view needs only \code{node\_id}, \code{title}, and
-\code{summary}, never the large \code{text}. The tree is largely write-once after
-ingest. And the largest subtrees sit near the root, which a top-down traversal
-pulls at most once or twice per query before descending into progressively smaller,
-faster ones. The verdict is conditional but, for \emph{this} workload, clear: a
-${\sim}3{\times}$ tail on the one projection-heavy scan does not outweigh MongoDB's
-advantages elsewhere.
+\noindent The rollout test should reproduce the missing production condition:
+run the Subset Pattern A/B with the WiredTiger cache below the inline-text working
+set and above the split navigation working set. That experiment prices the
+cache-residency benefit directly. The current preliminary benchmark cannot
+quantify it because both layouts were already cache-resident.
 
 \section{Conclusion}
 
-For the PageIndex retrieval workload, MongoDB is competitive on point and children
-reads and content fetch, accumulates no dead-tuple bloat under updates (no vacuum
-debt), has a compact footprint, and scales monotonically under concurrency with the
-lowest tail latency of the server engines (though not their highest absolute
-throughput). Its one relative weakness is \code{get\_subtree}: a controlled
-re-measurement puts its steady-state P95 at ${\sim}0.4$\,s, roughly $3{\times}$
-PostgreSQL and ${\sim}3{\times}$ at the median too---not the multi-second tail the
-first run recorded, which we trace to contention rather than to the query. The cost
-is the per-node \code{FETCH} count, which tracks the number of nodes in the
-subtree. The practical reading splits by regime. In the measured resident-cache
-regime, \code{get\_subtree} is the one place MongoDB trails, the gap is
-${\sim}3{\times}$ on a sub-second, infrequent operation, and not a reason against
-MongoDB for this workload; the only cheap lever is a covering index, worth just
-${\sim}1.4{\times}$ (Section~\ref{sec:opt}). In a production-scale,
-cache-constrained deployment, the priority order reverses: split \code{text} first
-so the hot structure/title/summary working set can remain cached, keep every
-index and shard key led by \code{tree\_id}, and then consider covering indexes or
-denormalized subtree views. That production ordering is a schema requirement to
-protect cache residency, not a latency gain quantified by this resident-cache
-experiment.
+The preliminary benchmark supports MongoDB for the PageIndex retrieval workload
+with one qualification. Point reads, children reads, content fetches, writes,
+multi-tenant selectivity, batched reads, concurrency, and footprint are all
+acceptable or favorable. The one weak operation is \code{get\_subtree}, whose
+steady-state P95 is about 0.4\,s on the large tree after re-measurement, roughly
+$3{\times}$ PostgreSQL rather than the 2.5\,s first observed under whole-system
+contention.
+
+The resident-cache optimization A/B shows that the measured bottleneck is the
+number of non-covering document fetches. Splitting \code{text} does not improve
+latency when both layouts fit in cache; a lean covering index gives the only
+cheap measured improvement, about ${\sim}1.4{\times}$. That A/B does not set the
+production priority order. For deployment, the first schema step is still to
+split \code{text} from the navigation collection so the hot structure/title/summary
+working set can remain cache-resident. After that, keep indexes and shard keys
+led by \code{tree\_id}, add lean covering indexes where they serve real hot paths,
+and reserve subtree denormalization for measured \code{get\_subtree} bottlenecks.
+The remaining validation is a cache-constrained Subset Pattern A/B that forces
+the inline-text layout out of cache while the split navigation layout fits.
 
 \end{document}
