@@ -48,8 +48,8 @@ PageIndex stores documents as large hierarchical JSON trees that an agent
 navigates from the root to relevant nodes. This report benchmarks the exact
 storage calls issued by ConDB's retrievers on MongoDB, PostgreSQL/JSONB, DuckDB,
 and SQLite, at scales up to ten million nodes.
-MongoDB is competitive on navigation reads, content fetch, writes, concurrency,
-and storage footprint. The one operation that stresses it,
+MongoDB is competitive on navigation reads, content fetch, and storage
+footprint. The one operation that stresses it,
 \code{get\_subtree}---a materialized-path range scan matching tens of thousands
 of nodes---is a schema problem rather than an engine ceiling: MongoDB's unit of
 read is the whole document, and a non-covered scan performs one \code{FETCH} per
@@ -88,8 +88,7 @@ results would not inform the optimization.
 \paragraph{Operations.} The retrievers
 (\code{beam\_retriever.py}, \code{block\_retriever.py}) reach storage through
 four calls (Table~\ref{tab:ops}). Everything measured below is one of
-these, plus the storage footprint, the write path (incremental index and
-reasoning-trace edits), and concurrency.
+these, plus the storage footprint.
 
 \begin{table}[h]
 \caption{The storage operations ConDB retrieval issues.}
@@ -133,14 +132,8 @@ PostgreSQL~16 (JSONB document column) run as servers in Docker
 over localhost; DuckDB and SQLite are embedded. The storage, ingest, and read
 measurements (Tables~\ref{tab:storage}, \ref{tab:read}, \ref{tab:solid}) were
 taken on a dedicated, otherwise idle 16-vCPU AMD EPYC 9754 host with 61\,GiB of
-RAM and local NVMe, one engine resident at a time; the write-path, concurrency,
-multi-tenancy, and deletion measurements below are from an earlier run on a
-96-core host with 1\,TB of RAM.
-% NOTE(sg-rerun): host description updated for the isolated re-run; review the
-% "cache-resident" sentence at the end of this paragraph -- on the 61 GiB host
-% it holds for every measured layout except monolithic-with-text MongoDB, whose
-% uncompressed BSON no longer fits comfortably alongside the bench client (its
-% non-covered subtree scan tail inflates; that layout's scan is not reported). Every engine stores the same logical
+RAM and local NVMe, one engine resident at a time.
+Every engine stores the same logical
 fields per node and the indexes each query needs. The relational engines
 flatten the tree to one row per node; a row store materializes only the
 requested columns, so wide fields sit unread in the row (PostgreSQL additionally
@@ -157,8 +150,7 @@ the others' binary comparison); the subtree query returns node ids on every
 engine. Each read is measured over 500 sampled
 nodes (200 subtree roots, drawn at depth ${\le}3$), fixed by seed and identical
 across engines; every query was checked to return the same row count on all
-four engines. Each concurrency level runs its client processes for five
-seconds. The host has ample memory, so every engine's data is cache-resident
+four engines. The host has ample memory, so every engine's data is cache-resident
 and reads are not disk-bound.
 
 \paragraph{Fairness caveats.} SQLite and DuckDB run in-process, so a query is a
@@ -166,14 +158,11 @@ function call; MongoDB and PostgreSQL pay per-call client--server overhead (a
 localhost round trip plus protocol handling) that the embedded engines never
 incur. The fair single-call comparison is therefore MongoDB versus
 PostgreSQL; absolute microseconds across the embedded/server line are not
-comparable, and the concurrency section (independent processes, no GIL) shows
-real server throughput. MongoDB's \code{storageSize} is post-compression
+comparable. MongoDB's \code{storageSize} is post-compression
 (WiredTiger snappy); the others are uncompressed on-disk files, so MongoDB's
 uncompressed logical size is reported separately, and the random-word content
 likely compresses better than real prose, flattering the compressed figure.
-All measurements are single-host. The operations through concurrency use one
-tree per database; multi-tenancy, batched reads, and deletion are measured
-separately below on 25 co-resident trees.
+All measurements are single-host, one tree per database.
 
 \section{Experiments and diagnosis}\label{sec:prelim}
 
@@ -218,8 +207,9 @@ deployed schema's structure collection by a covering index, it runs index-only
 and lands within ${\sim}1.4{\times}$ of PostgreSQL (Table~\ref{tab:read});
 Section~\ref{sec:diagnosis} explains why the same scan over monolithic node
 documents---one \code{FETCH} per matched node---is the one layout this operation
-punishes. The materialized-path range also beats a recursive \code{parent\_id}
-traversal, so ConDB should keep it.
+punishes. ConDB should keep the materialized-path predicate: a recursive
+\code{parent\_id} traversal issues one query per level and never gets the
+subtree as a single contiguous index range.
 
 \begin{table}[h]
 \caption{Retrieval read latency (ms, lower is better). Best per row in bold.
@@ -248,159 +238,6 @@ Fetch content       & 0.321 / 0.35 & 0.065 / 0.09 & 10.5 / 17.5 & \best{0.011 / 
 \end{ctab}
 \end{table}
 
-\begin{figure}[h]
-\centering
-% NOTE(sg-rerun): this PDF still plots the previous host's numbers; regenerate
-% with make_figures.py from runs/read_large_*.json + runs/subset_kv_large.json.
-\includegraphics[width=0.6\linewidth]{figures/subtree.pdf}
-\caption{\code{get\_subtree} latency on the large dataset (log scale). MongoDB is
-measured on the deployed schema (covered structure scan,
-Section~\ref{sec:solid}). The medians are within a small factor of each other;
-MongoDB's tail is within ${\sim}1.4{\times}$ of PostgreSQL.}
-\label{fig:subtree}
-\end{figure}
-
-\subsubsection{Write path}
-
-On the write path (Table~\ref{tab:write}), PostgreSQL posts the lower update
-latency of the two servers, but each \code{jsonb\_set} versions the row and leaves
-a dead tuple for a later \code{VACUUM}. WiredTiger is MVCC too, yet it reclaims
-obsolete document versions automatically, so an update-heavy workload carries no
-growing bloat; its measured on-disk delta is small but noisy, since WiredTiger
-reports storage in checkpoint-sized chunks. DuckDB is unsuitable for OLTP writes.
-
-\begin{table}[h]
-\caption{Write path (medium): 5{,}000 field updates, 2{,}000 incremental
-inserts. ``Bloat'' is on-disk growth from the updates.}
-\label{tab:write}
-\begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Engine & Upd.\ P50 & Upd.\ ops/s & Insert ops/s & Bloat \\
-\midrule
-\key MongoDB            & 0.242 & 4{,}050 & 5{,}586 & \best{0\,MB} \\
-PostgreSQL (JSONB) & 0.123 & 7{,}856 & 8{,}732 & 7\,MB \\
-DuckDB             & 2.966 & 332     & 450     & 7\,MB \\
-SQLite             & \best{0.017} & \best{40{,}442} & \best{21{,}815} & \best{0\,MB} \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\subsubsection{Concurrency}
-
-Single-call latency understates the server engines. Driving point lookups from a
-growing pool of independent OS processes (no GIL bottleneck), both server engines
-gain throughput with added clients, and the gap to the embedded engines narrows
-far below what the single-call numbers suggest (Figure~\ref{fig:conc}). MongoDB
-rises steadily across the whole range; PostgreSQL peaks near 16 clients; SQLite is
-fastest in absolute terms but peaks earliest, within the first few clients, then
-degrades as the processes contend on its single file. Repeated runs move the
-peak positions and heights somewhat; the shapes hold.
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=0.6\linewidth]{figures/concurrency.pdf}
-\caption{Point-lookup throughput versus concurrent client processes (medium).}
-\label{fig:conc}
-\end{figure}
-
-\subsubsection{Multi-tenancy, batched reads, and deletion}
-
-Mapping the retriever's calls to storage surfaces three operations the sections
-above leave out: a per-query tenant filter when many trees share one store, the
-batched id-list read the navigation step issues, and whole-tree deletion. We
-measure them on the medium tree replicated into 25 co-resident trees
-(1{,}771{,}075 rows in one store), with every read filtered by \code{tree\_id}
-and served by a compound index led by \code{tree\_id}.
-
-\paragraph{Multi-tenant selectivity.} With 25 trees in one collection, a
-\code{tree\_id}-led index holds each read close to its single-tree latency
-(Table~\ref{tab:mt}): the cost tracks index depth, not the number of co-resident
-trees. MongoDB rises about $1.5{\times}$ on point and children lookups over the
-single-tree medium figures (Table~\ref{tab:read}) for a $25{\times}$ larger
-store, with no scan blow-up, and the MongoDB--PostgreSQL ordering is unchanged.
-
-\begin{table}[h]
-\caption{Per-query reads with 25 trees co-resident in one store, each filtered
-by \code{tree\_id} (P50, ms).}
-\label{tab:mt}
-\begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Operation & MongoDB & PostgreSQL & DuckDB & SQLite \\
-\midrule
-Point lookup    & 0.345 & 0.124 & 3.772 & \best{0.008} \\
-Expand children & 0.372 & 0.147 & 3.073 & \best{0.014} \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\paragraph{Batched reads.} The navigation step returns a list of candidate node
-ids, so the retriever fetches several nodes at once. One batched read
-(\code{\$in} on MongoDB, \code{IN} on the relational engines) beats the
-point-lookup loop it replaces on every engine, and the margin grows with batch
-size because each iteration of the loop on a server engine is a round trip. At
-200 ids MongoDB is 4.6\,ms batched against 273\,ms looped, a $60{\times}$ gap;
-PostgreSQL is 1.4\,ms against 29\,ms (Table~\ref{tab:in}). MongoDB gains the most
-because batching amortizes the per-call client overhead that costs it on single
-reads; in-process SQLite, with no round trip, gains about $2{\times}$. The
-retriever should resolve a candidate set with one batched read, not a loop.
-
-\begin{table}[h]
-\caption{Batched id-list read at 10, 50, and 200 ids against the 200-id
-point-lookup loop it replaces (P50, ms per batch).}
-\label{tab:in}
-\begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Engine & \multicolumn{3}{c}{Batched ($n$ ids)} & Loop \\
- & 10 & 50 & 200 & 200 \\
-\midrule
-MongoDB            & 0.46 & 1.56 & 4.56 & 273 \\
-PostgreSQL (JSONB) & 0.27 & 0.78 & 1.40 & 29 \\
-DuckDB             & 19.6 & 22.2 & 39.1 & 790 \\
-SQLite             & \best{0.03} & \best{0.13} & \best{0.50} & \best{0.97} \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\paragraph{Deletion.} Removing a tree (one tenant, 70{,}843 of 1{,}771{,}075
-rows) is a lifecycle operation, not part of retrieval. The delete is fast on
-every engine, under four seconds, but none returns disk space on the delete
-alone (Table~\ref{tab:del}). SQLite (\code{VACUUM}) and PostgreSQL
-(\code{VACUUM FULL}) reclaim the removed tree's footprint through a full,
-locking rewrite that takes 10 to 17\,s; MongoDB \code{compact} and DuckDB do not
-measurably shrink the file for a single-tenant deletion, which is WiredTiger's
-documented behavior of not returning space to the operating system on delete.
-For MongoDB this mirrors the write path: WiredTiger carries no vacuum debt under
-updates, and in exchange a one-off bulk delete does not auto-shrink. WiredTiger
-reports \code{storageSize} in checkpoint-sized chunks, so changes below tens of
-megabytes are reporting granularity, not reclaimed space.
-
-\begin{table}[h]
-\caption{Whole-tree delete and space reclamation (delete one of 25 trees).}
-\label{tab:del}
-\begin{ctab}
-\begin{tabular}{@{}lrlrl@{}}
-\toprule
-\hdr Engine & Delete (rows/s) & Reclaim & Reclaim time & On-disk (before\,$\to$\,after) \\
-\midrule
-PostgreSQL (JSONB) & 157{,}578 & \code{VACUUM FULL} & 17.3\,s & 2.77\,$\to$\,2.66\,GB \\
-SQLite             & 141{,}842 & \code{VACUUM}      & 10.6\,s & 2.56\,$\to$\,2.46\,GB \\
-MongoDB            & 60{,}680  & \code{compact}     & 0.1\,s  & 911\,MB, no shrink \\
-DuckDB             & 20{,}171  & checkpoint         & --      & 790\,MB, no shrink \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-None of the three changes the benchmark conclusion: a \code{tree\_id}-led index
-keeps tenant selectivity stable, batched reads remove the point-lookup loop cost,
-and deletion behavior affects lifecycle maintenance rather than retrieval.
-
 \subsection{MongoDB \code{get\_subtree} diagnosis}\label{sec:diagnosis}
 
 MongoDB's unit of read is the whole document. A secondary index (here on
@@ -416,17 +253,8 @@ included). The data is resident and WiredTiger caches pages uncompressed, so the
 cost is neither disk I/O nor decompression: it is per-document work---locate the
 record, materialize the document, project, stream through the cursor---times
 subtree size. The other retrieval operations touch few documents and stay fast
-on any layout.
-
-Two controlled measurements on the ten-million-node tree (one measuring client,
-collection resident, the same 200 seeded subtree paths) narrow the cause. The
-cost is not interference: the scan's latency barely moves while 16, 32, then 64
-background processes hammer point lookups at the same server, with zero cache
-evictions throughout. And it is not document size: splitting the wide
-\code{text} field out removes ${\sim}75\%$ of every scanned document and leaves
-subtree latency unchanged, and even ${\sim}150$-byte topology-only documents pay
-most of the fetch cost. What gates the scan is the \emph{count} of fetches, so
-only removing the fetch helps---which is what the deployed schema does
+on any layout. What gates the scan is the \emph{count} of fetches, so only
+removing the fetch helps---which is what the deployed schema does
 (Section~\ref{sec:solid}).
 
 This is the trade-off of the document model, and it cuts both ways. A row store
@@ -477,8 +305,7 @@ at both percentiles (Table~\ref{tab:read}). The design has two traps, both
 flagged by MongoDB's product team when we discussed it. Covered execution is
 all-or-nothing: an index that serves the path filter but misses any projected
 field, or a projection that keeps \code{\_id}, silently reinstates the
-per-document \code{FETCH} (the structure scan without its covering index runs
-${\sim}1.6{\times}$ slower even on ${\sim}150$-byte documents). And the covering
+per-document \code{FETCH}. And the covering
 index's maintenance cost lands on writes, which the write-once tree turns into a
 one-time ingest cost: bulk load first, build the index after.
 
@@ -494,7 +321,6 @@ call.}
 \hdr Read & P50 & P95 & Note \\
 \midrule
 \key Structure scan (covered, ids) & 11.9 & 130 & \code{totalDocsExamined:\,0} \\
-Structure scan without covering index & 19.4 & 206 & \code{FETCH} per node \\
 ${+}$ metadata for all nodes, chunked \code{\$in} & 55.4 & 590 & ${\sim}36$ round trips \\
 ${+}$ metadata via server-side \code{\$lookup} & 381 & 4176 & one round trip \\
 ${+}$ metadata via \code{\$lookup}, clustered store & 279 & 3004 & one round trip \\
@@ -517,13 +343,13 @@ into the metadata store collapses the client round trips into one but performs
 the same ${\sim}36$k per-id index probes inside the aggregation pipeline,
 ${\sim}7{\times}$ slower at both percentiles; a clustered metadata collection
 (the record stored inside the \code{\_id} index) trims that by ${\sim}25\%$,
-still far behind the chunked \code{\$in}. The clustered store must not,
-however, be paired with the chunked \code{\$in} itself: with no separate
-\code{\_id} B-tree, the planner turns each 1{,}000-id batch into a
-\code{CLUSTERED\_IXSCAN} bounded only by the batch's min and max keys---observed
-at ${\sim}7$M documents examined per batch on the 10M tree, an extrapolated
-${>}100{\times}$ regression, so that measurement phase was aborted rather than
-run to completion. If a deployment does need the full
+still far behind the chunked \code{\$in}. One pairing is off the table: the
+clustered store under the chunked \code{\$in}. With no separate \code{\_id}
+B-tree, the planner turns each 1{,}000-id batch into a
+\code{CLUSTERED\_IXSCAN} bounded only by the batch's min and max keys, which on
+the 10M tree meant ${\sim}7$M documents examined per batch. We aborted that
+phase after confirming the plan; the extrapolated slowdown is over
+${100}{\times}$. If a deployment does need the full
 \code{node\_id}+\code{title}+\code{summary} view from a single indexed query, the
 alternative is to carry the metadata inside the covering index of a merged
 collection: it stays covered and beats the monolithic scan, but the
@@ -548,7 +374,7 @@ range query or a sequential read; a pre-computed subtree document turns it into 
 point read. All are viable precisely because the tree is write-once (their cost
 is paid once at ingest), and all would push the covered scan's remaining
 ${\sim}1.4{\times}$ toward parity. They were not measured in this pass; with the
-deployed schema already at $168$\,ms P95 for an infrequent operation, the
+deployed schema already at $130$\,ms P95 for an infrequent operation, the
 remaining decision is whether the added schema complexity is justified.
 (\code{\$graphLookup} is not a candidate---it re-traverses \code{parent\_id},
 still materializes documents, and in 7.0 is capped at 100\,MB and ignores
@@ -615,8 +441,8 @@ already cache-resident.
 \section{Conclusion}
 
 The benchmark supports MongoDB for the PageIndex retrieval workload. Point
-reads, children reads, content fetches, writes, multi-tenant selectivity,
-batched reads, concurrency, and footprint are all acceptable or favorable, and
+reads, children reads, content fetches, and storage footprint are all
+acceptable or favorable, and
 the one operation that stresses the document model---\code{get\_subtree}, a
 range scan matching tens of thousands of nodes---is a schema problem with a
 measured solution, not an engine ceiling. Served from the deployed schema's
