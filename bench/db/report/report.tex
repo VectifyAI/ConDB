@@ -49,9 +49,9 @@ navigates from the root to relevant nodes. This report benchmarks the exact
 storage calls issued by ConDB's retrievers on MongoDB, PostgreSQL/JSONB, DuckDB,
 and SQLite, at scales up to ten million nodes.
 MongoDB is competitive on navigation reads, content fetch, and storage
-footprint. The one operation that stresses it,
-\code{get\_subtree}---a materialized-path range scan matching tens of thousands
-of nodes---is a schema problem rather than an engine ceiling: MongoDB's unit of
+footprint. The one operation that stresses it is \code{get\_subtree}, a
+materialized-path range scan matching tens of thousands of nodes, and that is a
+schema problem rather than an engine ceiling: MongoDB's unit of
 read is the whole document, and a non-covered scan performs one \code{FETCH} per
 matched node, a behavior MongoDB's product team confirmed and that newer server
 versions do not change. ConDB's deployed schema therefore decouples the tree:
@@ -142,7 +142,7 @@ MongoDB's \code{get\_subtree} is measured on the schema ConDB deploys
 (Section~\ref{sec:solid}): structure, metadata, and text in three collections,
 the subtree scan served index-only from the structure collection. Every other
 operation touches one record at a time, and is measured on the same flat
-one-record-per-node layout as the relational engines---a single-record read
+one-record-per-node layout as the relational engines; a single-record read
 costs the same on either layout. \code{get\_subtree} uses a
 materialized path with a byte-order range predicate, identical across engines
 (PostgreSQL's \code{path} column uses \code{COLLATE "C"} so its range matches
@@ -206,8 +206,8 @@ touches many records: a large subtree matches ${\sim}36$k nodes. Served from the
 deployed schema's structure collection by a covering index, it runs index-only
 and lands within ${\sim}1.4{\times}$ of PostgreSQL (Table~\ref{tab:read});
 Section~\ref{sec:diagnosis} explains why the same scan over monolithic node
-documents---one \code{FETCH} per matched node---is the one layout this operation
-punishes. ConDB should keep the materialized-path predicate: a recursive
+documents, at one \code{FETCH} per matched node, is the one layout this
+operation punishes. ConDB should keep the materialized-path predicate: a recursive
 \code{parent\_id} traversal issues one query per level and never gets the
 subtree as a single contiguous index range.
 
@@ -244,17 +244,17 @@ MongoDB's unit of read is the whole document. A secondary index (here on
 \code{path}) is a separate B-tree holding only the indexed field and a record
 id; to return any other field, the engine must \emph{fetch} the full BSON
 document and apply the projection to it. A point lookup is one such fetch and is
-cheap. A subtree scan over monolithic node documents---structure, \code{title},
-\code{summary}, and leaf \code{text} in one document---is tens of thousands of
+cheap. A subtree scan over monolithic node documents (structure, \code{title},
+\code{summary}, and leaf \code{text} in one document) is tens of thousands of
 them, each reading and decoding the whole document no matter how small the
 projection. MongoDB's product team confirmed this read path when we raised it,
 and confirmed that newer server versions do not change it (the 8.0 SBE
 included). The data is resident and WiredTiger caches pages uncompressed, so the
-cost is neither disk I/O nor decompression: it is per-document work---locate the
-record, materialize the document, project, stream through the cursor---times
-subtree size. The other retrieval operations touch few documents and stay fast
-on any layout. What gates the scan is the \emph{count} of fetches, so only
-removing the fetch helps---which is what the deployed schema does
+cost is neither disk I/O nor decompression. It is per-document work (locate the
+record, materialize the document, project, stream through the cursor)
+multiplied by subtree size. The other retrieval operations touch few documents and stay fast
+on any layout. What gates the scan is the \emph{count} of fetches, so the only
+fix is to remove the fetch, which is what the deployed schema does
 (Section~\ref{sec:solid}).
 
 This is the trade-off of the document model, and it cuts both ways. A row store
@@ -264,7 +264,7 @@ only the requested column, so both do far less per-node work on this one scan.
 In exchange, storing a node's fields together is what makes every other
 operation here cheap: point, children, and content reads, in-place field updates
 (no vacuum debt), tenant-local sharding, and compact storage. The workload
-matches the document model everywhere except the large-subtree scan---so the
+matches the document model everywhere except the large-subtree scan, so the
 deployed schema serves that one scan from an index instead.
 
 \subsection{The deployed schema: decoupled structure and key-value
@@ -335,7 +335,7 @@ sub-millisecond each (the point-lookup class of Table~\ref{tab:read}). Resolving
 metadata for \emph{every} node of a large subtree in one shot is the worst case,
 and it costs ${\sim}0.6$\,s at P95 via chunked \code{\$in}: a ${\sim}36$k-id \code{\$in}
 overflows the 16\,MB command limit, so the client issues ${\sim}36$ chunked round
-trips, and the metadata store performs ${\sim}36$k point lookups---the same
+trips, and the metadata store performs ${\sim}36$k point lookups: the same
 count-of-fetches mechanism as the monolithic scan, now confined to a path the
 workload rarely takes. Two measured alternatives lose to it
 (Table~\ref{tab:solid}). A server-side \code{\$lookup} from the structure scan
@@ -356,12 +356,12 @@ collection: it stays covered and beats the monolithic scan, but the
 multi-kilobyte \code{summary} key inflates that index to roughly the size of the
 data itself, which is why the deployed schema keeps metadata in a key-value store
 instead. Keep the anchored materialized-path range as the predicate either
-way---an unanchored regex cannot form a range and must scan the whole index.
+way; an unanchored regex cannot form a range and must scan the whole index.
 
 The split also keeps the hot working set small. For ten million nodes the
-structure collection is $0.25$\,GB of data plus $0.56$\,GB of index on
-disk---WiredTiger's prefix compression deduplicates the shared \code{path}
-prefixes---and the metadata store adds $1.2$\,GB plus a $0.14$\,GB \code{\_id}
+structure collection is $0.25$\,GB of data plus $0.56$\,GB of index on disk
+(WiredTiger's prefix compression deduplicates the shared \code{path} prefixes),
+and the metadata store adds $1.2$\,GB plus a $0.14$\,GB \code{\_id}
 index: ${\sim}2.1$\,GB of navigation working set, against $5.2$\,GB for a
 monolithic collection with \code{text} inline. At production scale, with many
 trees or tenants sharing a host, that difference is what keeps the navigation
@@ -376,7 +376,7 @@ is paid once at ingest), and all would push the covered scan's remaining
 ${\sim}1.4{\times}$ toward parity. They were not measured in this pass; with the
 deployed schema already at $130$\,ms P95 for an infrequent operation, the
 remaining decision is whether the added schema complexity is justified.
-(\code{\$graphLookup} is not a candidate---it re-traverses \code{parent\_id},
+(\code{\$graphLookup} is not a candidate: it re-traverses \code{parent\_id},
 still materializes documents, and in 7.0 is capped at 100\,MB and ignores
 \code{allowDiskUse}.)
 
@@ -386,12 +386,12 @@ The schema is the lever; neither an upgrade nor an edition change substitutes
 for it. Across 8.0--8.3, the Express path accelerates point/equality lookups
 only, block processing is scoped to time-series collections, and the
 \code{\$graphLookup} disk-spill fix (SERVER-23980, in 8.2.0) helps only the
-recursive alternative that loses to the range scan anyway---the
+recursive alternative that loses to the range scan anyway. The
 document-at-a-time \code{FETCH} is unchanged, as MongoDB's product team also
 confirmed. On the Atlas side, the column-store index would read only projected
 columns, but PageIndex never scans the whole corpus, and Search/Vector Search
 serve relevance retrieval, not a range-projection scan. Every lever this
-workload needs---schema, index, storage configuration---is on Community.
+workload needs (schema, index, storage configuration) is on Community.
 
 \section{Deployment optimization plan}\label{sec:opt}
 
@@ -418,9 +418,9 @@ navigation data in cache. The deployment plan is therefore:
 \item \textbf{Keep the covering index lean and exactly aligned with the
   projection.} A \code{\{tree\_id,path,node\_id\}} index serves subtree scans
   index-only; build it after bulk load so its maintenance cost is paid once.
-  Covered execution is all-or-nothing---a missing projected field, or \code{\_id}
-  left in the projection, silently brings the per-document \code{FETCH} back---so
-  treat \code{explain} showing \code{totalDocsExamined:\,0} as a deployment
+  Covered execution is all-or-nothing: a missing projected field, or \code{\_id}
+  left in the projection, silently brings the per-document \code{FETCH} back.
+  Treat \code{explain} showing \code{totalDocsExamined:\,0} as a deployment
   check, not a one-time observation. Do not put the multi-kilobyte \code{summary}
   into the covering key: the metadata store already serves it by point read, and
   carrying it in the index costs index bytes comparable to the data itself.
@@ -443,8 +443,8 @@ already cache-resident.
 The benchmark supports MongoDB for the PageIndex retrieval workload. Point
 reads, children reads, content fetches, and storage footprint are all
 acceptable or favorable, and
-the one operation that stresses the document model---\code{get\_subtree}, a
-range scan matching tens of thousands of nodes---is a schema problem with a
+the one operation that stresses the document model, a \code{get\_subtree}
+range scan matching tens of thousands of nodes, is a schema problem with a
 measured solution, not an engine ceiling. Served from the deployed schema's
 structure collection by a covering index, it runs with zero document fetches at
 $11.9$\,ms P50 / $130$\,ms P95 on the ten-million-node tree, within
@@ -456,9 +456,9 @@ regardless of projection, and neither newer server versions nor cache sizing
 changes it. Decoupling puts on the scan's path only the bytes the scan needs
 (structure under a covering index) and serves everything else by the reads the
 document model is good at (key-value point lookups for metadata, content
-fetches for selected text). The remaining validation is deployment-shaped, not
-mechanism-shaped: the cache-constrained A/B that prices the split's residency
-benefit, and the structural denormalizations (Nested Sets, tree-order
+fetches for selected text). What remains to validate is a deployment question,
+not a mechanism question: the cache-constrained A/B that prices the split's
+residency benefit, and the structural denormalizations (Nested Sets, tree-order
 \code{\_id}, precomputed subtree views) if a measured workload ever needs the
 last ${\sim}1.4{\times}$.
 
