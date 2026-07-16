@@ -1,0 +1,29 @@
+{
+  "doc": "data/mid3m.json",
+  "engine": "duckdb",
+  "nodes": 3000000,
+  "paths": 200,
+  "arms": {
+    "naive": {
+      "n": 200,
+      "p50_ms": 3.467,
+      "p95_ms": 6.862,
+      "p99_ms": 23.539,
+      "mean_ms": 4.786,
+      "avg_rows": 8840.4
+    },
+    "covered": {
+      "note": "not measured; columnar projection already reads only node_id"
+    },
+    "deployed": {
+      "note": "not measured; no equivalent narrow-layout intervention is defined"
+    }
+  },
+  "ingest_s": 17.8,
+  "index_s": 2.4,
+  "storage": {
+    "data": 1504718848,
+    "index": 0,
+    "total": 1504718848
+  }
+}

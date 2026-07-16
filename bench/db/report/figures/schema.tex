@@ -1,0 +1,73 @@
+\documentclass[tikz,border=8pt]{standalone}
+\usepackage[T1]{fontenc}
+\IfFileExists{libertine.sty}{\usepackage{libertine}}{}
+\IfFileExists{inconsolata.sty}{\usepackage[scaled=0.95]{inconsolata}}{}
+\usetikzlibrary{arrows.meta,positioning,fit,decorations.pathreplacing}
+
+\begin{document}
+\begin{tikzpicture}[
+  font=\small,
+  ent/.style={draw=black!45, fill=black!3, font=\scriptsize\ttfamily,
+              inner sep=2.6pt, minimum width=37mm, minimum height=4.6mm, align=left},
+  hot/.style={fill=blue!9, draw=blue!40},
+  kv/.style={draw=black!45, fill=black!3, font=\scriptsize\ttfamily,
+             inner sep=2.6pt, minimum width=44mm, minimum height=4.6mm, align=left},
+  boxtitle/.style={font=\small\bfseries, align=center},
+  boxsub/.style={font=\scriptsize, text=black!60, align=center},
+  outer/.style={draw=black!60, rounded corners=3pt, inner sep=7pt},
+  arr/.style={-{Stealth[length=2.4mm]}, semithick, black!70},
+  lab/.style={font=\scriptsize, align=center},
+]
+
+% ---------- structure collection: the small covering index ----------
+\node[ent]            (s1)                     {t01:/r \phantom{/a/x}\hfill$\to$ n003};
+\node[ent, hot, below=1.2mm of s1] (s2)        {t01:/r/a \phantom{/x}\hfill$\to$ n017};
+\node[ent, hot, below=1.2mm of s2] (s3)        {t01:/r/a/x \hfill$\to$ n212};
+\node[ent, hot, below=1.2mm of s3] (s4)        {t01:/r/a/y \hfill$\to$ n907};
+\node[ent, below=1.2mm of s4]      (s5)        {t01:/r/b \phantom{/x}\hfill$\to$ n008};
+
+\node[boxtitle, above=3.2mm of s1] (stitle) {structure collection};
+\node[boxsub,  above=0.2mm of s1]  (ssub)   {covering index \{tree\_id,\,path,\,node\_id\}};
+\node[outer, fit=(stitle)(ssub)(s1)(s5)] (structbox) {};
+\node[boxsub, below=1.4mm of structbox] (ssize)
+  {tenant-qualified topology};
+
+% path-range brace over the highlighted entries
+\draw[decorate, decoration={brace, mirror, amplitude=3pt}, black!60]
+  ([xshift=-2.2mm]s2.north west) -- ([xshift=-2.2mm]s4.south west)
+  node[midway, xshift=-3mm, lab, anchor=east] (brlab) {one subtree =\\ one path range};
+
+% get_subtree entering the index (at title height, clear of the brace label)
+\coordinate (gin) at (structbox.west |- stitle);
+\draw[arr] ([xshift=-30mm]gin) -- (gin)
+  node[midway, above=0.6mm, lab] {subtree ID scan}
+  node[midway, below=0.6mm, lab, text=blue!55!black]
+    {index-only, zero \texttt{FETCH}};
+
+% ---------- metadata k:v ----------
+\node[kv, right=30mm of s1.east, anchor=west, yshift=1mm]  (m1) {t01:n017 $\to$ \{title, summary\}};
+\node[kv, below=1.2mm of m1]             (m2) {t01:n212 $\to$ \{title, summary\}};
+\node[kv, below=1.2mm of m2]             (m3) {t01:n907 $\to$ \{title, summary\}};
+\node[boxtitle, above=3.2mm of m1] (mtitle) {metadata store (k:v)};
+\node[boxsub,  above=0.2mm of m1]  (msub)   {key\,=\,(tree\_id, node\_id)};
+\node[outer, fit=(mtitle)(msub)(m1)(m3)] (metabox) {};
+
+% ---------- text collection ----------
+\node[kv] (t1) at (m1.west |- s5) [anchor=west, yshift=-13mm] {t01:n212 $\to$ text (leaf body)};
+\node[kv, below=1.2mm of t1]             (t2) {t01:n907 $\to$ text (leaf body)};
+\node[boxtitle, above=3.2mm of t1] (ttitle) {text collection};
+\node[outer, fit=(ttitle)(t1)(t2)] (textbox) {};
+
+% ---------- flows ----------
+\draw[arr] (structbox.east|-m2.west) -- (m2.west)
+  node[midway, above=0.6mm, lab] {tenant-qualified keys\\ point or batched reads};
+\node[lab, below=11mm of metabox.south west, anchor=north west, xshift=-14mm]
+  (mnote) {};
+\draw[arr] (structbox.south east) ++(0,1mm) .. controls +(14mm,-6mm) and +(-16mm,4mm) ..
+  (textbox.west)
+  node[pos=0.45, below=1.2mm, lab] {\texttt{get\_entity}:\\ selected nodes only};
+\node[lab, right=1.5mm of metabox.east, anchor=west, text=black!60, font=\scriptsize]
+  {requested metadata};
+
+\end{tikzpicture}
+\end{document}

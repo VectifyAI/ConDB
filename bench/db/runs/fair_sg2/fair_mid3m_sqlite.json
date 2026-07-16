@@ -1,0 +1,48 @@
+{
+  "doc": "data/mid3m.json",
+  "engine": "sqlite",
+  "nodes": 3000000,
+  "paths": 200,
+  "arms": {
+    "naive": {
+      "n": 200,
+      "p50_ms": 0.617,
+      "p95_ms": 7.052,
+      "p99_ms": 64.499,
+      "mean_ms": 3.911,
+      "avg_rows": 8840.4
+    },
+    "covered": {
+      "verify": {
+        "plan": "(2, 0, 167, 'SEARCH nodes USING COVERING INDEX ix_cover (path>? AND path<?)')",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 0.207,
+      "p95_ms": 2.575,
+      "p99_ms": 23.578,
+      "mean_ms": 1.429,
+      "avg_rows": 8840.4
+    },
+    "deployed": {
+      "verify": {
+        "plan": "(2, 0, 168, 'SEARCH fair_struct USING COVERING INDEX ix_struct_cover (path>? AND path<?)')",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 0.21,
+      "p95_ms": 2.556,
+      "p99_ms": 23.515,
+      "mean_ms": 1.423,
+      "avg_rows": 8840.4
+    }
+  },
+  "ingest_s": 48.1,
+  "index_s": 17.2,
+  "storage": {
+    "data": 5557714944,
+    "index": 278827008,
+    "total": 5836541952
+  },
+  "struct_build_s": 6.0
+}
