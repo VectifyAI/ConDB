@@ -351,15 +351,13 @@ Fetch content & \code{get\_entity(tree\_id, node\_id)} & Read selected nodes' co
 
 Each engine stores the same logical fields in one record per node. The medium
 tree contains 70{,}843 nodes and the large tree contains ten million nodes. A
-fixed seed selects 500 point IDs, 500 parent IDs, 200 shallow subtree paths, and
-500 content IDs, with identical samples in each engine. The subtree query in
-this table returns node IDs from a materialized-path range. The large-tree paths
-return 36{,}456.7 IDs on average. Root lookup, metadata resolution, formatting,
-and pagination are outside this measurement.
+fixed seed selects 500 point IDs, 500 parent IDs, and 500 content IDs, with
+identical samples in each engine. Root lookup, formatting, and pagination are
+outside this measurement.
 
 \begin{table}[H]
-\caption{Latency of four storage operations with one record per node. Entries
-are P50/P95 in milliseconds (lower is better).}
+\caption{Latency of the three non-subtree read operations with one record per
+node. Entries are P50/P95 in milliseconds (lower is better).}
 \label{tab:single}
 \begin{ctab}
 \setlength{\tabcolsep}{10pt}
@@ -369,22 +367,20 @@ are P50/P95 in milliseconds (lower is better).}
 \midrule
 Medium & Point lookup    & 0.2 / 0.3 & 0.1 / 0.1 & 0.0 / 0.0 \\
        & Expand children & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
-       & Get subtree     & 0.4 / 1.6 & 0.2 / 0.8 & 0.1 / 0.5 \\
        & Fetch content   & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
 \midrule
 Large & Point lookup    & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
       & Expand children & 0.2 / 0.3 & 0.1 / 0.1 & 0.0 / 0.0 \\
-\key & Get subtree & 19.6 / 2{,}009.2 & 9.3 / 102.1 & 8.3 / 97.0 \\
       & Fetch content   & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-Point lookup, child expansion, and content fetch stay below 0.4\,ms at P95
-for MongoDB even on the large tree. The large subtree scan is the only direct
-read with a material tail. SQLite's values describe its in-process execution
-and are not server-to-server comparisons.
+Subtree latency is reported under the matched two-collection protocol in
+Table~\ref{tab:layout-latency}. Point lookup, child expansion, and content fetch stay
+below 0.4\,ms at P95 for MongoDB even on the large tree. SQLite's values
+describe its in-process execution and are not server-to-server comparisons.
 
 \subsection{Write latency and throughput}
 
