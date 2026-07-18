@@ -324,29 +324,11 @@ is its heavier per-key WiredTiger cursor/key extraction and classic
 \code{COUNT\_SCAN} bookkeeping; client record processing adds the separate
 5.3\,ms difference in Table~\ref{tab:breakdown}.
 
-\section{Conclusion}
-
-The two research questions have separate answers. For physical design,
-Structure and Metadata should be colocated for this descendant-range workload:
-doing so lowers P50 and P95 latency in MongoDB, PostgreSQL, and SQLite. For the
-cross-engine comparison, MongoDB's higher latency does not originate in
-document FETCH, returned metadata, or an extra cursor round trip. It remains
-when both engines scan the same logical index range and return only a count.
-The direct-count path is 1.71$\times$ slower on the same 200 paths, and key-shape
-controls show that long path strings are not the cause. PostgreSQL also advances
-a B-tree cursor and runs an executor and aggregate. MongoDB's bottleneck is the
-heavier per-key WiredTiger cursor/key-extraction and classic \code{COUNT\_SCAN}
-bookkeeping path. Client record processing adds a further 5.3\,ms to the
-end-to-end difference, while PostgreSQL's larger heap-fetch penalty masks part
-of this underlying scan gap.
-
-\appendix
-\small
-\section{Additional PageIndex operation measurements}
+\section{PageIndex operation overview}
 
 Table~\ref{tab:ops} defines the four PageIndex storage operations.
 Tables~\ref{tab:single} and~\ref{tab:write} report the one-record-per-node read
-and write measurements. They are separate from the layout experiment.
+and write measurements alongside the subtree-layout results.
 
 \begin{table}[H]
 \caption{Core PageIndex storage operations.}
@@ -430,5 +412,21 @@ SQLite & 0.0 & 0.0 & 54{,}824 & 30{,}563 \\
 \end{tabular}
 \end{ctab}
 \end{table}
+
+\section{Conclusion}
+
+The two research questions have separate answers. For physical design,
+Structure and Metadata should be colocated for this descendant-range workload:
+doing so lowers P50 and P95 latency in MongoDB, PostgreSQL, and SQLite. For the
+cross-engine comparison, MongoDB's higher latency does not originate in
+document FETCH, returned metadata, or an extra cursor round trip. It remains
+when both engines scan the same logical index range and return only a count.
+The direct-count path is 1.71$\times$ slower on the same 200 paths, and key-shape
+controls show that long path strings are not the cause. PostgreSQL also advances
+a B-tree cursor and runs an executor and aggregate. MongoDB's bottleneck is the
+heavier per-key WiredTiger cursor/key-extraction and classic \code{COUNT\_SCAN}
+bookkeeping path. Client record processing adds a further 5.3\,ms to the
+end-to-end difference, while PostgreSQL's larger heap-fetch penalty masks part
+of this underlying scan gap.
 
 \end{document}
