@@ -319,11 +319,32 @@ Long path-like string   & 0.189 & 0.089 & 2.13$\times$ \\
 
 Table~\ref{tab:keyshape} rules out path-string length as the source of
 MongoDB's overhead: its slope is nearly invariant across the three key shapes.
-PostgreSQL performs the same logical scan and count steps. In the scalar
-control, MongoDB's excess CPU is distributed across per-key WiredTiger
-cursor/key extraction and classic \code{COUNT\_SCAN} bookkeeping. This locates
-the base index-processing bottleneck; client record processing adds the
-separate 5.3\,ms difference in Table~\ref{tab:breakdown}.
+
+\begin{table}[H]
+\caption{Matched names for the same per-key operations in the scalar control.}
+\label{tab:matched-steps}
+\begin{ctab}
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\hdr Logical operation & MongoDB profile & PostgreSQL profile \\
+\midrule
+B-tree cursor advance & \code{\_\_wt\_btcur\_next} & \code{\_bt\_next} \\
+Index-entry check/read & \code{\_\_wt\_txn\_read} & \code{\_bt\_checkkeys}, visibility map \\
+Index-entry decode & \code{get\_keyv/valuev}, KeyString/RecordId & \code{index\_deform\_tuple} \\
+Executor handoff & \code{CountScan} & \code{ExecScan} \\
+Count accumulation & \code{CountStage} & \code{int8inc} \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+PostgreSQL therefore performs the same logical operations. Across these
+matched steps, MongoDB's excess CPU is distributed primarily across cursor
+advance, entry extraction/decoding, and classic executor bookkeeping. This
+locates the base index-processing bottleneck; client record processing adds
+the separate 5.3\,ms difference in Table~\ref{tab:breakdown}.
 
 \section{Conclusion}
 
