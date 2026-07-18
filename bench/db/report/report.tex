@@ -51,14 +51,14 @@ selecting the faster layout, why MongoDB remains slower than PostgreSQL. We
 evaluate two layouts on the same ten-million-node tree and 200 paths in
 MongoDB, PostgreSQL, and SQLite. Colocation lowers P50 and P95 latency in all
 three engines. In an interleaved causal run, mean latency is 77.8\,ms in
-MongoDB and 59.7\,ms in PostgreSQL. Covering-index, ID-only, cursor-batch, and
-scalar-count interventions rule out document fetch, returned metadata, and an
-extra \code{getMore} as the cause. Direct count and key-shape controls locate
-the difference in per-key index processing. PostgreSQL performs the analogous
-B-tree, index-only-scan, and aggregate steps; it does not skip them. CPU
-profiling locates MongoDB's bottleneck in per-key WiredTiger cursor/key
-extraction plus classic \code{COUNT\_SCAN} bookkeeping. Client record processing
-adds a separate 5.3\,ms penalty.
+MongoDB and 59.7\,ms in PostgreSQL. Matched zero-fetch, ID-only, cursor-batch,
+and scalar-count interventions show that the gap persists without document
+access, returned rows, or an extra \code{getMore}. Direct count and key-shape
+controls locate the difference in per-key index processing. PostgreSQL performs
+the analogous B-tree, index-only-scan, and aggregate steps; it does not skip
+them. Profiling the scalar control locates MongoDB's excess CPU in per-key
+WiredTiger cursor/key extraction plus classic \code{COUNT\_SCAN} bookkeeping.
+Client record processing adds a separate 5.3\,ms penalty.
 \end{abstract}
 
 \section{Introduction}
@@ -142,19 +142,22 @@ full untimed sweep followed by three timed sweeps. Paths, query arms, and engine
 order are interleaved; the path order rotates between repetitions. Every pair
 returns the same row count, logical values, and order. Repetitions are first
 averaged within each path, after which all 200 path means receive equal weight.
+Every arm accesses only the colocated Structure-and-Metadata collection or
+table; neither engine accesses the Text store or its index.
 
 The initial breakdown has two additive stages. \emph{Database fetch} includes
 server execution, localhost transfer, driver decoding, and materialization of
 returned records. \emph{Client processing} includes normalization and cleanup
 of decoded objects. Because the first stage is composite, we then introduce
-covering, ID-only, cursor-batch, and scalar-count interventions. Server-side
-plans use 40 row-count-stratified paths. The scalar-count experiment uses the
-direct MongoDB \code{count} command and all 200 paths over five repetitions,
-reducing each result to one scalar. MongoDB retains its native \code{COUNT} over
-\code{COUNT\_SCAN}, while PostgreSQL retains \code{Aggregate} over
-\code{Index Only Scan}. PostgreSQL sequential scans and parallel gathers are
-disabled only in this mechanism-isolation experiment so both engines retain a
-covering-index access path.
+zero-fetch exact-output, ID-only, cursor-batch, and scalar-count interventions.
+The two zero-fetch arms use 40 row-count-stratified paths and are accepted only
+when MongoDB examines zero documents and PostgreSQL performs zero heap fetches.
+The scalar-count experiment uses the direct MongoDB \code{count} command and all
+200 paths over five repetitions, reducing each result to one scalar. MongoDB
+retains its native \code{COUNT} over \code{COUNT\_SCAN}, while PostgreSQL retains
+\code{Aggregate} over \code{Index Only Scan}. PostgreSQL sequential scans and
+parallel gathers are disabled only in this mechanism-isolation experiment so
+both engines retain a covering-index access path.
 
 A second control builds one million identical ordinals as integer, eight-byte
 string, and materialized-path-like long-string keys. PostgreSQL strings use
@@ -240,23 +243,23 @@ of this difference. Client-side record processing contributes 5.3\,ms, or
 server, result, and cursor mechanisms.
 
 The MongoDB minus PostgreSQL total difference is positive and stable in all
-three timed repetitions: 18.5, 18.3, and 17.6\,ms.
+three timed repetitions: 18.5, 18.3, and 17.6\,ms. Across the 200 per-path
+means, MongoDB/PostgreSQL is 1.84$\times$ at P50, 1.81$\times$ at P95, and
+1.76$\times$ at P99.
 
 \subsection{RQ2: Causal explanation}
 
 We now intervene on the query while holding its bounds and order fixed.
-\emph{Baseline} uses the lean {\normalfont\code{(path,node\_id)}} index and fetches the
-document or heap tuple. \emph{Covered} returns the exact same
-{\normalfont\code{(node\_id,title,summary)}} rows from a covering index. \emph{ID only}
-uses the lean index but returns only {\normalfont\code{node\_id}}. Server-side
-{\normalfont\code{EXPLAIN ANALYZE}} measurements use 40 row-count-stratified paths; each
-arm examines the expected number of index keys, the covered MongoDB arms
-examine zero documents, and the covered PostgreSQL arms perform zero heap
-fetches.
+\emph{Exact-output covered} returns
+{\normalfont\code{(node\_id,title,summary)}} from a covering index. \emph{ID-only
+covered} returns only {\normalfont\code{node\_id}}. Server-side
+{\normalfont\code{EXPLAIN ANALYZE}} measurements use 40 row-count-stratified paths.
+Both arms examine the expected number of index keys; MongoDB examines zero
+documents and PostgreSQL performs zero heap fetches.
 
 \begin{table}[H]
-\caption{Server execution under causal interventions. Each of the 40 paths has
-equal weight and returns 56{,}602.7 rows on average.}
+\caption{Server execution under matched zero-fetch interventions. Each of the
+40 paths has equal weight and returns 56{,}602.7 rows on average.}
 \label{tab:causal}
 \begin{ctab}
 \setlength{\tabcolsep}{10pt}
@@ -264,7 +267,6 @@ equal weight and returns 56{,}602.7 rows on average.}
 \toprule
 \hdr Arm & MongoDB (ms) & PostgreSQL (ms) & MongoDB/PostgreSQL \\
 \midrule
-Baseline                   & 49.9 & 47.6 & 1.05$\times$ \\
 Exact-output covered       & 28.0 & 15.6 & 1.79$\times$ \\
 ID-only covered            & 20.6 &  7.7 & 2.66$\times$ \\
 \bottomrule
@@ -272,13 +274,11 @@ ID-only covered            & 20.6 &  7.7 & 2.66$\times$ \\
 \end{ctab}
 \end{table}
 
-Table~\ref{tab:causal} rules out document access as the cross-engine cause.
-Covering saves 22.0\,ms in MongoDB but 32.0\,ms in PostgreSQL, so removing
-document or heap fetches widens the server gap from 2.3 to 12.3\,ms. The heap
-fetch penalty in PostgreSQL is 10.0\,ms larger and therefore masks part of
-MongoDB's underlying scan disadvantage. The title/summary payload is also not
-the cause: covered minus ID-only costs 7.4\,ms in MongoDB and 7.9\,ms in
-PostgreSQL.
+Table~\ref{tab:causal} shows that document or heap access is not required for
+the gap: MongoDB remains 1.79$\times$ slower when both engines use zero-fetch
+covering plans and return the exact output. The title/summary payload does not
+explain the gap either: covered minus ID-only costs 7.4\,ms in MongoDB and
+7.9\,ms in PostgreSQL.
 
 Two narrower interventions locate the remaining mechanism. First, increasing
 MongoDB's requested batch size removes one {\normalfont\code{getMore}} on average but
@@ -319,110 +319,25 @@ Long path-like string   & 0.189 & 0.089 & 2.13$\times$ \\
 
 Table~\ref{tab:keyshape} rules out path-string length as the source of
 MongoDB's overhead: its slope is nearly invariant across the three key shapes.
-PostgreSQL performs the same logical scan and count steps. MongoDB's bottleneck
-is its heavier per-key WiredTiger cursor/key extraction and classic
-\code{COUNT\_SCAN} bookkeeping; client record processing adds the separate
-5.3\,ms difference in Table~\ref{tab:breakdown}.
-
-\section{PageIndex operation overview}
-
-Table~\ref{tab:ops} defines the four PageIndex storage operations.
-Tables~\ref{tab:single} and~\ref{tab:write} report the one-record-per-node read
-and write measurements alongside the subtree-layout results.
-
-\begin{table}[H]
-\caption{Core PageIndex storage operations.}
-\label{tab:ops}
-\begin{ctab}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\hdr Operation & Storage call & Used for \\
-\midrule
-Point lookup & \code{get\_node(tree\_id, node\_id)} & Navigate to or read one node \\
-Expand children & \code{get\_children(tree\_id, node\_id)} & List children and choose where to descend \\
-\key Get subtree & \code{get\_subtree(tree\_id, node\_id, depth)} & Tree formatting and utility paths \\
-Fetch content & \code{get\_entity(tree\_id, node\_id)} & Read selected nodes' content \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\subsection{Read latency}
-
-Each engine stores the same logical fields in one record per node. The medium
-tree contains 70{,}843 nodes and the large tree contains ten million nodes. A
-fixed seed selects 500 point IDs, 500 parent IDs, and 500 content IDs, with
-identical samples in each engine. Root lookup, formatting, and pagination are
-outside this measurement.
-
-\begin{table}[H]
-\caption{Latency of the three non-subtree read operations with one record per
-node. Entries are P50/P95 in milliseconds (lower is better).}
-\label{tab:single}
-\begin{ctab}
-\setlength{\tabcolsep}{10pt}
-\begin{tabular}{@{}llrrr@{}}
-\toprule
-\hdr Scale & Operation & MongoDB & PostgreSQL & SQLite \\
-\midrule
-Medium & Point lookup    & 0.2 / 0.3 & 0.1 / 0.1 & 0.0 / 0.0 \\
-       & Expand children & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
-       & Fetch content   & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
-\midrule
-Large & Point lookup    & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
-      & Expand children & 0.2 / 0.3 & 0.1 / 0.1 & 0.0 / 0.0 \\
-      & Fetch content   & 0.2 / 0.2 & 0.1 / 0.1 & 0.0 / 0.0 \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-Subtree latency is reported under the matched two-collection protocol in
-Table~\ref{tab:layout-latency}. Point lookup, child expansion, and content fetch stay
-below 0.4\,ms at P95 for MongoDB even on the large tree. SQLite's values
-describe its in-process execution and are not server-to-server comparisons.
-
-\subsection{Write latency and throughput}
-
-The write run rebuilds the medium tree, then measures 5{,}000 field updates and
-2{,}000 incremental inserts with indexes present. Durability settings are not
-normalized, so Table~\ref{tab:write} reports per-engine observations rather
-than a matched durability ranking.
-
-\begin{table}[H]
-\caption{Writes with one record per node on the medium tree.}
-\label{tab:write}
-\begin{ctab}
-\setlength{\tabcolsep}{9pt}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Engine & \multicolumn{2}{c}{Update latency (ms)} &
-  \multicolumn{2}{c}{Throughput (ops/s)} \\
-\cmidrule(lr){2-3}\cmidrule(l){4-5}
-\hdr & P50 & P95 & Update & Insert \\
-\midrule
-MongoDB & 0.2 & 0.2 & 4{,}814 & 6{,}728 \\
-PostgreSQL (JSONB) & 0.1 & 0.1 & 8{,}447 & 9{,}165 \\
-SQLite & 0.0 & 0.0 & 54{,}824 & 30{,}563 \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
+PostgreSQL performs the same logical scan and count steps. In the scalar
+control, MongoDB's excess CPU is distributed across per-key WiredTiger
+cursor/key extraction and classic \code{COUNT\_SCAN} bookkeeping. This locates
+the base index-processing bottleneck; client record processing adds the
+separate 5.3\,ms difference in Table~\ref{tab:breakdown}.
 
 \section{Conclusion}
 
 The two research questions have separate answers. For physical design,
 Structure and Metadata should be colocated for this descendant-range workload:
 doing so lowers P50 and P95 latency in MongoDB, PostgreSQL, and SQLite. For the
-cross-engine comparison, MongoDB's higher latency does not originate in
-document FETCH, returned metadata, or an extra cursor round trip. It remains
-when both engines scan the same logical index range and return only a count.
+cross-engine comparison, document fetch, returned metadata, and an extra cursor
+round trip cannot explain MongoDB's higher latency: the gap remains when both
+engines scan the same logical index range and return only a count.
 The direct-count path is 1.71$\times$ slower on the same 200 paths, and key-shape
 controls show that long path strings are not the cause. PostgreSQL also advances
 a B-tree cursor and runs an executor and aggregate. MongoDB's bottleneck is the
 heavier per-key WiredTiger cursor/key-extraction and classic \code{COUNT\_SCAN}
-bookkeeping path. Client record processing adds a further 5.3\,ms to the
-end-to-end difference, while PostgreSQL's larger heap-fetch penalty masks part
-of this underlying scan gap.
+bookkeeping path in the scalar control. Client record processing adds a further
+5.3\,ms to the end-to-end difference.
 
 \end{document}
