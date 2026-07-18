@@ -321,7 +321,9 @@ Table~\ref{tab:keyshape} rules out path-string length as the source of
 MongoDB's overhead: its slope is nearly invariant across the three key shapes.
 
 \begin{table}[H]
-\caption{Matched names for the same per-key operations in the scalar control.}
+\caption{Matched names for the same per-key operations in the scalar control.
+Blue rows mark MongoDB's bottleneck; cursor advance is the largest individual
+hotspot.}
 \label{tab:matched-steps}
 \begin{ctab}
 \small
@@ -330,10 +332,10 @@ MongoDB's overhead: its slope is nearly invariant across the three key shapes.
 \toprule
 \hdr Logical operation & MongoDB profile & PostgreSQL profile \\
 \midrule
-B-tree cursor advance & \code{\_\_wt\_btcur\_next} & \code{\_bt\_next} \\
+\key B-tree cursor advance & \code{\_\_wt\_btcur\_next} & \code{\_bt\_next} \\
 Index-entry check/read & \code{\_\_wt\_txn\_read} & \code{\_bt\_checkkeys}, visibility map \\
-Index-entry decode & \code{get\_keyv/valuev}, KeyString/RecordId & \code{index\_deform\_tuple} \\
-Executor handoff & \code{CountScan} & \code{ExecScan} \\
+\key Index-entry decode & \code{get\_keyv/valuev}, KeyString/RecordId & \code{index\_deform\_tuple} \\
+\key Executor handoff & \code{CountScan} & \code{ExecScan} \\
 Count accumulation & \code{CountStage} & \code{int8inc} \\
 \bottomrule
 \end{tabular}
