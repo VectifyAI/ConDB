@@ -1,0 +1,135 @@
+\documentclass[tikz,border=7pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[scaled=0.95]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usetikzlibrary{arrows.meta,calc,positioning}
+
+\definecolor{ink}{HTML}{202733}
+\definecolor{muted}{HTML}{697386}
+\definecolor{rule}{HTML}{D3D9E2}
+\definecolor{panel}{HTML}{F7F8FA}
+\definecolor{structure}{HTML}{405FB5}
+\definecolor{structurefill}{HTML}{EDF1FB}
+\definecolor{metadata}{HTML}{B85D3D}
+\definecolor{metadatafill}{HTML}{FBEEE9}
+\definecolor{textstore}{HTML}{4F7B69}
+
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  flow/.style={-{Stealth[length=2.0mm,width=1.35mm]}, draw=ink!66,
+    line width=0.8pt},
+  panelbox/.style={draw=rule, fill=panel, rounded corners=3pt,
+    line width=0.75pt},
+  endpoint/.style={draw=rule, fill=white, rounded corners=2pt,
+    line width=0.75pt, minimum height=7.5mm, align=center},
+  store/.style={draw=ink!35, fill=white, rounded corners=2pt,
+    line width=0.8pt},
+  steplabel/.style={font=\scriptsize\bfseries, text=muted, fill=panel,
+    inner xsep=2.2pt, inner ysep=0.8pt},
+  stepnum/.style={circle, fill=ink!78, text=white, minimum size=4.2mm,
+    inner sep=0pt, font=\tiny\bfseries}
+]
+
+% Two quiet panels make the physical-boundary comparison explicit.
+\node[panelbox, minimum width=8.25cm, minimum height=5.05cm,
+  anchor=south west] (leftpanel) at (0,0.32) {};
+\node[panelbox, minimum width=8.25cm, minimum height=5.05cm,
+  anchor=south west] (rightpanel) at (8.65,0.32) {};
+
+% Panel headings.
+\node[circle, fill=structure, text=white, minimum size=5.2mm,
+  inner sep=0pt, font=\scriptsize\bfseries] at (0.55,4.94) {A};
+\node[anchor=west, font=\small\bfseries, text=ink] at (0.92,5.04)
+  {Structure and Metadata together};
+\node[anchor=west, font=\scriptsize, text=muted] at (0.92,4.71)
+  {one collection or table};
+
+\node[circle, fill=ink!82, text=white, minimum size=5.2mm,
+  inner sep=0pt, font=\scriptsize\bfseries] at (9.20,4.94) {B};
+\node[anchor=west, font=\small\bfseries, text=ink] at (9.57,5.04)
+  {Structure and Metadata separate};
+\node[anchor=west, font=\scriptsize, text=muted] at (9.57,4.71)
+  {separate collections or tables};
+
+% Identical query and output endpoints.
+\node[endpoint, minimum width=4.55cm] (queryA) at (4.13,4.03) {
+  {\tiny\bfseries\color{muted} QUERY}\\
+  {\scriptsize\ttfamily subtree path range}};
+\node[endpoint, minimum width=4.55cm] (queryB) at (12.78,4.03) {
+  {\tiny\bfseries\color{muted} QUERY}\\
+  {\scriptsize\ttfamily subtree path range}};
+
+\node[endpoint, minimum width=5.70cm] (rowsA) at (4.13,0.93) {
+  {\tiny\bfseries\color{muted} ORDERED OUTPUT}\\
+  {\scriptsize\ttfamily node\_id, title, summary}};
+\node[endpoint, minimum width=5.70cm] (rowsB) at (12.78,0.93) {
+  {\tiny\bfseries\color{muted} ORDERED OUTPUT}\\
+  {\scriptsize\ttfamily node\_id, title, summary}};
+
+% Layout A: one physical boundary, with the two field groups visible inside it.
+\node[store, minimum width=6.75cm, minimum height=1.18cm]
+  (combined) at (4.13,2.47) {};
+\fill[structure] ([xshift=-3.375cm,yshift=0.59cm]combined.center)
+  rectangle ([xshift=0cm,yshift=0.53cm]combined.center);
+\fill[metadata] ([xshift=0cm,yshift=0.59cm]combined.center)
+  rectangle ([xshift=3.375cm,yshift=0.53cm]combined.center);
+\draw[rule, line width=0.7pt]
+  ([yshift=-0.52cm]combined.center) -- ([yshift=0.52cm]combined.center);
+\node[anchor=west, font=\scriptsize\bfseries, text=structure]
+  at ([xshift=-3.02cm,yshift=0.18cm]combined.center) {STRUCTURE};
+\node[anchor=west, font=\scriptsize\ttfamily, text=ink!82]
+  at ([xshift=-3.02cm,yshift=-0.23cm]combined.center) {path\quad node\_id};
+\node[anchor=west, font=\scriptsize\bfseries, text=metadata]
+  at ([xshift=0.35cm,yshift=0.18cm]combined.center) {METADATA};
+\node[anchor=west, font=\scriptsize\ttfamily, text=ink!82]
+  at ([xshift=0.35cm,yshift=-0.23cm]combined.center) {title\quad summary};
+
+\draw[flow] (queryA.south) -- (combined.north);
+\node[stepnum] at (3.84,3.50) {1};
+\node[steplabel, anchor=west] at (4.02,3.50) {ordered range scan};
+\draw[flow] (combined.south) -- (rowsA.north);
+\node[stepnum] at (3.84,1.65) {2};
+\node[steplabel, anchor=west] at (4.02,1.65) {one result stream};
+
+% Layout B: independent physical boundaries and the extra client work between them.
+\node[store, minimum width=6.45cm, minimum height=7.4mm]
+  (structureB) at (12.78,2.95) {};
+\fill[structure] ([xshift=-3.225cm,yshift=0.37cm]structureB.center)
+  rectangle ([xshift=-3.14cm,yshift=-0.37cm]structureB.center);
+\node[anchor=west, font=\scriptsize\bfseries, text=structure]
+  at ([xshift=-2.90cm,yshift=0.13cm]structureB.center) {STRUCTURE STORE};
+\node[anchor=east, font=\scriptsize\ttfamily, text=ink!82]
+  at ([xshift=2.90cm,yshift=0.13cm]structureB.center) {path\quad node\_id};
+\node[anchor=west, font=\tiny, text=muted]
+  at ([xshift=-2.90cm,yshift=-0.20cm]structureB.center) {ordered index};
+
+\node[store, minimum width=6.45cm, minimum height=7.4mm]
+  (metadataB) at (12.78,1.90) {};
+\fill[metadata] ([xshift=-3.225cm,yshift=0.37cm]metadataB.center)
+  rectangle ([xshift=-3.14cm,yshift=-0.37cm]metadataB.center);
+\node[anchor=west, font=\scriptsize\bfseries, text=metadata]
+  at ([xshift=-2.90cm,yshift=0.13cm]metadataB.center) {METADATA STORE};
+\node[anchor=east, font=\scriptsize\ttfamily, text=ink!82]
+  at ([xshift=2.90cm,yshift=0.13cm]metadataB.center)
+  {node\_id\quad title\quad summary};
+\node[anchor=west, font=\tiny, text=muted]
+  at ([xshift=-2.90cm,yshift=-0.20cm]metadataB.center) {key lookup};
+
+\draw[flow] (queryB.south) -- (structureB.north);
+\node[stepnum] at (12.49,3.57) {1};
+\node[steplabel, anchor=west] at (12.67,3.57) {ordered range scan};
+\draw[flow] (structureB.south) -- (metadataB.north);
+\node[stepnum] at (12.49,2.43) {2};
+\node[steplabel, anchor=west] at (12.67,2.43) {node-ID batches};
+\draw[flow] (metadataB.south) -- (rowsB.north);
+\node[stepnum] at (12.49,1.40) {3};
+\node[steplabel, anchor=west] at (12.67,1.40) {restore order};
+
+% Shared, out-of-path component.
+\node[circle, fill=textstore, minimum size=2.2mm, inner sep=0pt] at (5.47,0.02) {};
+\node[anchor=west, font=\scriptsize, text=muted] at (5.62,0.02)
+  {Text is separate in both layouts and is not read by this query.};
+
+\end{tikzpicture}
+\end{document}
