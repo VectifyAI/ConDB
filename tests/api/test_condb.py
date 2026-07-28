@@ -267,6 +267,30 @@ class FakeLLM:
         }
 
 
+class DescendingLLM:
+    def __init__(self):
+        self.calls = 0
+
+    def chat(self, messages, system="", tools=None, cache_key=None):
+        import re
+
+        self.calls += 1
+        text = messages[0]["content"] if messages else ""
+        ids = re.findall(r"id: ([0-9a-f-]+)", text)
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "rank",
+                    "input": {"ranked_ids": ids[:1], "done": self.calls >= 2},
+                }
+            ],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        }
+
+
 class SpyCacheLLM:
     provider = "anthropic"
     model = "claude-sonnet-4-20250514"
@@ -336,6 +360,17 @@ def test_query_strategy_beam(stored):
     db, tree_id = stored
     result = db.query(tree_id, "test", llm=FakeLLM(), strategy="beam")
     assert isinstance(result, QueryResult)
+
+
+def test_query_strategy_beam_default_reaches_leaf(stored):
+    db, tree_id = stored
+
+    result = db.query(tree_id, "section details", llm=DescendingLLM(), strategy="beam")
+
+    assert len(result.node_ids) == 1
+    assert result.contents[0]["content"]["title"] == "Section 1.1"
+    assert result.turns == 2
+    assert result.trace[0]["top_candidate_ids"] == 0
 
 
 def test_query_strategy_block(stored):

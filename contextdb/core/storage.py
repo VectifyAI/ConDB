@@ -107,6 +107,7 @@ class TreeDB:
     OBJECT = 0
     ARRAY = 1
     LEAF = 2
+    _IN_QUERY_CHUNK_SIZE = 500
 
     def __init__(self, db_path: str = "treedb.sqlite"):
         self.db_path = db_path
@@ -197,6 +198,28 @@ class TreeDB:
         cursor.execute("SELECT * FROM nodes WHERE tree_id = ? AND parent_id = ? ORDER BY slot", (tree_id, node_id))
         return [Node(**dict(row)) for row in cursor.fetchall()]
 
+    def get_children_many(self, tree_id: str, node_ids: list[str]) -> dict[str, list[Node]]:
+        """Fetch several sibling lists while preserving slot order within each parent."""
+        unique_ids = list(dict.fromkeys(node_ids))
+        result: dict[str, list[Node]] = {node_id: [] for node_id in unique_ids}
+        cursor = self.conn.cursor()
+
+        for start in range(0, len(unique_ids), self._IN_QUERY_CHUNK_SIZE):
+            chunk = unique_ids[start:start + self._IN_QUERY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(
+                f"""
+                SELECT * FROM nodes
+                WHERE tree_id = ? AND parent_id IN ({placeholders})
+                ORDER BY parent_id, slot
+                """,
+                [tree_id, *chunk],
+            )
+            for row in cursor.fetchall():
+                node = Node(**dict(row))
+                result[node.parent_id].append(node)
+        return result
+
     def get_subtree(
         self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False
     ) -> list[dict[str, Any]]:
@@ -251,6 +274,33 @@ class TreeDB:
         )
         ent_row = cursor.fetchone()
         return Entity(**dict(ent_row)) if ent_row else None
+
+    def get_entities(self, tree_id: str, node_ids: list[str]) -> dict[str, Optional[Entity]]:
+        """Fetch entities for several nodes, keyed by each unique requested node ID."""
+        unique_ids = list(dict.fromkeys(node_ids))
+        result: dict[str, Optional[Entity]] = {node_id: None for node_id in unique_ids}
+        cursor = self.conn.cursor()
+
+        for start in range(0, len(unique_ids), self._IN_QUERY_CHUNK_SIZE):
+            chunk = unique_ids[start:start + self._IN_QUERY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(
+                f"""
+                SELECT n.node_id AS source_node_id, e.*
+                FROM nodes n
+                JOIN entities e ON n.entity_id = e.entity_id
+                WHERE n.tree_id = ? AND n.node_id IN ({placeholders})
+                """,
+                [tree_id, *chunk],
+            )
+            for row in cursor.fetchall():
+                result[row["source_node_id"]] = Entity(
+                    entity_id=row["entity_id"],
+                    entity_type=row["entity_type"],
+                    payload_json=row["payload_json"],
+                    created_at=row["created_at"],
+                )
+        return result
 
     def get_root_id(self, tree_id: str) -> Optional[str]:
         cursor = self.conn.cursor()
