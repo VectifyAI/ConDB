@@ -249,9 +249,15 @@ class TreeDB:
         if not entity_ids:
             return [n.to_dict() for n in nodes]
 
-        placeholders = ",".join("?" * len(entity_ids))
-        cursor.execute(f"SELECT * FROM entities WHERE entity_id IN ({placeholders})", entity_ids)
-        ent_map = {row["entity_id"]: Entity(**dict(row)) for row in cursor.fetchall()}
+        ent_map: dict[str, Entity] = {}
+        for start in range(0, len(entity_ids), self._IN_QUERY_CHUNK_SIZE):
+            chunk = entity_ids[start:start + self._IN_QUERY_CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor.execute(f"SELECT * FROM entities WHERE entity_id IN ({placeholders})", chunk)
+            ent_map.update(
+                (row["entity_id"], Entity(**dict(row)))
+                for row in cursor.fetchall()
+            )
 
         result = []
         for n in nodes:

@@ -73,8 +73,14 @@ class Config:
 
     @classmethod
     def validate(cls):
-        if not cls.ANTHROPIC_API_KEY and not cls.OPENAI_API_KEY:
-            raise ValueError("Set ANTHROPIC_API_KEY or OPENAI_API_KEY")
+        if cls.LLM_PROVIDER == "anthropic":
+            if not cls.ANTHROPIC_API_KEY:
+                raise ValueError("Set ANTHROPIC_API_KEY for the configured anthropic provider")
+        elif cls.LLM_PROVIDER == "openai":
+            if not cls.OPENAI_API_KEY:
+                raise ValueError("Set OPENAI_API_KEY for the configured openai provider")
+        else:
+            raise ValueError(f"Unsupported LLM provider: {cls.LLM_PROVIDER}")
         return True
 
     @classmethod
@@ -82,11 +88,11 @@ class Config:
         from contextdb.llm import LLMClient
 
         cls.validate()
-        if cls.LLM_PROVIDER == "anthropic" and cls.ANTHROPIC_API_KEY:
+        if cls.LLM_PROVIDER == "anthropic":
             return LLMClient("anthropic", cls.ANTHROPIC_API_KEY, cls.LLM_MODEL)
-        elif cls.LLM_PROVIDER == "openai" and cls.OPENAI_API_KEY:
+        if cls.LLM_PROVIDER == "openai":
             return LLMClient("openai", cls.OPENAI_API_KEY, cls.LLM_MODEL)
-        raise ValueError(f"Invalid provider: {cls.LLM_PROVIDER}")
+        raise AssertionError("Config.validate() accepted an unsupported provider")
 
     @classmethod
     def info(cls):
