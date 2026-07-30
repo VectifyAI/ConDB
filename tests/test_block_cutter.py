@@ -1,4 +1,6 @@
+from contextdb.core.storage import TreeDB
 from contextdb.retriever.algorithm.block_cutter import BlockCutter
+from contextdb.utils.token_counter import TokenCounter
 
 
 class DummyTokenCounter:
@@ -79,3 +81,53 @@ def test_horizontal_tail_pack_is_best_effort_when_rebalance_cannot_reach_minimum
     assert group.blocks[1].node_ids == ["n2", "n3"]
     assert group.blocks[0].total_tokens == 10
     assert group.blocks[1].total_tokens == 2
+
+
+class CountingStorage:
+    def __init__(self, storage):
+        self.storage = storage
+        self.get_subtree_calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self.storage, name)
+
+    def get_subtree(self, *args, **kwargs):
+        self.get_subtree_calls += 1
+        return self.storage.get_subtree(*args, **kwargs)
+
+
+def _deep_tree(depth: int) -> dict:
+    node = {"type": "leaf"}
+    for _ in range(depth):
+        node = {"type": "object", "children": {"child": node}}
+    return node
+
+
+def test_cut_tree_materializes_tokens_once_and_keeps_depth_past_100():
+    with TreeDB(":memory:") as db:
+        tree_id = db.ingest_tree(_deep_tree(120))
+        storage = CountingStorage(db)
+        token_counter = TokenCounter()
+        root_id = db.get_root_id(tree_id)
+        token_counter._cache[root_id] = 1_000_000
+        cutter = BlockCutter(
+            storage=storage,
+            token_counter=token_counter,
+            max_tokens_per_block=100_000,
+        )
+
+        plan = cutter.cut_tree(tree_id)
+
+        assert storage.get_subtree_calls == 1
+        assert plan.total_tokens < 1_000_000
+        assert len(plan.blocks) == 1
+        assert plan.blocks[0].depth_start == 0
+        assert plan.blocks[0].depth_end == 120
+
+
+def test_precompute_missing_tree_does_not_return_stale_cache():
+    counter = TokenCounter()
+    counter._cache["old-node"] = 123
+
+    with TreeDB(":memory:") as db:
+        assert counter.precompute_tree_tokens(db, "missing-tree") == {}
