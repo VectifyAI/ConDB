@@ -113,3 +113,37 @@ def test_get_entities_is_tree_scoped(populated_db):
     other_tree_id, _ = db.create_tree()
 
     assert db.get_entities(other_tree_id, [node_id])[node_id] is None
+
+
+def test_get_subtree_chunks_large_entity_fetch():
+    width = 501
+    tree = {
+        "type": "object",
+        "children": {
+            f"child-{index}": {
+                "type": "leaf",
+                "entity_id": f"entity-{index}",
+            }
+            for index in range(width)
+        },
+    }
+    entities = {
+        f"entity-{index}": {"type": "text", "text": f"value-{index}"}
+        for index in range(width)
+    }
+
+    with TreeDB(":memory:") as db:
+        tree_id = db.ingest_tree(tree, entities=entities)
+        root_id = db.get_root_id(tree_id)
+        statements = []
+        db.conn.set_trace_callback(statements.append)
+
+        result = db.get_subtree(tree_id, root_id, with_entities=True)
+
+        entity_selects = [
+            sql
+            for sql in statements
+            if "SELECT * FROM entities WHERE entity_id IN" in sql
+        ]
+        assert len(entity_selects) == 2
+        assert sum("entity" in node for node in result) == width

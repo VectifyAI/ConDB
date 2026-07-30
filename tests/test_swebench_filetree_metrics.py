@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from bench.run_swebench_filetree import aggregate, gold_cutoff_metrics, render_report
+from bench.run_swebench_filetree import aggregate, render_report, set_metrics
 
 
-def test_gold_cutoff_metrics_use_gold_file_count_as_cutoff():
-    metrics = gold_cutoff_metrics(["a.py", "x.py", "b.py"], {"a.py", "b.py"})
+def test_set_metrics_uses_the_full_returned_set():
+    metrics = set_metrics(["a.py", "x.py", "b.py"], {"a.py", "b.py"})
 
     assert metrics == {
-        "found@gold": 1,
-        "recall@gold": 0.5,
-        "exact@gold": 0,
+        "precision": 2 / 3,
+        "recall": 1.0,
+        "f1": 0.8,
+        "exact_match": 0,
+        "hit": 2,
     }
 
 
@@ -18,27 +20,27 @@ def test_aggregate_recomputes_metrics_from_predictions():
         {
             "gold": ["a.py"],
             "gold_count": 1,
-            "top_k_preds": ["x.py", "a.py"],
+            "preds": ["x.py", "a.py"],
             "num_preds": 2,
-            "found@gold": 1,
-            "recall@gold": 1.0,
-            "exact@gold": 1,
-            "rr": 1.0,
-            "ndcg@10": 1.0,
+            "precision": 1.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "exact_match": 1,
             "error": None,
         }
     ]
 
     summary = aggregate(records)
 
-    assert summary["found@gold"] == 0
-    assert summary["recall@gold"] == 0
-    assert summary["exact@gold"] == 0
+    assert summary["precision"] == 0.5
+    assert summary["recall"] == 1.0
+    assert summary["f1"] == 2 / 3
+    assert summary["exact_match"] == 0
     assert summary["mrr"] == 0.5
     assert summary["avg_gold"] == 1
 
 
-def test_report_uses_gold_cutoff_metrics_without_fixed_hit_fields():
+def test_report_uses_set_metrics_without_fixed_cutoff_fields():
     records = [
         {
             "query_id": "q1",
@@ -48,7 +50,7 @@ def test_report_uses_gold_cutoff_metrics_without_fixed_hit_fields():
             "path_signal_level": 1,
             "gold": ["a.py", "b.py"],
             "gold_count": 2,
-            "top_k_preds": ["a.py", "x.py"],
+            "preds": ["a.py", "x.py"],
             "num_preds": 2,
             "error": None,
         }
@@ -61,7 +63,6 @@ def test_report_uses_gold_cutoff_metrics_without_fixed_hit_fields():
             "provider": "anthropic",
             "model": "claude-sonnet-4-6",
             "strategy": "block",
-            "top_k": 10,
             "ranker": "none",
             "num_queries": 1,
             "num_snapshots": 1,
@@ -75,8 +76,8 @@ def test_report_uses_gold_cutoff_metrics_without_fixed_hit_fields():
 
     report = render_report(summary, records)
 
-    assert "recall@gold" in report
-    assert "exact@gold" in report
-    assert "found@gold" in report
+    assert "precision" in report
+    assert "exact_match" in report
+    assert "| recall |" in report
     assert "hit" + "@" not in report
-    assert "recall" + "@10" not in report
+    assert "recall" + "@gold" not in report

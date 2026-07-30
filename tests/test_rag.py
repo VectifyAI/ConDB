@@ -25,8 +25,10 @@ def test_rag():
     with open(DATA_FILE) as f:
         data = json.load(f)
 
-    if not (Config.ANTHROPIC_API_KEY or Config.OPENAI_API_KEY):
-        pytest.skip("Set ANTHROPIC_API_KEY or OPENAI_API_KEY to run live RAG test")
+    try:
+        Config.validate()
+    except ValueError as error:
+        pytest.skip(str(error))
 
     llm = Config.get_llm_client()
     ct = ContextTree(str(DB_PATH), llm=llm)
