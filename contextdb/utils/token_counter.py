@@ -192,6 +192,12 @@ class TokenCounter:
     ) -> SubtreeTokenInfo:
         """Count total tokens for a subtree."""
         subtree = storage.get_subtree(tree_id, node_id, max_depth, with_entities=True)
+        return self._summarize_subtree_tokens(node_id, subtree)
+
+    def _summarize_subtree_tokens(
+        self, root_node_id: str, subtree: list[dict[str, Any]]
+    ) -> SubtreeTokenInfo:
+        """Count and aggregate an already materialized subtree in one pass."""
 
         token_by_depth: dict[int, int] = {}
         total_tokens = 0
@@ -206,7 +212,7 @@ class TokenCounter:
             max_seen_depth = max(max_seen_depth, depth)
 
         return SubtreeTokenInfo(
-            root_node_id=node_id,
+            root_node_id=root_node_id,
             total_tokens=total_tokens,
             node_count=len(subtree),
             max_depth=max_seen_depth,
@@ -229,13 +235,29 @@ class TokenCounter:
 
     def precompute_tree_tokens(self, storage, tree_id: str) -> dict[str, int]:
         """Precompute token counts for all nodes in a tree."""
+        tree_info = self.precompute_tree_token_info(storage, tree_id)
+        if not tree_info.root_node_id:
+            return {}
+        return dict(self._cache)
+
+    def precompute_tree_token_info(
+        self, storage, tree_id: str, max_depth: int = 1000
+    ) -> SubtreeTokenInfo:
+        """Precompute node counts and return aggregate tree token information."""
         root_id = storage.get_root_id(tree_id)
         if not root_id:
-            return {}
+            return SubtreeTokenInfo(
+                root_node_id="",
+                total_tokens=0,
+                node_count=0,
+                max_depth=0,
+                token_by_depth={},
+            )
 
-        subtree = storage.get_subtree(tree_id, root_id, max_depth=1000, with_entities=True)
-
-        for node in subtree:
-            self.count_node_tokens(node)
-
-        return dict(self._cache)
+        subtree = storage.get_subtree(
+            tree_id,
+            root_id,
+            max_depth=max_depth,
+            with_entities=True,
+        )
+        return self._summarize_subtree_tokens(root_id, subtree)

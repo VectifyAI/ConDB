@@ -38,11 +38,14 @@ class BlockCutter:
         if not root_id:
             return BlockTreePlan(tree_id=tree_id, max_tokens_per_block=self.max_tokens)
 
-        # Precompute all node tokens
-        self.token_counter.precompute_tree_tokens(self.storage, tree_id)
+        # A TokenCounter may be reused across tree plans. Node IDs are normally
+        # unique, but clearing here also keeps custom/imported IDs from reusing
+        # counts computed from another tree.
+        self.token_counter.clear_cache()
 
-        # Get full tree token info
-        tree_info = self.token_counter.count_subtree_tokens(self.storage, tree_id, root_id)
+        # Materialize and count the tree once. The previous two-call sequence
+        # loaded every entity twice and also truncated plan depth at 100.
+        tree_info = self.token_counter.precompute_tree_token_info(self.storage, tree_id)
 
         plan = BlockTreePlan(
             tree_id=tree_id,

@@ -338,11 +338,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         if not root_id:
             return self._empty_result()
 
-        if tree_id != self._precomputed_tree_id:
-            self.token_counter.clear_cache()
-            self.token_counter.precompute_tree_tokens(self.storage, tree_id)
-            self._precomputed_tree_id = tree_id
-
         plan = self._get_or_create_plan(tree_id)
         if not plan.blocks:
             return self._empty_result()
@@ -549,11 +544,12 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             )
             return [(result, llm_called, cache_metrics, blk)]
 
-        results = []
+        ordered_results = [None] * len(tasks)
         max_workers = self._max_parallel_workers(len(tasks))
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(
+            futures = {}
+            for index, (blk, allowed) in enumerate(tasks):
+                future = pool.submit(
                     self._process_block,
                     blk,
                     query,
@@ -564,15 +560,15 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                     cache_segments=cache_segments or [],
                     current_block_content=blk.cached_content or "",
                     cache_current_block=cache_current_block,
-                ): blk
-                for blk, allowed in tasks
-            }
-            for future in as_completed(futures):
-                blk = futures[future]
-                result, llm_called, cache_metrics = future.result()
-                results.append((result, llm_called, cache_metrics, blk))
+                )
+                futures[future] = (index, blk)
 
-        return results
+            for future in as_completed(futures):
+                index, blk = futures[future]
+                result, llm_called, cache_metrics = future.result()
+                ordered_results[index] = (result, llm_called, cache_metrics, blk)
+
+        return [row for row in ordered_results if row is not None]
 
     def _max_parallel_workers(self, task_count: int) -> int:
         return max(1, min(task_count, self.max_parallel_blocks))
@@ -799,6 +795,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         return self._update_frontier(node_ids, tree_id, beam_size)
 
     def _frontier_has_children(self, tree_id: str, frontier: list[dict[str, str]]) -> bool:
+        document_node_ids = []
         for frontier_node in frontier:
             node_id = frontier_node.get("node_id", "")
             if not node_id:
@@ -807,6 +804,15 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                 if self._fs_node_has_children(tree_id, node_id):
                     return True
                 continue
+            document_node_ids.append(node_id)
+
+        unique_node_ids = list(dict.fromkeys(document_node_ids))
+        get_children_many = getattr(self.storage, "get_children_many", None)
+        if len(unique_node_ids) > 1 and callable(get_children_many):
+            children_by_parent = get_children_many(tree_id, unique_node_ids)
+            return any(children_by_parent.get(node_id) for node_id in unique_node_ids)
+
+        for node_id in unique_node_ids:
             if self.storage.get_children(tree_id, node_id):
                 return True
         return False
@@ -993,9 +999,19 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
     # ---- DB helpers ----
 
     def _gather_contents(self, tree_id, top_candidate_ids):
+        unique_node_ids = list(dict.fromkeys(top_candidate_ids))
+        get_entities = getattr(self.storage, "get_entities", None)
+        if len(unique_node_ids) > 1 and callable(get_entities):
+            entities = get_entities(tree_id, unique_node_ids)
+        else:
+            entities = {
+                node_id: self.storage.get_entity(tree_id, node_id)
+                for node_id in unique_node_ids
+            }
+
         contents = []
         for node_id in top_candidate_ids:
-            entity = self.storage.get_entity(tree_id, node_id)
+            entity = entities.get(node_id)
             if entity:
                 contents.append({"node_id": node_id, "content": json.loads(entity.payload_json)})
         return contents
