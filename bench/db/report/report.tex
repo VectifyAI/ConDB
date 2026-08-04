@@ -82,9 +82,11 @@ ID-only improvement but not a covered-Metadata improvement. A frozen 256-row
 DFS bucket layout improves large-subtree P50/P95 by
 1.57$\times$/1.72$\times$ on the full root-ID-disjoint split; after removing
 all ancestor-correlated roots, the ratios remain
-1.56$\times$/1.67$\times$. Small subtrees regress. The practical direction is
-to coalesce naturally grouped short reads and route only large subtrees through
-buckets. The SQLite-backed Beam path now coalesces its per-turn child and
+1.56$\times$/1.67$\times$. Small subtrees regress. A candidate direction is
+to coalesce naturally grouped short reads and investigate routing only large
+subtrees through buckets, but the MongoDB interventions remain storage-harness
+experiments rather than integrated ConDB paths. The SQLite-backed Beam path now
+coalesces its per-turn child and
 entity reads. With the public defaults (\code{beam\_size=3},
 \code{select\_k=1}), a file-backed control returns one leaf and its content,
 reduces batchable reads from 37 to five and all SQLite \code{SELECT}s from 39
@@ -221,7 +223,8 @@ SQLite     & Path nodes + shared source table       & Order/Size nodes + shared 
 All runs use a dual-socket Intel Xeon Gold 6418H host with 48 physical cores,
 96 hardware threads, and 1\,TiB RAM. MongoDB~7.0.34 and PostgreSQL~16.14 run as
 localhost services; the base SQLite storage experiments use SQLite~3.50.4 in
-process. The production-path controls in Section~\ref{sec:opt-production} were
+process. The cross-engine implementation controls in
+Section~\ref{sec:opt-production} were
 run separately with system Python~3.10.12 and SQLite~3.37.2; their raw files
 record the exact environment. Database and operating-system caches are not
 flushed.
@@ -245,7 +248,9 @@ Optimization experiments state their own repeat counts and also summarize
 per-input medians. Base layout comparisons do not report confidence intervals,
 so sub-millisecond differences there are descriptive. The cursor experiment
 reports descriptive root-bootstrap intervals for paired medians; they do not
-model hierarchy/branch clustering.
+model hierarchy/branch clustering. Unless stated otherwise, P95 is therefore a
+workload percentile across inputs after per-input repetition, not an
+open-loop service-latency tail over repeated arrivals of one request.
 
 \subsection{Dataset and workload}
 
@@ -457,7 +462,9 @@ dominates only at the 1\,KiB size used by the main workload.
 The profiles suggest two different interventions. Short reads can share fixed
 command setup by coalescing already-known inputs. Subtree reads may need a
 larger storage record rather than a different network transfer chunk. We test
-both ideas in the storage harness.
+both ideas in the storage harness. Here, \emph{validated} means output-equivalent
+within that harness; it does not mean integrated into ConDB's public API. None
+of the MongoDB interventions in this section is currently a production path.
 
 The primary short-read sweep disables PyMongo command monitoring and uses 80
 random input groups, five cyclically interleaved repeats, and two grouping
@@ -652,7 +659,9 @@ correct for shared hierarchy branches.
 DFS/path-order rows into parallel column arrays. A query performs the normal
 root lookup, two covered boundary probes, one contiguous bucket-sequence scan,
 and a range check on every decoded row; logically, only the two boundary
-buckets can contain out-of-range rows. Five candidate sizes
+buckets can contain out-of-range rows. This is a workload-specific use of
+MongoDB's Bucket Pattern.\footnote{\href{https://www.mongodb.com/docs/manual/data-modeling/design-patterns/group-data/bucket-pattern/}{MongoDB,
+``Group Data with the Bucket Pattern.''}} Five candidate sizes
 (128, 256, 512, 2{,}048, and 8{,}192 rows) run together on 75 selection roots.
 The 256-row candidate has the lowest absolute selection P95; the winner is
 frozen before a separate runner measures 100 previously unqueried root IDs for
@@ -874,7 +883,10 @@ denominator matches that design.
 Buckets are a poor fit for small subtrees. Across 250 previously unused roots
 returning 265 rows on average, P50 rises from 1.044 to 2.171\,ms and only 30
 roots improve, although P95 falls from 3.769 to 3.348\,ms. A serving path should
-route by subtree size and keep small reads on the existing index. Mutable trees
+not adopt size-based routing from these measurements alone: this study does not
+measure how subtree size is known before the read, the routing threshold and
+overhead, or false-route cost. Those controls are required before keeping small
+reads on the existing index and sending large reads to buckets. Mutable trees
 also need an update, rebuild, and atomic-publication design.
 
 \subsection{Entity fetch}\label{sec:opt-entity}
@@ -904,11 +916,13 @@ response-size and cursor-chunking costs, as the 256\,KiB control in
 Section~\ref{sec:overhead} shows. Multi-entity fetch is useful for naturally
 co-requested small texts.
 
-\subsection{Production-path integration}\label{sec:opt-production}
+\subsection{Cross-engine implementation control (SQLite only)}\label{sec:opt-production}
 
 \subsubsection{Optimization method}
 
-The SQLite storage layer now provides multi-parent-child and multi-entity
+This control tests whether the short-read direction survives in existing ConDB
+code; it is not a MongoDB implementation or a validation of MongoDB end-to-end
+latency. The SQLite storage layer now provides multi-parent-child and multi-entity
 reads. Inputs are deduplicated, missing entries remain explicit, every query is
 scoped by \code{tree\_id}, and requests are split into 500-ID chunks. Child
 rows are regrouped by parent without changing slot order. Beam uses a batch
@@ -1012,24 +1026,36 @@ Each records its command line, Git head, output fingerprint, and source-file
 hashes. The public scalar navigation methods, other tree shapes, and mutable
 trees remain outside this control.
 
+\Needspace{7\baselineskip}
+The companion file
+\path{bench/db/report/MONGODB_OPTIMIZATION_REVIEW.md} maps the MongoDB claims to
+their frozen artifacts and SHA-256 values, distinguishes component evidence from
+implemented behavior, and records the remaining adoption gates. The large raw
+measurement JSON files under \path{bench/db/runs} are not versioned by default;
+external reproduction therefore requires publishing that frozen evidence bundle
+in addition to this report and its manifest.
+
 \section{Conclusion}
 
-Request coalescing is now integrated into the SQLite-backed Beam path. The
-storage experiment shows that it helps with only three inputs and remains
-faster than submitting individual queries through a 16-worker pool. The
-production control confirms the direction but also bounds the claim: reducing
-37 batchable reads to five yields a repeatable
+Request coalescing is now integrated into the SQLite-backed Beam path. Under
+the report's local, warm-cache, fully materialized conditions, the storage
+experiment shows that it helps with only three inputs and remains faster than
+submitting individual queries through a 16-worker pool. The cross-engine
+implementation control confirms the direction but also bounds the claim:
+reducing 37 batchable reads to five yields a repeatable
 1.18$\times$ single-client gain and a 1.16$\times$ median paired throughput
-gain at
-16 clients, not a statement-count-sized speedup. Cursor batch tuning is not worth
-pursuing for the covered subtree path: small batches add \code{getMore}
-traffic, while large requests fail to improve Metadata retrieval.
+gain at 16 clients, not a statement-count-sized speedup. Under these same
+conditions, cursor batch tuning is not worth pursuing for the fully
+materialized covered-Metadata subtree path: small batches add \code{getMore}
+traffic, while large requests fail to improve Metadata retrieval. Remote RTT,
+streaming, and early termination remain unmeasured.
 
-DFS buckets are useful for large subtrees but should sit behind a size-based
-route because small reads regress. The next experiments should measure the
-same Beam path on additional trees, decide whether public navigation needs
-batch methods, and evaluate bucket routing on branch-disjoint trees with mixed
-subtree sizes. Mutable trees also need measured rebuild and publication
-behavior.
+DFS buckets improve the measured large-subtree cohort but are not ready for an
+adoption decision because small reads regress and the size-based router itself
+is unmeasured. The next experiments should measure the same Beam path on
+additional trees, decide whether public navigation needs batch methods, and
+evaluate the size estimator, routing threshold, and false-route cost on
+branch-disjoint trees with mixed subtree sizes. Mutable trees also need measured
+rebuild and publication behavior.
 
 \end{document}
