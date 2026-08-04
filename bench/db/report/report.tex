@@ -85,7 +85,11 @@ all ancestor-correlated roots, the ratios remain
 1.56$\times$/1.67$\times$. Small subtrees regress. A candidate direction is
 to coalesce naturally grouped short reads and investigate routing only large
 subtrees through buckets, but the MongoDB interventions remain storage-harness
-experiments rather than integrated ConDB paths. The SQLite-backed Beam path now
+experiments rather than integrated ConDB paths. In a separate MongoDB
+master-snapshot source microbenchmark, activating a private direct,
+non-deduplicating count-scan path reduces benchmark-thread retired instructions
+in user space by 4.812\% and CPU time by 4.877\%; this is not a 7.0.34, ConDB, or production
+result. The SQLite-backed Beam path now
 coalesces its per-turn child and
 entity reads. With the public defaults (\code{beam\_size=3},
 \code{select\_k=1}), a file-backed control returns one leaf and its content,
@@ -221,9 +225,12 @@ SQLite     & Path nodes + shared source table       & Order/Size nodes + shared 
 \subsection{Experimental setup}
 
 All runs use a dual-socket Intel Xeon Gold 6418H host with 48 physical cores,
-96 hardware threads, and 1\,TiB RAM. MongoDB~7.0.34 and PostgreSQL~16.14 run as
-localhost services; the base SQLite storage experiments use SQLite~3.50.4 in
-process. The cross-engine implementation controls in
+96 hardware threads, and 1\,TiB RAM. Except for the separate source experiment
+in Section~\ref{sec:master-countscan}, all ConDB storage-harness and root-cause
+measurements use MongoDB~7.0.34; that experiment uses master snapshot
+\code{5d3b36cf3871} and neither reruns nor replaces the 7.0.34 measurements.
+PostgreSQL~16.14 runs as a localhost service; the base SQLite storage
+experiments use SQLite~3.50.4 in process. The cross-engine implementation controls in
 Section~\ref{sec:opt-production} were
 run separately with system Python~3.10.12 and SQLite~3.37.2; their raw files
 record the exact environment. Database and operating-system caches are not
@@ -457,12 +464,78 @@ control shows no measurable P50 change at 1\,KiB. At 256\,KiB, latency rises
 to 0.391\,ms in MongoDB and 0.619\,ms in PostgreSQL. Fixed lookup work
 dominates only at the 1\,KiB size used by the main workload.
 
+\section{Separate MongoDB master-snapshot source experiment}
+\label{sec:master-countscan}
+
+The 7.0.34 root-cause controls above motivated one narrow source experiment on
+MongoDB master snapshot \code{5d3b36cf3871}. The candidate commit
+\href{https://github.com/carsontung666/mongo/commit/675598a071ca208c875ac7cf1874234fa644dd24}{\code{675598a071ca}}
+adds a private resultless protocol for a direct, non-deduplicating classic
+\code{CountStage}$\rightarrow$\code{CountScan} pair. Because the parent consumes
+only execution state, this path avoids creating and freeing one unused
+\code{WorkingSetMember} per matching key. Standalone \code{CountScan::work()}
+retains its valid WorkingSet output in the tested paths; multikey and compound-
+wildcard scans retain the materializing, deduplicating path.
+
+This is an activation ablation, not candidate-versus-upstream or
+7.0.34-versus-master. Both arms are built from the candidate commit and contain
+all candidate implementation and benchmark-harness code. The activation-disabled
+control additionally removes only the constructor block that enables the private
+protocol. Both use the same
+\code{--config=opt --config=local} build and run the same hinted count over
+500{,}000 scalar indexed keys. An untimed warmup requires the exact count before
+measurement. Ten fresh-process pairs use a predeclared, balanced control-first/
+candidate-first order; each process contributes five raw one-iteration
+repetitions. The analysis averages repetitions within process, forms ten paired
+candidate/control ratios, and reports their geometric mean with a 100{,}000-
+sample paired-bootstrap interval (seed 20260805).
+
+\begin{table}[H]
+\caption{Enabled private count protocol versus its activation-disabled
+candidate control; neither arm is stock upstream. Values are geometric means
+of the ten process-block means. Time is per 500{,}000-key count.}
+\label{tab:master-countscan}
+\begin{ctab}
+\setlength{\tabcolsep}{7pt}
+\begin{tabular}{@{}lrrrc@{}}
+\toprule
+\hdr Metric & Control & Enabled & Reduction & 95\% CI \\
+\midrule
+Main-thread user-space instructions (billions)
+  & 1.28874 & 1.22672 & 4.8121\% & [4.8110\%, 4.8131\%] \\
+Benchmark-thread CPU time (ms)
+  & 125.860 & 119.722 & 4.8766\% & [3.2522\%, 6.5364\%] \\
+Wall time (ms)
+  & 125.895 & 119.740 & 4.8885\% & [3.2544\%, 6.5590\%] \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+All ten pairs favor activation for all three metrics. User-space retired instructions are
+the primary mechanism check; CPU time is benchmark-thread time rather than
+whole-process CPU, and wall time is an auxiliary result that closely tracks it.
+Targeted validation passes the two count dbtest suites, 22 forced-classic core
+resmoke result entries from four JS files and 12 forced-classic aggregation
+entries from two JS files; those entry counts include fixture and hook events.
+It also covers public WorkingSet
+output, child statistics, an injected \code{NEED\_YIELD} plus save/restore, and
+the multikey fallback. This is not a full MongoDB qualification run.
+
+The result is limited to this warmed, single-thread, in-process, full-range
+scalar count. It does not establish improvement for stock upstream master,
+MongoDB~7.0.34, SBE, deduplicating or indirect plan shapes, covered-Metadata
+production, cold caches, concurrent or mixed load, remote clients, the ConDB
+endpoint, or production latency. The raw paired JSON, exact activation patch,
+candidate patch, validation reports, binary identities, and analysis are frozen
+under \path{bench/db/report/evidence/mongodb_master_countscan_20260805}.
+
 \section{Optimization experiments}\label{sec:optimization}
 
-The profiles suggest two different interventions. Short reads can share fixed
-command setup by coalescing already-known inputs. Subtree reads may need a
-larger storage record rather than a different network transfer chunk. We test
-both ideas in the storage harness. Here, \emph{validated} means output-equivalent
+The 7.0.34 storage-harness profiles suggest two different interventions. Short
+reads can share fixed command setup by coalescing already-known inputs. Subtree
+reads may need a larger storage record rather than a different network transfer
+chunk. We test both ideas in that storage harness. Here, \emph{validated} means output-equivalent
 within that harness; it does not mean integrated into ConDB's public API. None
 of the MongoDB interventions in this section is currently a production path.
 
@@ -480,7 +553,7 @@ submitted individual queries, and one \code{\$in} query; even its 64-input arm
 never exceeds 16 client threads.
 
 \begin{table}[H]
-\caption{MongoDB intervention endpoints. Short-read latency is wall time for
+\caption{MongoDB 7.0.34 storage-harness intervention endpoints. Short-read latency is wall time for
 one group of 64 already-known inputs under a sequential individual-query
 baseline. Subtree rows use separate paired cohorts and projections. The last
 column is the ratio of baseline to candidate latency at the marginal P50 and
@@ -1049,6 +1122,12 @@ conditions, cursor batch tuning is not worth pursuing for the fully
 materialized covered-Metadata subtree path: small batches add \code{getMore}
 traffic, while large requests fail to improve Metadata retrieval. Remote RTT,
 streaming, and early termination remain unmeasured.
+
+Separately, activating the master-snapshot direct non-deduplicating count path
+reduces benchmark-thread user-space retired instructions by 4.812\% and CPU time by 4.877\%
+against its activation-disabled candidate control. That narrow source
+microbenchmark is not a MongoDB version comparison or evidence of ConDB,
+whole-process, concurrent, or production improvement.
 
 DFS buckets improve the measured large-subtree cohort but are not ready for an
 adoption decision because small reads regress and the size-based router itself

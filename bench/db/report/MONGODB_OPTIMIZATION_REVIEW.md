@@ -15,10 +15,37 @@ not the same:
 | Coalesce already-known node, parent, or entity IDs | Two grouping seeds, exact output checks, listener-free wall time, and a control against individual requests submitted through at most 16 workers | Promising in the MongoDB storage harness. Not implemented in a MongoDB ConDB backend; group formation, remote RTT, and API-level load remain unmeasured. |
 | Change `Cursor.batch_size` for subtree reads | 100 matched paths, five repeats, exact ordered-output checks, separate listener-free latency and command-count telemetry, ID-only and covered-Metadata projections | Reject manual tuning for the covered-Metadata path. The large request has no meaningful covered-Metadata gain; small batches regress. Keep the driver default. |
 | Store consecutive DFS rows in bounded bucket documents | Frozen five-size selection, 100-root holdout, seven paired repeats, a 67-root range-disjoint sensitivity, 250 unused small/deep roots, full 10M-row digest, BSON-size check, and an independent live output audit | Promising only for the measured large-subtree cohort. Do not adopt until the size estimator/router, mutable-tree updates, atomic publication, multi-tree behavior, and end-to-end API path are measured. |
+| Activate a private direct, non-deduplicating `CountStage` -> `CountScan` protocol on MongoDB master | Public-output, CommonStats, injected-yield, multikey-fallback, classic-core, and aggregation correctness checks; ten logging-suppressed process pairs with five raw repetitions per arm | Local source candidate only. The A/B isolates activation within one patched master snapshot; it is not an upstream, 7.0.34, or end-to-end ConDB comparison. |
 | SQLite Beam batching | Real `TreeDB` and `BeamRetriever` code, file-backed latency control, exact result fingerprints, and 1/4/16-client load control | Implemented and tested, but it is a cross-engine implementation check. It is not evidence that MongoDB production latency improved. |
 
 No MongoDB optimization described by the main report is currently integrated
-into ConDB's public storage path.
+into ConDB's public storage path. The executor candidate is committed only on
+the `carsontung666/mongo` fork and has not been merged into upstream MongoDB or
+a MongoDB release.
+
+## MongoDB source candidate audit
+
+The report's service and ConDB storage-harness baseline remains tag `r7.0.34`
+for reproducibility. Source development targets current master snapshot
+`5d3b36cf3871846fe7894616e964cb520c11d473`, because a patch intended for
+review should not be built on a maintenance tag. This is a source target
+decision, not evidence that master is faster than 7.0.34.
+
+The source audit rejected redundant or unsafe directions before implementation:
+
+| Candidate direction | Audit decision |
+|---|---|
+| Reintroduce an `_id` fast path | Reject as redundant: current master already routes eligible point queries through EXPRESS planning. |
+| Add classic batched `getNext` handoff or repeat known SBE IXSCAN refactors | Reject as redundant: the relevant batching/refactoring is already present on master. |
+| Generalize compound unique equality conjunctions into EXPRESS | Reject for this round. A correct gate must prove full canonical-key coverage and account for multikey, collation, sparse/partial indexes, sharding, projection, and planner semantics. A multikey counterexample invalidates a broad rewrite. |
+| Avoid unused `WorkingSetMember` materialization under direct count | Accept narrowly. The optimization is gated to a direct, non-deduplicating classic `CountScan`; deduplicating and standalone consumers retain the public path. |
+
+Two earlier prototypes were discarded rather than benchmarked as final
+evidence. Returning `ADVANCED` with an invalid WorkingSet ID violated the public
+PlanStage contract; reusing one live member bent generic ownership/lifetime
+expectations. The committed design instead uses a private friend protocol while
+leaving public `CountScan::work()` materialization intact. No measurements from
+the rejected prototypes appear in the report.
 
 ## Superseded component claims
 
@@ -44,7 +71,9 @@ The draft's repeated "MongoDB product team confirmed" and "version bump would
 not change" statements have no reviewable reply, date, ticket, or 8.x benchmark
 in this repository. They must not support a published conclusion without a
 citable record. At most, the 7.0 experiment establishes the measured access path;
-absolute latency on newer server versions remains unmeasured.
+absolute latency on newer server versions remains unmeasured. The patched
+master source microbenchmark uses a different workload and an activation-
+disabled candidate control, so it is not a 7.0.34-to-master version comparison.
 
 The draft describes an average 36,456.7-row subtree as "up to" or "worst case."
 For its 200-root cohort the stored row counts range from 5,006 to 1,404,566
@@ -55,6 +84,35 @@ calls rather than a fixed 36. Its P95 cannot be explained as a 36-call endpoint.
 
 The following locally frozen artifacts were re-read during this review. Their
 bytes match the SHA-256 values below.
+
+### MongoDB master direct-count source experiment
+
+The frozen bundle is
+`bench/db/report/evidence/mongodb_master_countscan_20260805/`. Its manifest
+`SHA256SUMS` has SHA-256
+`a9649df5c9caa3aac1b93b2f5f3d2571218067217a4bdf233c2332a0e8a8bb34`.
+
+| Item | Identity or result |
+|---|---|
+| Upstream snapshot | `5d3b36cf3871846fe7894616e964cb520c11d473` |
+| Candidate commit | `675598a071ca208c875ac7cf1874234fa644dd24` |
+| Enabled binary SHA-256 | `5124a7cfab2ad6c5480a441f7665339df44d327eb018197f675b4399c15388f5` |
+| Activation-disabled binary SHA-256 | `e55c61666c362b1baf506e3b157b04a9cdd277cd08dceb8f00ef2dbf3d3da468` |
+| Retired-instruction reduction | 4.812071%, paired-bootstrap 95% interval [4.810965%, 4.813114%] |
+| Benchmark-thread CPU-time reduction | 4.876567%, interval [3.252197%, 6.536442%] |
+| Wall-time reduction | 4.888550%, interval [3.254416%, 6.559018%] |
+
+The control is not unmodified upstream. Both arms are built from the candidate
+commit and contain all candidate implementation and benchmark-harness code;
+`baseline_disable.patch` additionally removes only the constructor activation block. The 20
+raw JSON files contain ten process pairs, five raw one-iteration repetitions
+per arm. `analyze.py` validates those invariants and reproduces `summary.json`
+with a 100,000-sample complete-pair bootstrap (seed 20260805). The final fixture
+suppresses timed slow-query logging. Targeted validation passed the two count
+dbtest suites, four forced-classic core JS files and two aggregation JS files.
+The frozen resmoke reports contain 22 and 12 passing result entries respectively,
+including fixture and hook events. These are not a full MongoDB qualification
+or production workload.
 
 | Superseded-draft evidence | SHA-256 |
 |---|---|
@@ -133,7 +191,14 @@ Before presenting a MongoDB optimization as production-ready, measure:
    estimate;
 7. a durable archive for the raw JSON evidence. `bench/db/runs` is gitignored,
    so a repository clone currently contains this manifest but not the frozen
-   measurements needed to recompute it.
+   storage-harness measurements needed to recompute it. The smaller master
+   CountScan experiment is the exception: its complete evidence bundle is now
+   versioned under `bench/db/report/evidence`;
+8. before proposing the source candidate upstream, run the applicable full
+   Evergreen matrix and longer server-process workloads, including concurrent
+   yields and multiple selectivities. The private wrapper deliberately mirrors
+   `PlanStage::work()` statistics and timing; future base-class changes must keep
+   those two paths synchronized.
 
 P95 in the main tables is usually a percentile across per-input medians. It
 describes workload heterogeneity and must not be presented as an open-loop

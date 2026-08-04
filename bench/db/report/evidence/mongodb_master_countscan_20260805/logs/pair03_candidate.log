@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-05T02:55:56.924+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":3228363705}}
+2026-08-05T02:55:56+08:00
+Running /tmp/mongo-count-query-bm-nolog-enabled
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 5.29, 5.68, 10.37
+--------------------------------------------------------------------------------------------------------------------
+Benchmark                                                          Time             CPU   Iterations UserCounters...
+--------------------------------------------------------------------------------------------------------------------
+CountQueryBenchmark/NonMultikeyCountScan/500000/64         117258310 ns    117259006 ns            1 cycles_per_iteration=246.254M instructions_per_iteration=1.2267G items_per_second=4.26406M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64         121171474 ns    121172248 ns            1 cycles_per_iteration=254.47M instructions_per_iteration=1.22672G items_per_second=4.12636M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64         124980211 ns    124980604 ns            1 cycles_per_iteration=262.466M instructions_per_iteration=1.22675G items_per_second=4.00062M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64         121046066 ns    121046450 ns            1 cycles_per_iteration=254.205M instructions_per_iteration=1.22673G items_per_second=4.13065M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64         120682955 ns    120683460 ns            1 cycles_per_iteration=253.443M instructions_per_iteration=1.22672G items_per_second=4.14307M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64_mean    121027803 ns    121028354 ns            5 cycles_per_iteration=254.168M instructions_per_iteration=1.22672G items_per_second=4.13295M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64_median  121046066 ns    121046450 ns            5 cycles_per_iteration=254.205M instructions_per_iteration=1.22672G items_per_second=4.13065M/s
+CountQueryBenchmark/NonMultikeyCountScan/500000/64_stddev    2737266 ns      2737163 ns            5 cycles_per_iteration=5.74711M instructions_per_iteration=19.8193k items_per_second=93.3452k/s
