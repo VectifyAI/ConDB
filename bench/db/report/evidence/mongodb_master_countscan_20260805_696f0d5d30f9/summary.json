@@ -1,0 +1,1098 @@
+{
+  "arm_identities": {
+    "B": {
+      "build_id": "d14aea10c20ca862734eb72e930225a1e5ea263e",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-disabled",
+      "sha256": "ed2bdc05a6188a0ebb6433923391417c183e3471df78516eac3523c2f825bebc"
+    },
+    "C": {
+      "build_id": "482d4815330592895592815012509a756b70ccf8",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-enabled",
+      "sha256": "02628346e4357ab9a48d5c0dea0de68df4c0b2921ded3fb44c4f643eb5c043be"
+    }
+  },
+  "benchmark_filter": "CountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+  "benchmark_run_name": "CountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+  "bootstrap": {
+    "confidence_level": 0.95,
+    "method": "stratified_complete_pair_resampling_with_replacement",
+    "same_draws_across_metrics": true,
+    "samples": 100000,
+    "seed": 20260805
+  },
+  "campaign_id": "mongodb-master-countscan-activation-ablation-20260805-696f0d5d30f9",
+  "comparison": "activation_ablation",
+  "input_sha256": {
+    "activation_disable.patch": "305c2c258f45ad74a20f8a789a64cdbb85cb42b4e56ddf2649daf819bf9c242b",
+    "analyze.py": "c19e3b8fa0b8d1db2bac18ad660b1f25b3b70ad21a8c024f7f6dc8e1c7edc7ca",
+    "campaign.json": "a1c495211544827370a4c64cea4d549b69250a8ff6092c66488a8a6213ce2404",
+    "campaign_run.json": "70af188803a5b8e1b1dcb49cfb3e9a20a84f241a3eb5c91f9ff8a788bd4b9f4e",
+    "candidate.patch": "187c3c5768b66c33f43533b7903d572bc96179ae9160181e4275e00987d9348b",
+    "logs/pair01_B_disabled_control.log": "22f45ae7ec15937a0ad2e17616091bd7c15472059167f1ba2e2f721ca009e0be",
+    "logs/pair01_C_enabled_candidate.log": "5d1f8e9d48bd08144b3e72f401b8f600f9e3c669010b4b7a27bc2dae373b9baa",
+    "logs/pair02_B_disabled_control.log": "c12dec647edad9c023bd557c656e3b152e36d7facf0e48263417303bff2780fe",
+    "logs/pair02_C_enabled_candidate.log": "5028c9c25cda1e44f3fd09e511bd76af240d3f00dce7d2a2be1d3fb403f9f84e",
+    "logs/pair03_B_disabled_control.log": "4a01990449a3e4ba06f00b566a31485a06503726c7c5225a78d9f24a59528b93",
+    "logs/pair03_C_enabled_candidate.log": "5e783a6f132f31b92efaddec0ef85a9f568b24b9852c52e0084b1b92ad3542b3",
+    "logs/pair04_B_disabled_control.log": "64d70022dcdcc071bb2e561daa959c5b5df875a96f5c486d5514258f5d628f5e",
+    "logs/pair04_C_enabled_candidate.log": "c37bdbc93fe41e5ef61dbc60a08fbec8ab78725f2d14b40a36065725ef85accc",
+    "logs/pair05_B_disabled_control.log": "70f43026bcc503f9b7f79d5f8390759ed75911e553a74875226298bfd5e3ab58",
+    "logs/pair05_C_enabled_candidate.log": "43d999accadd619c27e134ebd111d54935d3f9fc2c3156c547474b62066ecd86",
+    "logs/pair06_B_disabled_control.log": "8ca331b7dcb766976f03f2127d72b0ef01e9c66c9489e0780eb36e89979d4329",
+    "logs/pair06_C_enabled_candidate.log": "53cf45fab8f0835276be4278a9bd4acdd80d86c64dd906337923e7a54924f74f",
+    "logs/pair07_B_disabled_control.log": "0dc93e1d2a0ef31f6efac5a0bf3bab7da099cadce77ecfd5ace70b5b36b12030",
+    "logs/pair07_C_enabled_candidate.log": "6aafe130b1f7f27c049c5620da3cf3e27b0f9642f687ee45bd613798dc324e51",
+    "logs/pair08_B_disabled_control.log": "06561eb61e5efa5c20135c5df3e3297323a31ecd81863a64b43734b29795da83",
+    "logs/pair08_C_enabled_candidate.log": "6ab1daa65d0647b5d512b6d950c2f7ae75674127b4b573afd87ea129e81100e3",
+    "logs/pair09_B_disabled_control.log": "4b4812128aba4e5fbfc815853d6beeae2f3196ddd318dd2d09a56c0a44f627e5",
+    "logs/pair09_C_enabled_candidate.log": "a8a4bab826a4a31bb422f3be72a4e30735e868148190d348139f9ff59bba7e7b",
+    "logs/pair10_B_disabled_control.log": "c457fd502d46600c7fbfc133e64cf7a3fd7ae4c55046353f889e6924a019f79f",
+    "logs/pair10_C_enabled_candidate.log": "054bc02c1c30fd5a773a8cf6588736631dc0469e65f44e1e3d5154ac49b70766",
+    "logs/pair11_B_disabled_control.log": "9c50e38342cd30debc5743fb59f49aaddfb55ff23327d1bd879c9033a661f59b",
+    "logs/pair11_C_enabled_candidate.log": "ed5150f10cc812fd94851467bda770e6c32ceb51ba1541dff9dc103f5ede18e7",
+    "logs/pair12_B_disabled_control.log": "10bc77eb92fafc61da0555915889e6fdd65042868bf2ad5b613b282d3425c29e",
+    "logs/pair12_C_enabled_candidate.log": "b1a9a0e713495b612c1e5e6eea0bbcbfb5982e94572d8ddda85cba80406b3c8a",
+    "logs/pair13_B_disabled_control.log": "76bf1409f96df1c9df184a209c44cc14ccf8197f841ec9f38638a20276655f4c",
+    "logs/pair13_C_enabled_candidate.log": "bc9bb88db580739848c0c1f621479a94a4e91fc21d425b965c7c6e62528fd6a5",
+    "logs/pair14_B_disabled_control.log": "c9496435ca955e72489ade9db8e777d7d925dba776bc3b7948e1a3c239ca9bf0",
+    "logs/pair14_C_enabled_candidate.log": "240168365d6d8b27e6c5bdf1519f80a659a98428abb8ebf7af922b91185b375b",
+    "logs/pair15_B_disabled_control.log": "4b6ee690eda7ca3dbb3c13ebf30bd0289c220106563e5ec8b292dd43be1db11a",
+    "logs/pair15_C_enabled_candidate.log": "0702a11437263e2bbd2f313ed54fdd3425a3830d8fec0373be869d097cd54b17",
+    "logs/pair16_B_disabled_control.log": "97035853f31703a1461c37b6e42b5877560254b2c731d98a9a7b391993853199",
+    "logs/pair16_C_enabled_candidate.log": "96187ea3680e248e4f02ced53633c069db6b18e61657f9f3ddacb66e0ad28966",
+    "logs/pair17_B_disabled_control.log": "4b3fdfaadcec09567b89dcc5493aa9dc1526f7c5115fff4ace70b8465474b757",
+    "logs/pair17_C_enabled_candidate.log": "a7b5bd63a79e26bedffd5d26af7c71ec81a505861601781802d3ae27c55cc8e6",
+    "logs/pair18_B_disabled_control.log": "358e0f14c78a7ca06e95ddfc9bc941b2572bce0eb0abac3a8172c36566142207",
+    "logs/pair18_C_enabled_candidate.log": "e6b34b6f3ce6a61262bf3863e3a1c0391bab9988f18d72616ee6da8a10c3a91e",
+    "logs/pair19_B_disabled_control.log": "640a4cdcc743682d2f8d4f4930b35a22c5675a47425b670b9f597918cb0e422d",
+    "logs/pair19_C_enabled_candidate.log": "69b21ec3ef548e6b03f814670e2285084aa64c12c310ff6928a33f49421bd7f4",
+    "logs/pair20_B_disabled_control.log": "e8d0f5ecde441aff9c97ecdd47a4a3f1e8329768fee4ac3798370e32978922a1",
+    "logs/pair20_C_enabled_candidate.log": "ac307949490051acd426af738f3aed60ead591392212180a51d3fc5a76e370d2",
+    "raw/pair01_B_disabled_control.json": "790278163fb64fa6675de42f41b50b0572742a3d0967cdc8a85d055a1da1bf0f",
+    "raw/pair01_C_enabled_candidate.json": "36407b4a46b5aefdcfc5d7f74deab8b8a257117ef8e2e507c44f718c62deecdf",
+    "raw/pair02_B_disabled_control.json": "cd5ab6062b9a73b4e496483caa0ccb0ec5e555d36482b5ba24efdba7c94f0746",
+    "raw/pair02_C_enabled_candidate.json": "14a0064747ca7cf126ed72bb833f2c21aafeb5ae488145846fa2f951b5657bd5",
+    "raw/pair03_B_disabled_control.json": "3867a05a2695c4efae611bcd3c82e286d5c324449edc43959a2690d76229b3a7",
+    "raw/pair03_C_enabled_candidate.json": "95134808b5e5a5283127cf10833cb5851906852e11e78cd69cc1ff13271374e0",
+    "raw/pair04_B_disabled_control.json": "583c0461425a2f64850e46d399226c768725a08bc70e216dc2bce89fdb4ea6cd",
+    "raw/pair04_C_enabled_candidate.json": "45321189a51f0fcefd33e97795cae2af369c66afeb1242b17da966042c8a8bcd",
+    "raw/pair05_B_disabled_control.json": "411c1005463cbf8da7763ce2337b89f74feaadef94d38ef07a54f9adfc2320a2",
+    "raw/pair05_C_enabled_candidate.json": "3da6372af3beda8b4f4bc9f9659805b6dff906ec4418f377c23cb2e97762ae82",
+    "raw/pair06_B_disabled_control.json": "44be09c0cb38762c9e595416a981c809bae3171564575de8554c510fd895c780",
+    "raw/pair06_C_enabled_candidate.json": "4433e5c322b74b0653300a12ffb199cb5c7c999b205c981834484a74790767e7",
+    "raw/pair07_B_disabled_control.json": "5a009b6da1a8fe0b05f241b1ab9354e96e493bcdb86b91b30f791ed856225151",
+    "raw/pair07_C_enabled_candidate.json": "d77e56e65b0fb39e94be6e0b0c193be94ba770438eddeafa08e8bf24609c28ea",
+    "raw/pair08_B_disabled_control.json": "0752937c1e7c862d0820b08fb606e1058c84a8fa3a3fdda18843ba394f8f0c64",
+    "raw/pair08_C_enabled_candidate.json": "ead8a90c0137d6fbe28888de0b414647089341b6aa9e40ddbb947705eca8e6bb",
+    "raw/pair09_B_disabled_control.json": "d60eabb000b89128431b351e21bfef0f6670480202d479286a5a405d0d31cc46",
+    "raw/pair09_C_enabled_candidate.json": "bb450fceebcfb9a00ccf8cad934718d4f8f6bac6bda87b0381a2e5b75b4e8629",
+    "raw/pair10_B_disabled_control.json": "204529fa409565f4ff62ba49812ead730f4c46aa8dadd6a3e8673a35b62a54e9",
+    "raw/pair10_C_enabled_candidate.json": "eb1d3d3cd06c0027daa068f98e27ae86279f15431954c21e1a9fd5dd5f4255fa",
+    "raw/pair11_B_disabled_control.json": "13e3905ac45624fdeab3b87cb3e3e756b03f0d5083dbe048fb7128ec09f1d8bf",
+    "raw/pair11_C_enabled_candidate.json": "26775033d4ae56010292963c6309c075ab70677a78b64766f90d2804e39e0f76",
+    "raw/pair12_B_disabled_control.json": "05c9fed9023a527785849203d7cae7ddfb57c87860e8e62fce8c1f71abafb661",
+    "raw/pair12_C_enabled_candidate.json": "7d092cb64dd964e9f4b9c645ccfbf70a49ab0b3930ca4182a5f8470bb468a7fd",
+    "raw/pair13_B_disabled_control.json": "758d0d0c055f7aedc96f29737cee70e4b429bae8df95755768188c3c3f0351ff",
+    "raw/pair13_C_enabled_candidate.json": "ec32d48ae9aecfe7cb7f4bba1caaa09a3893ec49d3b0ce36c2d26b5ba682ac4a",
+    "raw/pair14_B_disabled_control.json": "7910995e66aba60b53113b17e0040027174c074453b97207654b1593b7efc799",
+    "raw/pair14_C_enabled_candidate.json": "2155dbe70f163bacf3fa3aed28d74f0f38ea4e7301076a4efad82a2a078f8dfa",
+    "raw/pair15_B_disabled_control.json": "c23fa36db27ee5b4e5ad602cb8e2f87259dd928a2a593d6c74f234d3795274af",
+    "raw/pair15_C_enabled_candidate.json": "229bcc986da6d043a8d2d1e181c2bf6d9e5315f46ba127a868a9512ba8e704e6",
+    "raw/pair16_B_disabled_control.json": "e180db3d2d84f5f2097cbad82be2732c8af43f11a9be0c5f893497432bdb9d73",
+    "raw/pair16_C_enabled_candidate.json": "a83366e34c415b29b9110f6f8ce8bd12469f02da15c35b2e974045de814f736c",
+    "raw/pair17_B_disabled_control.json": "6d6844688493452147190697f86439a71a4d844a33e05283e53245cd37da62d2",
+    "raw/pair17_C_enabled_candidate.json": "1700af1defe99755948d91bacbe21fc37c86a49a77c440bca9f8008f3ca303ff",
+    "raw/pair18_B_disabled_control.json": "063fda1addf695ed16330397b48f1a576968cec074796817915acb1355124d68",
+    "raw/pair18_C_enabled_candidate.json": "c83cb79fac360db6b8737da0f54543ab2f9d7d2554a258a0bcf502e9c5cc5745",
+    "raw/pair19_B_disabled_control.json": "ceb667ef21b65a7487d7f6794aa99d4e9898f53a835c7cdece11d538cc53400e",
+    "raw/pair19_C_enabled_candidate.json": "5b30882cf875f720f1ecbcb35b6b45e2f4b6ff3f7f55517f40823d5f7c6211d7",
+    "raw/pair20_B_disabled_control.json": "22eb8e8b13b7095c9aa955f0e75850144ccfa075bfdaf9a1cfeccdd5dee5ec58",
+    "raw/pair20_C_enabled_candidate.json": "e4b6170e4eea1e2ae91eef7756ebf5279414969ef888fd4768e0b4612e0de5e4",
+    "run_blocks.sh": "2dbc850779eb3effd1dc390b1aba66855603152a09914aaf7e432db13924ac44"
+  },
+  "metric_roles": {
+    "cpu_time": "secondary",
+    "instructions_per_iteration": "primary",
+    "real_time": "auxiliary"
+  },
+  "metrics": {
+    "cpu_time": {
+      "candidate_C_over_control_B_ci95": [
+        0.9138443325701086,
+        0.9457500845767592
+      ],
+      "candidate_C_over_control_B_geomean": 0.9301926599302234,
+      "candidate_C_process_mean_geomean": 88839978.47315685,
+      "claim_checks": {
+        "both_order_stratum_point_estimates_below_one": true,
+        "metric_specific_speedup_ci_gate_passed": true,
+        "overall_ci95_upper_below_one": true,
+        "primary_instructions_gate_passed": false
+      },
+      "control_B_process_mean_geomean": 95507073.21193159,
+      "favorable_pair_count": 20,
+      "leave_one_out": {
+        "all_below_one": true,
+        "estimates": [
+          {
+            "candidate_C_over_control_B_geomean": 0.929721802309754,
+            "omitted_order": "BC",
+            "omitted_pair": 1
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9285280078080649,
+            "omitted_order": "CB",
+            "omitted_pair": 2
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9311486071864823,
+            "omitted_order": "CB",
+            "omitted_pair": 3
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9285609332752053,
+            "omitted_order": "BC",
+            "omitted_pair": 4
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9345053559524296,
+            "omitted_order": "BC",
+            "omitted_pair": 5
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.927358503322477,
+            "omitted_order": "CB",
+            "omitted_pair": 6
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9281627122065287,
+            "omitted_order": "BC",
+            "omitted_pair": 7
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9298456505562946,
+            "omitted_order": "CB",
+            "omitted_pair": 8
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9300177022995892,
+            "omitted_order": "BC",
+            "omitted_pair": 9
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.93080369637551,
+            "omitted_order": "CB",
+            "omitted_pair": 10
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.93000659924389,
+            "omitted_order": "CB",
+            "omitted_pair": 11
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9335494855731519,
+            "omitted_order": "BC",
+            "omitted_pair": 12
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.928218921217094,
+            "omitted_order": "BC",
+            "omitted_pair": 13
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9291530831810741,
+            "omitted_order": "CB",
+            "omitted_pair": 14
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9307313522624341,
+            "omitted_order": "CB",
+            "omitted_pair": 15
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9282883563111441,
+            "omitted_order": "BC",
+            "omitted_pair": 16
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9295233347832306,
+            "omitted_order": "CB",
+            "omitted_pair": 17
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9296942385444955,
+            "omitted_order": "BC",
+            "omitted_pair": 18
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9323334773495595,
+            "omitted_order": "CB",
+            "omitted_pair": 19
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.933742142691932,
+            "omitted_order": "BC",
+            "omitted_pair": 20
+          }
+        ],
+        "maximum_absolute_change_from_full_estimate": 0.004312696022206186,
+        "maximum_geomean": 0.9345053559524296,
+        "minimum_geomean": 0.927358503322477
+      },
+      "order_strata": {
+        "BC": {
+          "candidate_C_over_control_B_ci95": [
+            0.8968775772193595,
+            0.9518573443530811
+          ],
+          "candidate_C_over_control_B_geomean": 0.9254466053526587,
+          "description": "control_then_candidate",
+          "pair_count": 10,
+          "reduction_percent": 7.455339464734134
+        },
+        "CB": {
+          "candidate_C_over_control_B_ci95": [
+            0.9194666490056673,
+            0.9510618981588027
+          ],
+          "candidate_C_over_control_B_geomean": 0.9349630541443732,
+          "description": "candidate_then_control",
+          "pair_count": 10,
+          "reduction_percent": 6.50369458556268
+        }
+      },
+      "reduction_percent": 6.980734006977663,
+      "reduction_percent_ci95": [
+        5.424991542324076,
+        8.615566742989145
+      ],
+      "role": "secondary",
+      "tie_pair_count": 0,
+      "unfavorable_pair_count": 0
+    },
+    "instructions_per_iteration": {
+      "candidate_C_over_control_B_ci95": [
+        0.9455168271223958,
+        0.9455462469353667
+      ],
+      "candidate_C_over_control_B_geomean": 0.9455316512075626,
+      "candidate_C_process_mean_geomean": 979399110.8336169,
+      "claim_checks": {
+        "both_order_stratum_point_estimates_below_one": true,
+        "metric_specific_speedup_ci_gate_passed": true,
+        "overall_ci95_upper_below_one": true,
+        "primary_instructions_gate_passed": true
+      },
+      "control_B_process_mean_geomean": 1035818430.3854916,
+      "favorable_pair_count": 20,
+      "leave_one_out": {
+        "all_below_one": true,
+        "estimates": [
+          {
+            "candidate_C_over_control_B_geomean": 0.945529110102461,
+            "omitted_order": "BC",
+            "omitted_pair": 1
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.945531724207293,
+            "omitted_order": "CB",
+            "omitted_pair": 2
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455326591687645,
+            "omitted_order": "CB",
+            "omitted_pair": 3
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455342212810672,
+            "omitted_order": "BC",
+            "omitted_pair": 4
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455346505642949,
+            "omitted_order": "BC",
+            "omitted_pair": 5
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455306396591431,
+            "omitted_order": "CB",
+            "omitted_pair": 6
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455290487633373,
+            "omitted_order": "BC",
+            "omitted_pair": 7
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455337486362311,
+            "omitted_order": "CB",
+            "omitted_pair": 8
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.945532093580062,
+            "omitted_order": "BC",
+            "omitted_pair": 9
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455296044672887,
+            "omitted_order": "CB",
+            "omitted_pair": 10
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455293526941111,
+            "omitted_order": "CB",
+            "omitted_pair": 11
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455345453318685,
+            "omitted_order": "BC",
+            "omitted_pair": 12
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455313852876127,
+            "omitted_order": "BC",
+            "omitted_pair": 13
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455334519548558,
+            "omitted_order": "CB",
+            "omitted_pair": 14
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455296950392424,
+            "omitted_order": "CB",
+            "omitted_pair": 15
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455305604515578,
+            "omitted_order": "BC",
+            "omitted_pair": 16
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455325873551892,
+            "omitted_order": "CB",
+            "omitted_pair": 17
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455313016808944,
+            "omitted_order": "BC",
+            "omitted_pair": 18
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455311543688217,
+            "omitted_order": "CB",
+            "omitted_pair": 19
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9455314895904273,
+            "omitted_order": "BC",
+            "omitted_pair": 20
+          }
+        ],
+        "maximum_absolute_change_from_full_estimate": 2.9993567323138848e-06,
+        "maximum_geomean": 0.9455346505642949,
+        "minimum_geomean": 0.9455290487633373
+      },
+      "order_strata": {
+        "BC": {
+          "candidate_C_over_control_B_ci95": [
+            0.9455048029921024,
+            0.9455508859969151
+          ],
+          "candidate_C_over_control_B_geomean": 0.9455280515932902,
+          "description": "control_then_candidate",
+          "pair_count": 10,
+          "reduction_percent": 5.447194840670977
+        },
+        "CB": {
+          "candidate_C_over_control_B_ci95": [
+            0.9455171836226711,
+            0.9455533588339516
+          ],
+          "candidate_C_over_control_B_geomean": 0.9455352508355386,
+          "description": "candidate_then_control",
+          "pair_count": 10,
+          "reduction_percent": 5.446474916446142
+        }
+      },
+      "reduction_percent": 5.446834879243745,
+      "reduction_percent_ci95": [
+        5.44537530646333,
+        5.448317287760418
+      ],
+      "role": "primary",
+      "tie_pair_count": 0,
+      "unfavorable_pair_count": 0
+    },
+    "real_time": {
+      "candidate_C_over_control_B_ci95": [
+        0.9137773853295684,
+        0.945718901144085
+      ],
+      "candidate_C_over_control_B_geomean": 0.9301395319006651,
+      "candidate_C_process_mean_geomean": 89005483.97730657,
+      "claim_checks": {
+        "both_order_stratum_point_estimates_below_one": true,
+        "metric_specific_speedup_ci_gate_passed": true,
+        "overall_ci95_upper_below_one": true,
+        "primary_instructions_gate_passed": false
+      },
+      "control_B_process_mean_geomean": 95690464.62892646,
+      "favorable_pair_count": 20,
+      "leave_one_out": {
+        "all_below_one": true,
+        "estimates": [
+          {
+            "candidate_C_over_control_B_geomean": 0.9296723328026741,
+            "omitted_order": "BC",
+            "omitted_pair": 1
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9284776413634379,
+            "omitted_order": "CB",
+            "omitted_pair": 2
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9311054511162002,
+            "omitted_order": "CB",
+            "omitted_pair": 3
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9284891730367322,
+            "omitted_order": "BC",
+            "omitted_pair": 4
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9344511361897174,
+            "omitted_order": "BC",
+            "omitted_pair": 5
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9273085788388717,
+            "omitted_order": "CB",
+            "omitted_pair": 6
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9281068001416437,
+            "omitted_order": "BC",
+            "omitted_pair": 7
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9297831964189854,
+            "omitted_order": "CB",
+            "omitted_pair": 8
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9299585326113142,
+            "omitted_order": "BC",
+            "omitted_pair": 9
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9307571691757027,
+            "omitted_order": "CB",
+            "omitted_pair": 10
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9299563818487576,
+            "omitted_order": "CB",
+            "omitted_pair": 11
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9335127966553941,
+            "omitted_order": "BC",
+            "omitted_pair": 12
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9281667360332052,
+            "omitted_order": "BC",
+            "omitted_pair": 13
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9290914534572465,
+            "omitted_order": "CB",
+            "omitted_pair": 14
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9306932480357712,
+            "omitted_order": "CB",
+            "omitted_pair": 15
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.928234969521877,
+            "omitted_order": "BC",
+            "omitted_pair": 16
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9294529735115182,
+            "omitted_order": "CB",
+            "omitted_pair": 17
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9296422614326709,
+            "omitted_order": "BC",
+            "omitted_pair": 18
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9322968322110127,
+            "omitted_order": "CB",
+            "omitted_pair": 19
+          },
+          {
+            "candidate_C_over_control_B_geomean": 0.9336738444995015,
+            "omitted_order": "BC",
+            "omitted_pair": 20
+          }
+        ],
+        "maximum_absolute_change_from_full_estimate": 0.0043116042890523065,
+        "maximum_geomean": 0.9344511361897174,
+        "minimum_geomean": 0.9273085788388717
+      },
+      "order_strata": {
+        "BC": {
+          "candidate_C_over_control_B_ci95": [
+            0.8968424356497843,
+            0.9518599821040766
+          ],
+          "candidate_C_over_control_B_geomean": 0.9254347288571748,
+          "description": "control_then_candidate",
+          "pair_count": 10,
+          "reduction_percent": 7.456527114282519
+        },
+        "CB": {
+          "candidate_C_over_control_B_ci95": [
+            0.9192753950477236,
+            0.9510173263424616
+          ],
+          "candidate_C_over_control_B_geomean": 0.9348682536182529,
+          "description": "candidate_then_control",
+          "pair_count": 10,
+          "reduction_percent": 6.513174638174712
+        }
+      },
+      "reduction_percent": 6.986046809933488,
+      "reduction_percent_ci95": [
+        5.428109885591503,
+        8.622261467043158
+      ],
+      "role": "auxiliary",
+      "tie_pair_count": 0,
+      "unfavorable_pair_count": 0
+    }
+  },
+  "pair_count": 20,
+  "pair_order": [
+    {
+      "order": "BC",
+      "pair": 1
+    },
+    {
+      "order": "CB",
+      "pair": 2
+    },
+    {
+      "order": "CB",
+      "pair": 3
+    },
+    {
+      "order": "BC",
+      "pair": 4
+    },
+    {
+      "order": "BC",
+      "pair": 5
+    },
+    {
+      "order": "CB",
+      "pair": 6
+    },
+    {
+      "order": "BC",
+      "pair": 7
+    },
+    {
+      "order": "CB",
+      "pair": 8
+    },
+    {
+      "order": "BC",
+      "pair": 9
+    },
+    {
+      "order": "CB",
+      "pair": 10
+    },
+    {
+      "order": "CB",
+      "pair": 11
+    },
+    {
+      "order": "BC",
+      "pair": 12
+    },
+    {
+      "order": "BC",
+      "pair": 13
+    },
+    {
+      "order": "CB",
+      "pair": 14
+    },
+    {
+      "order": "CB",
+      "pair": 15
+    },
+    {
+      "order": "BC",
+      "pair": 16
+    },
+    {
+      "order": "CB",
+      "pair": 17
+    },
+    {
+      "order": "BC",
+      "pair": 18
+    },
+    {
+      "order": "CB",
+      "pair": 19
+    },
+    {
+      "order": "BC",
+      "pair": 20
+    }
+  ],
+  "pairs": [
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.939184401206217,
+          "candidate_C_process_mean": 88164290.39999995,
+          "control_B_process_mean": 93873248.20000038
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455799335020633,
+          "candidate_C_process_mean": 979414874.2,
+          "control_B_process_mean": 1035782211.0
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9390610590930591,
+          "candidate_C_process_mean": 88324403.76281738,
+          "control_B_process_mean": 94056081.77185059
+        }
+      },
+      "order": "BC",
+      "pair": 1
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9623942257576632,
+          "candidate_C_process_mean": 92190657.40000004,
+          "control_B_process_mean": 95793028.4000002
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455302642137556,
+          "candidate_C_process_mean": 979388786.0,
+          "control_B_process_mean": 1035809030.2
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9622867485291245,
+          "candidate_C_process_mean": 92332315.44494629,
+          "control_B_process_mean": 95950937.27111816
+        }
+      },
+      "order": "CB",
+      "pair": 2
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9122149856635448,
+          "candidate_C_process_mean": 92043039.19999993,
+          "control_B_process_mean": 100900599.79999985
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455125001488817,
+          "candidate_C_process_mean": 979398872.6,
+          "control_B_process_mean": 1035839158.6
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9119762735671294,
+          "candidate_C_process_mean": 92198467.25463867,
+          "control_B_process_mean": 101097440.71960449
+        }
+      },
+      "order": "CB",
+      "pair": 3
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9617460548154881,
+          "candidate_C_process_mean": 96201347.59999992,
+          "control_B_process_mean": 100027805.80000012
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9454828211382478,
+          "candidate_C_process_mean": 979392373.8,
+          "control_B_process_mean": 1035864800.4
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.962059696677422,
+          "candidate_C_process_mean": 96409606.93359375,
+          "control_B_process_mean": 100211668.01452637
+        }
+      },
+      "order": "BC",
+      "pair": 4
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.851930296344036,
+          "candidate_C_process_mean": 86466287.00000009,
+          "control_B_process_mean": 101494555.79999974
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9454746652373397,
+          "candidate_C_process_mean": 979374686.4,
+          "control_B_process_mean": 1035855028.6
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.8518962819077669,
+          "candidate_C_process_mean": 86619710.92224121,
+          "control_B_process_mean": 101678705.2154541
+        }
+      },
+      "order": "BC",
+      "pair": 5
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9857179198771064,
+          "candidate_C_process_mean": 89451501.39999983,
+          "control_B_process_mean": 90747565.40000015
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455508708331469,
+          "candidate_C_process_mean": 979384834.2,
+          "control_B_process_mean": 1035782277.2
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9856001938647269,
+          "candidate_C_process_mean": 89599180.22155762,
+          "control_B_process_mean": 90908241.27197266
+        }
+      },
+      "order": "CB",
+      "pair": 6
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9696163667574603,
+          "candidate_C_process_mean": 91111160.39999984,
+          "control_B_process_mean": 93966194.80000009
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455810990088125,
+          "candidate_C_process_mean": 979425860.8,
+          "control_B_process_mean": 1035792553.2
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9696185492402738,
+          "candidate_C_process_mean": 91295337.67700195,
+          "control_B_process_mean": 94155931.47277832
+        }
+      },
+      "order": "BC",
+      "pair": 7
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9368104983175755,
+          "candidate_C_process_mean": 87486423.2000001,
+          "control_B_process_mean": 93387535.00000009
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9454918009468466,
+          "candidate_C_process_mean": 979376057.0,
+          "control_B_process_mean": 1035837704.8
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9369359129876352,
+          "candidate_C_process_mean": 87656354.9041748,
+          "control_B_process_mean": 93556404.11376953
+        }
+      },
+      "order": "CB",
+      "pair": 8
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9335231155486843,
+          "candidate_C_process_mean": 90488805.19999988,
+          "control_B_process_mean": 96932581.20000006
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455232461693979,
+          "candidate_C_process_mean": 979423770.0,
+          "control_B_process_mean": 1035853718.0
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9335852195746449,
+          "candidate_C_process_mean": 90652656.55517578,
+          "control_B_process_mean": 97101640.70129395
+        }
+      },
+      "order": "BC",
+      "pair": 9
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9186588812380161,
+          "candidate_C_process_mean": 90406003.20000017,
+          "control_B_process_mean": 98410852.00000021
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455705401145672,
+          "candidate_C_process_mean": 979438063.6,
+          "control_B_process_mean": 1035817024.8
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9184819870130498,
+          "candidate_C_process_mean": 90581512.45117188,
+          "control_B_process_mean": 98620891.57104492
+        }
+      },
+      "order": "CB",
+      "pair": 10
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9337348940302933,
+          "candidate_C_process_mean": 89007131.4,
+          "control_B_process_mean": 95323771.20000009
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455753240247855,
+          "candidate_C_process_mean": 979435010.4,
+          "control_B_process_mean": 1035808555.4
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9336262443768718,
+          "candidate_C_process_mean": 89176034.92736816,
+          "control_B_process_mean": 95515775.68054199
+        }
+      },
+      "order": "CB",
+      "pair": 11
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.8686576101293986,
+          "candidate_C_process_mean": 85425118.60000004,
+          "control_B_process_mean": 98341530.19999996
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9454766645288197,
+          "candidate_C_process_mean": 979382285.2,
+          "control_B_process_mean": 1035860875.2
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.8683140276165541,
+          "candidate_C_process_mean": 85568857.19299316,
+          "control_B_process_mean": 98545980.45349121
+        }
+      },
+      "order": "BC",
+      "pair": 12
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9685013731242247,
+          "candidate_C_process_mean": 86463196.40000023,
+          "control_B_process_mean": 89275244.00000003
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455367037008192,
+          "candidate_C_process_mean": 979376929.8,
+          "control_B_process_mean": 1035789436.8
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9684296005685977,
+          "candidate_C_process_mean": 86607027.05383301,
+          "control_B_process_mean": 89430379.86755371
+        }
+      },
+      "order": "BC",
+      "pair": 13
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9501671022575965,
+          "candidate_C_process_mean": 85519001.40000007,
+          "control_B_process_mean": 90004169.99999997
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9454974376605851,
+          "candidate_C_process_mean": 979380759.8,
+          "control_B_process_mean": 1035836503.4
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9502791878172588,
+          "candidate_C_process_mean": 85695648.19335938,
+          "control_B_process_mean": 90179443.359375
+        }
+      },
+      "order": "CB",
+      "pair": 14
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9200165398287912,
+          "candidate_C_process_mean": 87153056.59999987,
+          "control_B_process_mean": 94729880.19999996
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455688191745908,
+          "candidate_C_process_mean": 979415435.2,
+          "control_B_process_mean": 1035794979.0
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.919681294831413,
+          "candidate_C_process_mean": 87309932.70874023,
+          "control_B_process_mean": 94934988.02185059
+        }
+      },
+      "order": "CB",
+      "pair": 15
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9671258825174553,
+          "candidate_C_process_mean": 91484956.80000028,
+          "control_B_process_mean": 94594673.2
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.945552375810729,
+          "candidate_C_process_mean": 979410643.8,
+          "control_B_process_mean": 1035807924.4
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9670779201833487,
+          "candidate_C_process_mean": 91670036.31591797,
+          "control_B_process_mean": 94790744.78149414
+        }
+      },
+      "order": "BC",
+      "pair": 16
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.9430018076033327,
+          "candidate_C_process_mean": 90465717.19999981,
+          "control_B_process_mean": 95933768.59999996
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455138645787593,
+          "candidate_C_process_mean": 979387724.4,
+          "control_B_process_mean": 1035825873.2
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9432809262185101,
+          "candidate_C_process_mean": 90644121.17004395,
+          "control_B_process_mean": 96094512.93945312
+        }
+      },
+      "order": "CB",
+      "pair": 17
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.939713599899746,
+          "candidate_C_process_mean": 87993897.60000007,
+          "control_B_process_mean": 93639059.39999992
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455382922388076,
+          "candidate_C_process_mean": 979388408.6,
+          "control_B_process_mean": 1035799836.6
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.9396383719470704,
+          "candidate_C_process_mean": 88169193.26782227,
+          "control_B_process_mean": 93833112.7166748
+        }
+      },
+      "order": "BC",
+      "pair": 18
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.8904383745255245,
+          "candidate_C_process_mean": 85224263.39999992,
+          "control_B_process_mean": 95710456.60000017
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455410911932416,
+          "candidate_C_process_mean": 979391067.4,
+          "control_B_process_mean": 1035799582.4
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.8900862497563847,
+          "candidate_C_process_mean": 85367727.27966309,
+          "control_B_process_mean": 95909500.12207031
+        }
+      },
+      "order": "CB",
+      "pair": 19
+    },
+    {
+      "metrics": {
+        "cpu_time": {
+          "candidate_C_over_control_B": 0.8652585874624721,
+          "candidate_C_process_mean": 84965359.0,
+          "control_B_process_mean": 98196493.19999972
+        },
+        "instructions_per_iteration": {
+          "candidate_C_over_control_B": 0.9455347219383801,
+          "candidate_C_process_mean": 979395777.4,
+          "control_B_process_mean": 1035811541.0
+        },
+        "real_time": {
+          "candidate_C_over_control_B": 0.8654727342345181,
+          "candidate_C_process_mean": 85146522.52197266,
+          "control_B_process_mean": 98381519.31762695
+        }
+      },
+      "order": "BC",
+      "pair": 20
+    }
+  ],
+  "process_count": 40,
+  "repetitions_per_process": 5,
+  "run_finished_at": "2026-08-05T17:29:14+08:00",
+  "run_host": {
+    "cpu_governor": "performance",
+    "kernel": "Linux 6.8.0-84-generic x86_64 GNU/Linux",
+    "name": "dmal-longcws3"
+  },
+  "run_started_at": "2026-08-05T17:23:44+08:00",
+  "schema_version": 2,
+  "source_commit": "696f0d5d30f9bb6bcdb96ade8388e6bea36a92f9"
+}

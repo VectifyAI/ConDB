@@ -6,27 +6,32 @@ Canonical report: `bench/db/report/report.tex` / `report.pdf`
 
 ## Decision summary
 
-The main report's MongoDB measurements are internally consistent and the three
-reported interventions have output-equivalence checks. Their adoption status is
-not the same:
+The main report has four distinct MongoDB interventions. Their measurements
+and output-equivalence checks are internally consistent, but their adoption
+status is not the same:
 
 | Intervention | What is verified | Current decision |
 |---|---|---|
 | Coalesce already-known node, parent, or entity IDs | Two grouping seeds, exact output checks, listener-free wall time, and a control against individual requests submitted through at most 16 workers | Promising in the MongoDB storage harness. Not implemented in a MongoDB ConDB backend; group formation, remote RTT, and API-level load remain unmeasured. |
 | Change `Cursor.batch_size` for subtree reads | 100 matched paths, five repeats, exact ordered-output checks, separate listener-free latency and command-count telemetry, ID-only and covered-Metadata projections | Reject manual tuning for the covered-Metadata path. The large request has no meaningful covered-Metadata gain; small batches regress. Keep the driver default. |
 | Store consecutive DFS rows in bounded bucket documents | Frozen five-size selection, 100-root holdout, seven paired repeats, a 67-root range-disjoint sensitivity, 250 unused small/deep roots, full 10M-row digest, BSON-size check, and an independent live output audit | Promising only for the measured large-subtree cohort. Do not adopt until the size estimator/router, mutable-tree updates, atomic publication, multi-tree behavior, and end-to-end API path are measured. |
-| Activate a private direct, non-deduplicating `CountStage` -> `CountScan` protocol on MongoDB master | Public-output, CommonStats, injected-yield, multikey-fallback, classic-core, and aggregation correctness checks; ten logging-suppressed process pairs with five raw repetitions per arm | Local source candidate only. The A/B isolates activation within one patched master snapshot; it is not an upstream, 7.0.34, or end-to-end ConDB comparison. |
-| SQLite Beam batching | Real `TreeDB` and `BeamRetriever` code, file-backed latency control, exact result fingerprints, and 1/4/16-client load control | Implemented and tested, but it is a cross-engine implementation check. It is not evidence that MongoDB production latency improved. |
+| Activate a private direct, non-deduplicating `CountStage` -> `CountScan` protocol on a pinned MongoDB master snapshot | Standard five-target build; optimized and runtime-dassert count suites; public-output, backing-slot, skip/limit/yield, deduplication, strict-explain, classic-core, aggregation, no-passthrough, and sharding checks; 20 CPU-pinned fresh-process pairs | Local source candidate only. The A/B isolates activation within one patched snapshot; it is not an upstream, 7.0.34, or end-to-end ConDB comparison. |
 
 No MongoDB optimization described by the main report is currently integrated
 into ConDB's public storage path. The executor candidate is committed only on
 the `carsontung666/mongo` fork and has not been merged into upstream MongoDB or
 a MongoDB release.
 
+SQLite Beam batching has a different boundary: it is implemented in the real
+`TreeDB` and `BeamRetriever` path and has file-backed latency, result-
+fingerprint, and 1/4/16-client controls. It is useful cross-engine evidence for
+coalescing, but it is not a MongoDB intervention and does not show that MongoDB
+production latency improved.
+
 ## MongoDB source candidate audit
 
 The report's service and ConDB storage-harness baseline remains tag `r7.0.34`
-for reproducibility. Source development targets current master snapshot
+for reproducibility. Source development targets the pinned master snapshot
 `5d3b36cf3871846fe7894616e964cb520c11d473`, because a patch intended for
 review should not be built on a maintenance tag. This is a source target
 decision, not evidence that master is faster than 7.0.34.
@@ -35,17 +40,38 @@ The source audit rejected redundant or unsafe directions before implementation:
 
 | Candidate direction | Audit decision |
 |---|---|
-| Reintroduce an `_id` fast path | Reject as redundant: current master already routes eligible point queries through EXPRESS planning. |
-| Add classic batched `getNext` handoff or repeat known SBE IXSCAN refactors | Reject as redundant: the relevant batching/refactoring is already present on master. |
+| Reintroduce an `_id` fast path | Reject as redundant: the pinned snapshot already routes eligible point queries through EXPRESS planning. |
 | Generalize compound unique equality conjunctions into EXPRESS | Reject for this round. A correct gate must prove full canonical-key coverage and account for multikey, collation, sparse/partial indexes, sharding, projection, and planner semantics. A multikey counterexample invalidates a broad rewrite. |
 | Avoid unused `WorkingSetMember` materialization under direct count | Accept narrowly. The optimization is gated to a direct, non-deduplicating classic `CountScan`; deduplicating and standalone consumers retain the public path. |
 
 Two earlier prototypes were discarded rather than benchmarked as final
 evidence. Returning `ADVANCED` with an invalid WorkingSet ID violated the public
 PlanStage contract; reusing one live member bent generic ownership/lifetime
-expectations. The committed design instead uses a private friend protocol while
-leaving public `CountScan::work()` materialization intact. No measurements from
-the rejected prototypes appear in the report.
+expectations. The committed design instead uses a private friend protocol only
+when the direct `CountScan` reports `!_shouldDedup`. Its resultless work and
+public `work()` share `PlanStage::trackWork` for timing, CommonStats, and failure
+accounting. Public `CountScan::work()` still returns a valid `RID_AND_OBJ`
+member. Multikey scans and scalar compound-wildcard scans retain materialization
+and deduplication. No measurements from the rejected prototypes appear in the
+report.
+
+### Prior-art and regression-history audit
+
+| Prior change | Scope and relationship to this candidate |
+|---|---|
+| [MongoDB PR #635](https://github.com/mongodb/mongo/pull/635), landed through `de8cdc7779` and `3b3c25e571` | Fast-count bounds and `IndexBoundsBuilder::isSingleInterval` planning. It does not remove the executor's per-match WorkingSet lifecycle. |
+| [MongoDB PR #1369](https://github.com/mongodb/mongo/pull/1369), landed as `14bfbd8833` | Elides `SHARDING_FILTER` when the full shard key is available. It does not change direct count-stage handoff. |
+| `d71566a55e` (`SERVER-14098`) | Introduced `CountStage`, whose parent consumes execution state rather than a child result. This motivates the narrow optimization but did not establish the present public-output-safe protocol. |
+| `dac2f722f8` (`SERVER-22133`) | Restored correct `COUNT_SCAN` generation from the plan cache and reinforces that generic/public consumers need a valid WorkingSet result. |
+| `d8ee635331` (`SERVER-22407`) | Changed public `COUNT_SCAN` output from `OWNED_OBJ` to `RID_AND_OBJ`, recovering most of a reported regression while preserving a valid result contract. The candidate does not undo this. |
+| `09b89f0986` (`SERVER-19377`) | Centralized stage timing/statistics around non-virtual `work()`. The candidate reuses the resulting accounting through `trackWork` rather than duplicating it. |
+| `8f52dfc863` (`SERVER-75037`) | Made compound-wildcard `COUNT_SCAN` deduplicate independently of multikey status. The candidate explicitly leaves that path materializing and deduplicating. |
+
+The inspected GitHub PRs are closed without a merged-PR marker, but their
+changes landed through squash/commit-queue commits; they should not be called
+abandoned. The GitHub audit and pinned-snapshot ancestry search found no existing copy
+of the same private direct resultless optimization. That negative result is not
+exhaustive of internal Jira context, private branches, or unpublished work.
 
 ## Superseded component claims
 
@@ -88,31 +114,46 @@ bytes match the SHA-256 values below.
 ### MongoDB master direct-count source experiment
 
 The frozen bundle is
-`bench/db/report/evidence/mongodb_master_countscan_20260805/`. Its manifest
-`SHA256SUMS` has SHA-256
-`a9649df5c9caa3aac1b93b2f5f3d2571218067217a4bdf233c2332a0e8a8bb34`.
+`bench/db/report/evidence/mongodb_master_countscan_20260805_696f0d5d30f9/`.
+The preregistered `campaign.json` was committed as ConDB commit `00fd8de`
+before execution and has SHA-256
+`a1c495211544827370a4c64cea4d549b69250a8ff6092c66488a8a6213ce2404`.
+The checked `summary.json` has SHA-256
+`420e7a6c148b2a2339984012cbbc28a344486f90a3328bcf2fb83f20248d4739`.
 
 | Item | Identity or result |
 |---|---|
 | Upstream snapshot | `5d3b36cf3871846fe7894616e964cb520c11d473` |
-| Candidate commit | `675598a071ca208c875ac7cf1874234fa644dd24` |
-| Enabled binary SHA-256 | `5124a7cfab2ad6c5480a441f7665339df44d327eb018197f675b4399c15388f5` |
-| Activation-disabled binary SHA-256 | `e55c61666c362b1baf506e3b157b04a9cdd277cd08dceb8f00ef2dbf3d3da468` |
-| Retired-instruction reduction | 4.812071%, paired-bootstrap 95% interval [4.810965%, 4.813114%] |
-| Benchmark-thread CPU-time reduction | 4.876567%, interval [3.252197%, 6.536442%] |
-| Wall-time reduction | 4.888550%, interval [3.254416%, 6.559018%] |
+| Candidate commit | `696f0d5d30f9bb6bcdb96ade8388e6bea36a92f9` |
+| Fork review | `carsontung666/mongo:agent/condb-query-hotpath`, [PR #1](https://github.com/carsontung666/mongo/pull/1) |
+| Enabled binary | SHA-256 `02628346e4357ab9a48d5c0dea0de68df4c0b2921ded3fb44c4f643eb5c043be`; build ID `482d4815330592895592815012509a756b70ccf8` |
+| Activation-disabled binary | SHA-256 `ed2bdc05a6188a0ebb6433923391417c183e3471df78516eac3523c2f825bebc`; build ID `d14aea10c20ca862734eb72e930225a1e5ea263e` |
+| Retired-instruction reduction | 5.447%, order-stratified paired-bootstrap 95% interval [5.445%, 5.448%] |
+| Benchmark-thread CPU-time reduction | 6.981%, interval [5.425%, 8.616%] |
+| Wall-time reduction | 6.986%, interval [5.428%, 8.622%] |
 
 The control is not unmodified upstream. Both arms are built from the candidate
 commit and contain all candidate implementation and benchmark-harness code;
-`baseline_disable.patch` additionally removes only the constructor activation block. The 20
-raw JSON files contain ten process pairs, five raw one-iteration repetitions
-per arm. `analyze.py` validates those invariants and reproduces `summary.json`
-with a 100,000-sample complete-pair bootstrap (seed 20260805). The final fixture
-suppresses timed slow-query logging. Targeted validation passed the two count
-dbtest suites, four forced-classic core JS files and two aggregation JS files.
-The frozen resmoke reports contain 22 and 12 passing result entries respectively,
-including fixture and hook events. These are not a full MongoDB qualification
-or production workload.
+`activation_disable.patch` additionally removes only the constructor activation
+block. The 40 raw JSON files contain 20 fresh process pairs, with ten control-
+first and ten candidate-first pairs pinned to CPU 0; five repetitions within a
+process are technical repeats, not 100 independent samples. `analyze.py`
+validates those invariants and reproduces `summary.json` with a 100,000-sample
+order-stratified complete-pair bootstrap (seed 20260805). All 20 pairs favor the
+enabled arm for all three metrics, both execution-order strata favor it, and
+all leave-one-pair-out estimates remain below one. The runner verifies binary
+and harness identities before and after the campaign.
+
+The standard optimized build passed for `mongod`, `mongos`, `mongo`, `dbtest`,
+and `count_query_bm`. Both count dbtest suites passed under optimized and
+runtime-dassert builds. Tests establish public backing-slot growth from zero to
+one, zero slots throughout the direct skip/limit/yield path, materializing
+fallback for multikey and scalar compound-wildcard cases, and exact count plus
+strict `COUNT -> COUNT_SCAN` explain shape. Forced-classic resmoke passed six
+core JS files (32 result entries), two aggregation files (12), one
+no-passthrough file (3), and one sharding file (3); result-entry counts include
+fixture and hook events. These are targeted checks, not a full MongoDB
+qualification or production workload.
 
 | Superseded-draft evidence | SHA-256 |
 |---|---|
@@ -165,40 +206,61 @@ with zero ordered-output mismatches. It did not collect replacement latency.
 
 ## Remaining adoption gates
 
-Before presenting a MongoDB optimization as production-ready, measure:
+### ConDB and storage interventions
 
 1. the real ConDB endpoint, including root inclusion, depth limit, stable order,
    Metadata merge, tree reconstruction, formatting/serialization, and selected
-   Text fetch;
-2. real PageIndex trees and request traces, multiple trees, realistic IDs and
+   Text fetch, on real PageIndex trees and request traces;
+2. for short-read coalescing, whether replacing a sequence of scalar reads with
+   one `$in` query changes snapshot/visibility semantics under concurrent
+   updates, and whether that change is acceptable for mutable trees;
+3. group-level error, retry, timeout, cancellation, and partial-failure
+   semantics. One failed or retried grouped command must not silently change the
+   caller-visible outcome relative to the scalar contract;
+4. duplicate and missing IDs, stable caller order, cross-tenant input rejection,
+   and enforced tenant scoping. One safe design is a leading `tree_id` predicate
+   and index key; alternatives include namespaced globally unique IDs or
+   collection/database isolation;
+5. `$in` cardinality, BSON command and response limits, response cursor
+   behavior, and plan-cache effects for realistic and adversarial arrays;
+6. multiple trees, realistic IDs and
    path lengths, and repeated campaigns with paired uncertainty;
-3. cold and cache-constrained runs, remote RTT, replica-set behavior, and mixed
+7. cold and cache-constrained runs, remote RTT, replica-set behavior, and mixed
    read/write load;
-4. bucket-size estimation, routing threshold/overhead, false-route cost, update
+8. bucket-size estimation, routing threshold/overhead, false-route cost, update
    and split policy, rebuild cost, and atomic publication/failure recovery;
    the current builder can recursively split an oversized bucket while its
    validator assumes every non-final bucket has the configured row count, a
    latent invariant conflict not triggered by the 124,221-byte synthetic maximum;
-5. enforced tenant scoping. One safe design is a leading `tree_id` predicate
-   and index key; alternatives include namespaced globally unique IDs or
-   collection/database isolation. The single-tree experimental ranges do not
-   establish any multi-tenant design;
-6. the real cost of the wide covering index that carries `title` and `summary`:
+9. the real cost of the wide covering index that carries `title` and `summary`:
    footprint and cache residency with production field/path distributions,
    index build time, write amplification, and total retained storage after
    removing experiment-only control indexes. The reported bucket `+20.4%`
    denominator retains five source indexes and is not a minimal production-cost
    estimate;
-7. a durable archive for the raw JSON evidence. `bench/db/runs` is gitignored,
+10. a durable archive for the raw JSON evidence. `bench/db/runs` is gitignored,
    so a repository clone currently contains this manifest but not the frozen
    storage-harness measurements needed to recompute it. The smaller master
    CountScan experiment is the exception: its complete evidence bundle is now
-   versioned under `bench/db/report/evidence`;
-8. before proposing the source candidate upstream, run the applicable full
-   Evergreen matrix and longer server-process workloads, including concurrent
-   yields and multiple selectivities. The private wrapper deliberately mirrors
-   `PlanStage::work()` statistics and timing; future base-class changes must keep
-   those two paths synchronized.
+   versioned under `bench/db/report/evidence`.
+
+### MongoDB source candidate
+
+Before proposing the executor candidate upstream:
+
+1. run the applicable full Evergreen matrix and longer server-process workloads,
+   including concurrent yields, multiple selectivities, empty/partial/full
+   ranges, and repeated campaigns on additional hosts;
+2. add a pristine pinned-base arm with a neutral benchmark harness. The current
+   A/B is intentionally an activation ablation in which both arms share the
+   implementation and harness, so it cannot attribute the measured effect to
+   the entire patch versus upstream;
+3. validate planner and executor integrations beyond the forced-classic paths
+   in the targeted matrix, while retaining the explicit exclusion of indirect
+   and deduplicating plan shapes;
+4. retain public WorkingSet-output and backing-slot assertions as regression
+   tests. Both paths now share `PlanStage::trackWork`; future accounting changes
+   must continue to flow through that common helper.
 
 P95 in the main tables is usually a percentile across per-input medians. It
 describes workload heterogeneity and must not be presented as an open-loop

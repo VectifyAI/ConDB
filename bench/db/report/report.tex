@@ -88,7 +88,8 @@ subtrees through buckets, but the MongoDB interventions remain storage-harness
 experiments rather than integrated ConDB paths. In a separate MongoDB
 master-snapshot source microbenchmark, activating a private direct,
 non-deduplicating count-scan path reduces benchmark-thread retired instructions
-in user space by 4.812\% and CPU time by 4.877\%; this is not a 7.0.34, ConDB, or production
+in user space by 5.447\% (95\% CI 5.445--5.448\%) and CPU time by
+6.981\% (95\% CI 5.425--8.616\%); this is not a 7.0.34, ConDB, or production
 result. The SQLite-backed Beam path now
 coalesces its per-turn child and
 entity reads. With the public defaults (\code{beam\_size=3},
@@ -468,32 +469,49 @@ dominates only at the 1\,KiB size used by the main workload.
 \label{sec:master-countscan}
 
 The 7.0.34 root-cause controls above motivated one narrow source experiment on
-MongoDB master snapshot \code{5d3b36cf3871}. The candidate commit
-\href{https://github.com/carsontung666/mongo/commit/675598a071ca208c875ac7cf1874234fa644dd24}{\code{675598a071ca}}
-adds a private resultless protocol for a direct, non-deduplicating classic
-\code{CountStage}$\rightarrow$\code{CountScan} pair. Because the parent consumes
-only execution state, this path avoids creating and freeing one unused
-\code{WorkingSetMember} per matching key. Standalone \code{CountScan::work()}
-retains its valid WorkingSet output in the tested paths; multikey and compound-
-wildcard scans retain the materializing, deduplicating path.
+the pinned MongoDB master snapshot \code{5d3b36cf3871}. The candidate commit
+\href{https://github.com/carsontung666/mongo/commit/696f0d5d30f9bb6bcdb96ade8388e6bea36a92f9}{\code{696f0d5d30f9}}
+is on \code{carsontung666/mongo:agent/condb-query-hotpath} and is under review
+in \href{https://github.com/carsontung666/mongo/pull/1}{PR~\#1}. It gives only a
+direct, non-deduplicating classic
+\code{CountStage}$\rightarrow$\code{CountScan} pair a private resultless
+protocol: activation requires \code{!\_shouldDedup}, and the private path uses
+the same \code{PlanStage::trackWork} accounting helper as public
+\code{work()}. Because the parent consumes only execution state, it avoids the
+per-match WorkingSet-member materialization and lifecycle. Public
+\code{CountScan::work()} still returns a valid \code{RID\_AND\_OBJ} member;
+multikey scans and scalar compound-wildcard scans retain the materializing,
+deduplicating path. The targeted test observes zero backing WorkingSet slots
+throughout the direct path, rather than claiming that the whole query performs
+zero allocations.
+
+The history audit found earlier work on single-interval count planning, shard-
+filter elision, the public WorkingSet contract, PlanStage accounting, and
+compound-wildcard deduplication, but no duplicate of this private direct
+resultless handoff in the inspected GitHub PRs and pinned-snapshot ancestry. This is
+not an exhaustive search of private branches or internal issue history; the
+companion review records the individual prior-art entries.
 
 This is an activation ablation, not candidate-versus-upstream or
 7.0.34-versus-master. Both arms are built from the candidate commit and contain
 all candidate implementation and benchmark-harness code. The activation-disabled
 control additionally removes only the constructor block that enables the private
-protocol. Both use the same
-\code{--config=opt --config=local} build and run the same hinted count over
-500{,}000 scalar indexed keys. An untimed warmup requires the exact count before
-measurement. Ten fresh-process pairs use a predeclared, balanced control-first/
-candidate-first order; each process contributes five raw one-iteration
-repetitions. The analysis averages repetitions within process, forms ten paired
-candidate/control ratios, and reports their geometric mean with a 100{,}000-
-sample paired-bootstrap interval (seed 20260805).
+protocol. Both use the same \code{--config=opt} build and run the same hinted
+count over 400{,}000 scalar indexed keys. An untimed preflight requires the
+exact count and strict \code{COUNT}$\rightarrow$\code{COUNT\_SCAN} explain
+shape before measurement. Twenty fresh-process pairs are pinned to CPU~0 under
+the performance governor and use a predeclared balanced order (ten control-
+first and ten candidate-first); each process contributes five technical
+one-iteration repetitions. The analysis averages repetitions within process,
+forms 20 paired candidate/control ratios, and reports their geometric mean with
+a 100{,}000-sample order-stratified complete-pair bootstrap interval
+(seed 20260805). Bootstrap resamples are uncertainty calculations, not
+additional benchmark observations.
 
 \begin{table}[H]
 \caption{Enabled private count protocol versus its activation-disabled
 candidate control; neither arm is stock upstream. Values are geometric means
-of the ten process-block means. Time is per 500{,}000-key count.}
+of the 20 process-block means. Time is per 400{,}000-key count.}
 \label{tab:master-countscan}
 \begin{ctab}
 \setlength{\tabcolsep}{7pt}
@@ -501,34 +519,44 @@ of the ten process-block means. Time is per 500{,}000-key count.}
 \toprule
 \hdr Metric & Control & Enabled & Reduction & 95\% CI \\
 \midrule
-Main-thread user-space instructions (billions)
-  & 1.28874 & 1.22672 & 4.8121\% & [4.8110\%, 4.8131\%] \\
+Benchmark-thread user-space instructions (billions)
+  & 1.035818 & 0.979399 & 5.447\% & [5.445\%, 5.448\%] \\
 Benchmark-thread CPU time (ms)
-  & 125.860 & 119.722 & 4.8766\% & [3.2522\%, 6.5364\%] \\
+  & 95.507 & 88.840 & 6.981\% & [5.425\%, 8.616\%] \\
 Wall time (ms)
-  & 125.895 & 119.740 & 4.8885\% & [3.2544\%, 6.5590\%] \\
+  & 95.690 & 89.005 & 6.986\% & [5.428\%, 8.622\%] \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-All ten pairs favor activation for all three metrics. User-space retired instructions are
-the primary mechanism check; CPU time is benchmark-thread time rather than
-whole-process CPU, and wall time is an auxiliary result that closely tracks it.
-Targeted validation passes the two count dbtest suites, 22 forced-classic core
-resmoke result entries from four JS files and 12 forced-classic aggregation
-entries from two JS files; those entry counts include fixture and hook events.
-It also covers public WorkingSet
-output, child statistics, an injected \code{NEED\_YIELD} plus save/restore, and
-the multikey fallback. This is not a full MongoDB qualification run.
+All 20 pairs favor activation for all three metrics. Both execution-order
+strata favor activation, and every leave-one-pair-out estimate remains below
+one. User-space retired instructions are the primary mechanism check; CPU time
+is benchmark-thread time rather than whole-process CPU, and wall time is an
+auxiliary result that closely tracks it. The standard optimized build passes
+for \code{mongod}, \code{mongos}, \code{mongo}, \code{dbtest}, and the query
+benchmark. Both count dbtest suites pass in optimized and runtime-dassert
+builds. Unit coverage verifies that public work grows backing slots from zero
+to one, while direct skip/limit/yield execution keeps the slot count at zero;
+multikey and scalar compound-wildcard cases stay materializing and
+deduplicating. The strict count/explain preflight passes. Forced-classic
+resmoke validation passes six core JS files (32 result entries), two
+aggregation files (12), one no-passthrough file (3), and one sharding file (3);
+entry counts include fixture and hook events. This is targeted validation, not
+a full MongoDB qualification run.
 
 The result is limited to this warmed, single-thread, in-process, full-range
-scalar count. It does not establish improvement for stock upstream master,
-MongoDB~7.0.34, SBE, deduplicating or indirect plan shapes, covered-Metadata
+scalar count. It does not establish improvement for the stock pinned upstream
+snapshot, MongoDB~7.0.34, SBE, deduplicating or
+indirect plan shapes, covered-Metadata
 production, cold caches, concurrent or mixed load, remote clients, the ConDB
-endpoint, or production latency. The raw paired JSON, exact activation patch,
-candidate patch, validation reports, binary identities, and analysis are frozen
-under \path{bench/db/report/evidence/mongodb_master_countscan_20260805}.
+endpoint, or production latency. Because the control shares the candidate's
+implementation and harness, a pristine-base arm with a neutral harness remains
+an adoption gate for separating activation from the full patch. The raw paired
+JSON, exact activation patch, candidate patch, validation reports, binary
+identities, preregistered protocol, and analysis are frozen under
+\path{bench/db/report/evidence/mongodb_master_countscan_20260805_696f0d5d30f9}.
 
 \section{Optimization experiments}\label{sec:optimization}
 
@@ -1124,8 +1152,9 @@ traffic, while large requests fail to improve Metadata retrieval. Remote RTT,
 streaming, and early termination remain unmeasured.
 
 Separately, activating the master-snapshot direct non-deduplicating count path
-reduces benchmark-thread user-space retired instructions by 4.812\% and CPU time by 4.877\%
-against its activation-disabled candidate control. That narrow source
+reduces benchmark-thread user-space retired instructions by 5.447\% (95\% CI
+5.445--5.448\%) and CPU time by 6.981\% (95\% CI 5.425--8.616\%) against its
+activation-disabled candidate control. That narrow source
 microbenchmark is not a MongoDB version comparison or evidence of ConDB,
 whole-process, concurrent, or production improvement.
 
