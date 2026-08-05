@@ -1,0 +1,20 @@
+# Field-by-field explain/profiling diff
+#   A = BASE 0561c098  (/tmp/mongo-count-minimal-validation/base-capture.json)
+#   B = HEAD ac20554f run2  (/tmp/mongo-count-minimal-validation/head-run2-capture.json)
+# leaf fields compared: 542  (A=542, B=542)
+
+RESULT: 4 DIFFERING FIELD(S)  -> 0 SUBSTANTIVE, 4 timing/build-identity
+
+## TIMING / BUILD-IDENTITY ONLY (not behavioural)
+  path : agg.fullExplain.stages[0].$cursor.queryPlanner.optimizationTimeMicros
+    A  : 51
+    B  : 627
+  path : count.fullExplain.queryPlanner.optimizationTimeMicros
+    A  : 70
+    B  : 231
+  path : multikeyAgg.fullExplain.stages[0].$cursor.queryPlanner.optimizationTimeMicros
+    A  : 44
+    B  : 114
+  path : multikeyCount.fullExplain.queryPlanner.optimizationTimeMicros
+    A  : 45
+    B  : 253

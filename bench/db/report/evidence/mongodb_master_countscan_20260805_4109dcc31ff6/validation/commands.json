@@ -1,0 +1,142 @@
+[
+  {
+    "task": "0-precheck",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "git status --short; git rev-parse HEAD; git rev-parse --abbrev-ref HEAD",
+    "note": "status empty, HEAD ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd, branch agent/condb-count-minimal"
+  },
+  {
+    "task": "0-diff",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "git diff 0561c098b99ac5e929005e70a2e37d7a97a82423..ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd",
+    "artifact": "change.diff"
+  },
+  {
+    "task": "1-build",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "taskset -c 1-47,49-95 bazel build --config=opt //src/mongo/dbtests:dbtest //src/mongo/db:mongod //src/mongo/s:mongos //src/mongo/shell:mongo",
+    "artifact": "build.log",
+    "exit_code": 0,
+    "elapsed_s": 54.206,
+    "wall_s": 56.23,
+    "total_actions": 119,
+    "targets_found": 4,
+    "note": "incremental; 562 targets in graph, 119 actions executed"
+  },
+  {
+    "task": "2-dbtests-opt-combined",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=query_stage_count_scan --suite=query_stage_count --tempPath=<out>/dbtests-opt-tmp",
+    "artifact": "dbtest-opt.log",
+    "exit_code": 0,
+    "result_line": "874 TOTAL / 21 PASS / 0 FAIL / 0 SKIP"
+  },
+  {
+    "task": "2-dbtests-opt-per-suite",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=<S> --showEachTest --tempPath=<out>/dbtests-opt-tmp   for S in query_stage_count_scan query_stage_count",
+    "artifact": "dbtest-opt-persuite.log",
+    "exit_code": 0,
+    "result_lines": [
+      "query_stage_count_scan: 874 TOTAL / 14 PASS / 0 FAIL / 0 SKIP",
+      "query_stage_count: 874 TOTAL / 7 PASS / 0 FAIL / 0 SKIP"
+    ]
+  },
+  {
+    "task": "2b-build-dbg",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "taskset -c 1-47,49-95 bazel build --config=opt --dbg=True //src/mongo/dbtests:dbtest",
+    "artifact": "build-dbg.log",
+    "exit_code": 0,
+    "elapsed_s": 1663.745,
+    "total_actions": 7532,
+    "note": "writes into the SAME bazel-out/k8-opt tree and DISPLACES the pure-opt dbtest binary"
+  },
+  {
+    "task": "2b-dbtests-dbg",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=<S> --showEachTest --tempPath=<out>/dbtests-dbg-tmp   for S in query_stage_count_scan query_stage_count",
+    "artifact": "dbtest-dbg.log",
+    "exit_code": 0,
+    "result_lines": [
+      "query_stage_count_scan: 874 TOTAL / 14 PASS / 0 FAIL / 0 SKIP",
+      "query_stage_count: 874 TOTAL / 7 PASS / 0 FAIL / 0 SKIP"
+    ],
+    "dassert_live_evidence": "startup log emits {\"c\":\"TEST\",\"id\":22491,\"msg\":\"DEBUG build\"} (framework_options.cpp:143 guards it with the same kDebugBuild constant that gates dassert); absent from both opt dbtest logs"
+  },
+  {
+    "task": "3-resmoke-core",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "PATH=$PWD/bazel-bin/src/mongo/db:$PWD/bazel-bin/src/mongo/s:$PWD/bazel-bin/src/mongo/shell:$PATH taskset -c 1-47,49-95 ./.venv/bin/python3 buildscripts/resmoke.py run --suites=core --mongodSetParameters='{internalQueryFrameworkControl: \"forceClassicEngine\"}' --dbpathPrefix=<out>/resmoke/core-db --reportFile=<out>/resmoke/core.json --continueOnFailure --jobs=1 jstests/core/index/index_count_scan.js jstests/core/index/wildcard/compound_wildcard_index_count.js jstests/core/index/wildcard/wildcard_index_count.js jstests/core/query/count/count_scan_memory_limit.js jstests/core/query/explain/explain_count.js jstests/core/query/explain/explain_multi_plan_count.js jstests/core/query/explain/explain_multikey.js jstests/core/administrative/profile/profile_count.js",
+    "artifact": "resmoke/core.log, resmoke/core.json",
+    "exit_code": 0,
+    "result": "42/42 report entries pass (8 requested jstests + per-test hooks), 32.31s"
+  },
+  {
+    "task": "3-resmoke-aggregation",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "... --suites=aggregation ... jstests/aggregation/optimization/count_scan_optimization.js jstests/aggregation/optimization/is_count_like.js",
+    "artifact": "resmoke/aggregation.log, resmoke/aggregation.json",
+    "exit_code": 0,
+    "result": "12/12 report entries pass (2 requested jstests + hooks), 15.35s"
+  },
+  {
+    "task": "3-resmoke-no_passthrough",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "... --suites=no_passthrough ... jstests/noPassthrough/memory_tracking/count_scan_reports_memory_metrics.js",
+    "artifact": "resmoke/no_passthrough.log, resmoke/no_passthrough.json",
+    "exit_code": 0,
+    "result": "3/3 report entries pass (1 requested jstest + fixture setup/teardown), 11.64s",
+    "note": "CRITICAL: exercises a bare CountScan with no CountStage under forceClassicEngine"
+  },
+  {
+    "task": "3-resmoke-sharding",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "... --suites=sharding ... jstests/sharding/query/queries_elide_shard_filter.js",
+    "artifact": "resmoke/sharding.log, resmoke/sharding.json",
+    "exit_code": 0,
+    "result": "3/3 report entries pass, 81.98s"
+  },
+  {
+    "task": "4-base-worktree",
+    "cwd": "/home/junyao/code/mongo",
+    "cmd": "git worktree add --detach /tmp/mongo-count-minimal-validation/base-worktree 0561c098b99ac5e929005e70a2e37d7a97a82423   (removed with `git worktree remove` at end)",
+    "exit_code": 0
+  },
+  {
+    "task": "4-build-base",
+    "cwd": "/tmp/mongo-count-minimal-validation/base-worktree",
+    "cmd": "taskset -c 1-47,49-95 bazel build --config=opt --jobs=48 //src/mongo/db:mongod",
+    "artifact": "build-base.log",
+    "exit_code": 0,
+    "elapsed_s": 2341.458,
+    "total_actions": 12876,
+    "note": "separate bazel output base (efd21758c14fec4181df0b50c4680ccc); pure opt (MONGO_CONFIG_DEBUG_BUILD undefined)"
+  },
+  {
+    "task": "4-parity-capture",
+    "cmd": "bash <out>/run_parity.sh <label> <mongod> <port>  -> starts standalone mongod under taskset with --setParameter internalQueryFrameworkControl=forceClassicEngine, runs <out>/explain_parity.js with the HEAD-built mongo shell for BOTH sides, then shuts down",
+    "labels": {
+      "head-run1": "port 27817, HEAD opt mongod",
+      "head-run2": "port 27818, HEAD opt mongod (run-to-run determinism baseline)",
+      "base": "port 27819, BASE opt mongod from worktree"
+    },
+    "artifacts": [
+      "head-run1-capture.json",
+      "head-run2-capture.json",
+      "base-capture.json",
+      "explain_parity.js",
+      "run_parity.sh"
+    ]
+  },
+  {
+    "task": "4-diff",
+    "cmd": "python3 <out>/diff_capture.py <A>.json <B>.json <labelA> <labelB>",
+    "artifacts": [
+      "diff-head-run1-vs-run2.txt",
+      "diff-base-vs-head.txt",
+      "diff-base-vs-head-run2.txt"
+    ],
+    "result": "base vs HEAD: 542 leaf fields compared, 0 substantive differences; 4 optimizationTimeMicros deltas, the same field that varies between two runs of the identical HEAD binary"
+  }
+]

@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-06T05:12:49.256+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":3119191954}}
+2026-08-06T05:12:49+08:00
+Running /tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 2.46, 1.73, 4.90
+-------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                           Time             CPU   Iterations UserCounters...
+-------------------------------------------------------------------------------------------------------------------------------------
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64          81499577 ns     81411550 ns            1 cycles_per_iteration=171.158M instructions_per_iteration=1026.16M items_per_second=4.91331M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64          88186026 ns     88187355 ns            1 cycles_per_iteration=185.202M instructions_per_iteration=1026.19M items_per_second=4.5358M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64          83213568 ns     83151797 ns            1 cycles_per_iteration=174.763M instructions_per_iteration=1026.16M items_per_second=4.81048M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64          80441475 ns     80362969 ns            1 cycles_per_iteration=168.935M instructions_per_iteration=1026.15M items_per_second=4.97742M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64          86609840 ns     86611372 ns            1 cycles_per_iteration=181.892M instructions_per_iteration=1026.19M items_per_second=4.61833M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_mean     83990097 ns     83945009 ns            5 cycles_per_iteration=176.39M instructions_per_iteration=1026.17M items_per_second=4.77107M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_median   83213568 ns     83151797 ns            5 cycles_per_iteration=174.763M instructions_per_iteration=1026.16M items_per_second=4.81048M/s
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_stddev    3311619 ns      3353565 ns            5 cycles_per_iteration=6.95567M instructions_per_iteration=19.9804k items_per_second=189.107k/s

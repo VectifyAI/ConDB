@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-06T05:24:38.392+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":430407044}}
+2026-08-06T05:24:38+08:00
+Running /tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 2.82, 2.49, 3.59
+----------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                              Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------------------------------------------------------------------
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64             22921 ns        22910 ns         3045 cycles_per_iteration=48.1344k instructions_per_iteration=149.27k items_per_second=43.6484k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64             22333 ns        22316 ns         3045 cycles_per_iteration=46.8998k instructions_per_iteration=149.248k items_per_second=44.8104k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64             22535 ns        22500 ns         3045 cycles_per_iteration=47.3243k instructions_per_iteration=149.224k items_per_second=44.4445k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64             23205 ns        23189 ns         3045 cycles_per_iteration=48.7317k instructions_per_iteration=149.457k items_per_second=43.124k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64             22709 ns        22702 ns         3045 cycles_per_iteration=47.6908k instructions_per_iteration=149.275k items_per_second=44.0488k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_mean        22740 ns        22724 ns            5 cycles_per_iteration=47.7562k instructions_per_iteration=149.295k items_per_second=44.0152k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_median      22709 ns        22702 ns            5 cycles_per_iteration=47.6908k instructions_per_iteration=149.27k items_per_second=44.0488k/s
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_stddev        338 ns          342 ns            5 cycles_per_iteration=710.415 instructions_per_iteration=92.7484 items_per_second=660.779/s

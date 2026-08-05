@@ -86,11 +86,17 @@ all ancestor-correlated roots, the ratios remain
 to coalesce naturally grouped short reads and investigate routing only large
 subtrees through buckets, but the MongoDB interventions remain storage-harness
 experiments rather than integrated ConDB paths. In a separate MongoDB
-master-snapshot source microbenchmark, activating a private direct,
-non-deduplicating count-scan path reduces benchmark-thread retired instructions
-in user space by 5.447\% (95\% CI 5.445--5.448\%) and CPU time by
-6.981\% (95\% CI 5.425--8.616\%); this is not a 7.0.34, ConDB, or production
-result. The SQLite-backed Beam path now
+master-snapshot source experiment, letting a direct
+\code{CountStage}$\rightarrow$\code{CountScan} pair skip an unread working-set
+member reduces benchmark-thread user-space retired instructions against a pinned
+upstream base carrying the same benchmark harness by 4.600\%, 2.055\% and
+3.680\% on scalar, multikey and compound-wildcard indexed counts, favourably in
+all 30 blocks --- about 117 instructions per counted document. The change fires
+only on single-solution plans, so multi-planned and plan-cached counts are
+unaffected, and every plan measured is forced by an index hint. That campaign's
+pre-registered adoption gate nevertheless did not pass, because both of its
+control workloads fell outside their bands; no CPU-time or wall-time result is
+claimed from it, and it is not a 7.0.34, ConDB, or production result. The SQLite-backed Beam path now
 coalesces its per-turn child and
 entity reads. With the public defaults (\code{beam\_size=3},
 \code{select\_k=1}), a file-backed control returns one leaf and its content,
@@ -489,95 +495,317 @@ this benefit from the server.
 \section{Separate MongoDB master-snapshot source experiment}
 \label{sec:master-countscan}
 
-The 7.0.34 root-cause controls above motivated one narrow source experiment on
-the pinned MongoDB master snapshot \code{5d3b36cf3871}. The candidate commit
-\href{https://github.com/carsontung666/mongo/commit/696f0d5d30f9bb6bcdb96ade8388e6bea36a92f9}{\code{696f0d5d30f9}}
-is on \code{carsontung666/mongo:agent/condb-query-hotpath} and is under review
-in \href{https://github.com/carsontung666/mongo/pull/1}{PR~\#1}. It gives only a
-direct, non-deduplicating classic
-\code{CountStage}$\rightarrow$\code{CountScan} pair a private resultless
-protocol: activation requires \code{!\_shouldDedup}, and the private path uses
-the same \code{PlanStage::trackWork} accounting helper as public
-\code{work()}. Because the parent consumes only execution state, it avoids the
-per-match WorkingSet-member materialization and lifecycle. Public
-\code{CountScan::work()} still returns a valid \code{RID\_AND\_OBJ} member;
-multikey scans and scalar compound-wildcard scans retain the materializing,
-deduplicating path. The targeted test observes zero backing WorkingSet slots
-throughout the direct path, rather than claiming that the whole query performs
-zero allocations.
+The per-key root-cause result above motivated one narrow source change on the
+pinned MongoDB master snapshot \code{0561c098b99a}. A classic \code{CountStage}
+reads only its child's stage state and immediately frees any working-set member
+it receives, so when its direct child is a \code{CountScan} that member is built
+and torn down for nothing on every key the scan advances on. The candidate lets
+such a child skip producing it.
 
-The history audit found earlier work on single-interval count planning, shard-
-filter elision, the public WorkingSet contract, PlanStage accounting, and
-compound-wildcard deduplication, but no duplicate of this private direct
-resultless handoff in the inspected GitHub PRs and pinned-snapshot ancestry. This is
-not an exhaustive search of private branches or internal issue history; the
-companion review records the individual prior-art entries.
+\subsection{What the change is, and what it is not}
 
-This is an activation ablation, not candidate-versus-upstream or
-7.0.34-versus-master. Both arms are built from the candidate commit and contain
-all candidate implementation and benchmark-harness code. The activation-disabled
-control additionally removes only the constructor block that enables the private
-protocol. Both use the same \code{--config=opt} build and run the same hinted
-count over 400{,}000 scalar indexed keys. An untimed preflight requires the
-exact count and strict \code{COUNT}$\rightarrow$\code{COUNT\_SCAN} explain
-shape before measurement. Twenty fresh-process pairs are pinned to CPU~0 under
-the performance governor and use a predeclared balanced order (ten control-
-first and ten candidate-first); each process contributes five technical
-one-iteration repetitions. The analysis averages repetitions within process,
-forms 20 paired candidate/control ratios, and reports their geometric mean with
-a 100{,}000-sample order-stratified complete-pair bootstrap interval
-(seed 20260805). Bootstrap resamples are uncertainty calculations, not
-additional benchmark observations.
+The candidate is
+\href{https://github.com/carsontung666/mongo/commit/90814b83d3e55f099c1244266d86700b5f633972}{\code{90814b83d3e5}}
+on \code{carsontung666/mongo}. It adds one boolean to \code{CountScan}, one
+branch in \code{doWork()}, a private setter that only a direct \code{CountStage}
+parent can reach, and the \code{stageType()} check in \code{CountStage}'s
+constructor that is the setter's only call site. The setter is private because
+\code{WorkingSet::get()} is checked only in debug builds, so a public mutator
+that switched the output contract would be an out-of-bounds read in release
+builds awaiting its second caller. Deduplication, memory accounting and its
+limit, write-conflict and yield handling, and save/restore all run before the
+skipped step, and \code{CommonStats} and \code{CountScanStats} are unchanged.
+
+The optimization applies only when \code{CountStage}'s child is a bare
+\code{CountScan}, which is the single-solution plan case. A multi-planned or
+plan-cached count has a \code{MultiPlanStage} or \code{CachedPlanStage} in
+between and is unaffected. This is a real limit on the scope of the result, not
+a caveat about its validity.
+
+An earlier implementation of the same idea, \code{4109dcc31ff6}, was rejected in
+independent review: it added a template to \code{PlanStage}, the base class of
+every classic stage, for one caller; a test-only \code{friend} in a production
+header; a second entry point on \code{CountScan}; and an unrelated
+devirtualization. It is retained here as a measured arm, because the question
+of what that additional machinery bought is answerable rather than arguable.
+
+\subsection{Three-arm protocol}
+
+Three arms are reconstructed from the same base commit in one worktree and
+overlaid with a byte-identical benchmark harness, so that exactly six production
+files may differ:
 
 \begin{table}[H]
-\caption{Enabled private count protocol versus its activation-disabled
-candidate control; neither arm is stock upstream. Values are geometric means
-of the 20 process-block means. Time is per 400{,}000-key count.}
-\label{tab:master-countscan}
+\caption{Arms. Arm~A is not an unmodified upstream binary: it carries the same
+harness as the others, including an evidence-only point-query control that is
+not part of the pull request.}
+\label{tab:countscan-arms}
 \begin{ctab}
 \setlength{\tabcolsep}{7pt}
-\begin{tabular}{@{}lrrrc@{}}
+\begin{tabular}{@{}llp{0.52\linewidth}@{}}
 \toprule
-\hdr Metric & Control & Enabled & Reduction & 95\% CI \\
+\hdr Arm & Source & Role \\
 \midrule
-Benchmark-thread user-space instructions (billions)
-  & 1.035818 & 0.979399 & 5.447\% & [5.445\%, 5.448\%] \\
-Benchmark-thread CPU time (ms)
-  & 95.507 & 88.840 & 6.981\% & [5.425\%, 8.616\%] \\
-Wall time (ms)
-  & 95.690 & 89.005 & 6.986\% & [5.428\%, 8.622\%] \\
+A & \code{0561c098b99a} & pinned upstream base \\
+B & \code{4109dcc31ff6} & the rejected heavyweight implementation \\
+C & \code{90814b83d3e5} & the minimal candidate \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-All 20 pairs favor activation for all three metrics. Both execution-order
-strata favor activation, and every leave-one-pair-out estimate remains below
-one. User-space retired instructions are the primary mechanism check; CPU time
-is benchmark-thread time rather than whole-process CPU, and wall time is an
-auxiliary result that closely tracks it. The standard optimized build passes
-for \code{mongod}, \code{mongos}, \code{mongo}, \code{dbtest}, and the query
-benchmark. Both count dbtest suites pass in optimized and runtime-dassert
-builds. Unit coverage verifies that public work grows backing slots from zero
-to one, while direct skip/limit/yield execution keeps the slot count at zero;
-multikey and scalar compound-wildcard cases stay materializing and
-deduplicating. The strict count/explain preflight passes. Forced-classic
-resmoke validation passes six core JS files (32 result entries), two
-aggregation files (12), one no-passthrough file (3), and one sharding file (3);
-entry counts include fixture and hook events. This is targeted validation, not
-a full MongoDB qualification run.
+Five workloads run per block: three indexed-count endpoints (scalar, multikey,
+and a non-multikey compound wildcard index), a hinted unique-field point query
+as a negative control, and a count whose plan is
+\code{COUNT}$\rightarrow$\code{FETCH}$\rightarrow$\code{IXSCAN}. The last is the
+only workload where a regression could hide. The optimization cannot fire on it
+or on the point query, but only the fetching count drives on the order of one
+stage iteration per document through stages the change does not touch, which is
+what the rejected arm's base-class refactor would perturb.
 
-The result is limited to this warmed, single-thread, in-process, full-range
-scalar count. It does not establish improvement for the stock pinned upstream
-snapshot, MongoDB~7.0.34, SBE, deduplicating or
-indirect plan shapes, covered-Metadata
-production, cold caches, concurrent or mixed load, remote clients, the ConDB
-endpoint, or production latency. Because the control shares the candidate's
-implementation and harness, a pristine-base arm with a neutral harness remains
-an adoption gate for separating activation from the full patch. The raw paired
-JSON, exact activation patch, candidate patch, validation reports, binary
-identities, preregistered protocol, and analysis are frozen under
-\path{bench/db/report/evidence/mongodb_master_countscan_20260805_696f0d5d30f9}.
+The campaign is 30 blocks $\times$ 5 workloads $\times$ 3 arms $=$ 450 fresh
+processes, each contributing five technical repetitions that are averaged within
+the process. Blocks are stratified over the six arm-order permutations crossed
+with five workload rotations, every combination appearing exactly once, and
+execute in a seeded permuted order so that no stratum sits at a fixed period in
+time. Every process is pinned to one CPU under the performance governor, with
+the governor re-checked before each process and the exact busy fraction of that
+CPU and its SMT sibling recorded across each process.
+
+Adoption reads one interval family: a stratified log-ratio Welch-t interval over
+the 30 block ratios, Bonferroni-adjusted across the three count endpoints. A
+percentile bootstrap is retained only as a sensitivity output and is
+structurally excluded from every gate. Retired instructions are primary, CPU
+time secondary, wall time auxiliary.
+
+C versus B is registered as a \emph{noninferiority} comparison and is reported
+as a complexity trade-off rather than as an adoption gate. B does everything C
+does and more, so it is expected to be marginally faster, and requiring C to
+beat it would be a test designed to fail; the question is whether the difference
+is worth the maintenance cost. CPU time is gated on C/A only: at this block
+count it resolves to roughly $\pm1.5\%$ as pre-registered, and 1.0--1.3\% in
+the event, which cannot separate two
+implementations expected to differ by about one percent, so the C/B CPU interval
+is left ungated rather than tested against a bound the instrument cannot reach.
+In the event the point-query control showed that CPU time carries a
+binary-level offset on this host, so no CPU-time result is claimed at all; see
+below.
+
+\subsection{Results}
+
+\textbf{The pre-registered adoption gate did not pass.} Both control workloads
+fell outside their pre-registered bands, for three distinct reasons: one band was
+mis-specified, one binary-level difference is real but cannot be caused by the
+change, and one arm genuinely does intrude on a path the optimization never
+touches --- the rejected implementation, not the candidate --- which means the
+C/B leg of that control could never have passed as specified.
+
+The count-endpoint instruction results below are nevertheless reported. The
+protocol registers no rule for what may be published when a control fails, so
+that decision is itself post-hoc, and the reasons for it are given here so a
+reader can weigh them: these are the pre-registered primary metric, the widest of
+their three adjusted intervals spans better than one part in $10^4$, they are
+favourable in every one of the 30 blocks, and neither control failure touches
+them.
+
+\begin{table}[H]
+\caption{Candidate versus pinned upstream base, retired benchmark-thread
+instructions. Bonferroni-adjusted 98.333\% two-sided intervals over 30 block
+ratios. Every block favours the candidate on every endpoint.}
+\label{tab:countscan-ca}
+\begin{ctab}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\hdr Endpoint & Ratio & Reduction & Adjusted CI & Blocks \\
+\midrule
+Scalar, 400{,}000 docs / 400{,}000 keys    & 0.954005 & 4.600\% & [4.598\%, 4.601\%] & 30/30 \\
+Multikey, 200{,}000 docs / 400{,}000 keys  & 0.979446 & 2.055\% & [2.051\%, 2.060\%] & 30/30 \\
+Wildcard, 200{,}000 docs / 200{,}000 keys  & 0.963198 & 3.680\% & [3.678\%, 3.683\%] & 30/30 \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+Expressed as work removed rather than as a ratio, the saving is \textbf{118.0,
+116.1 and 117.1 retired instructions per counted document}. The multikey
+workload is the one that discriminates: it advances over 400{,}000 index keys
+while counting 200{,}000 documents, and its saving lands at 116.1 instructions
+per \emph{counted document} rather than per key. On the other two endpoints keys
+and documents coincide, so they cannot separate the two normalisations and are
+consistency checks rather than independent evidence. That single discriminating
+result is what avoiding one working-set allocation, member initialisation and
+free per counted document predicts, and it lets a reader compute the effect at
+any scan size instead of transplanting a percentage.
+
+\subsubsection{Why the gate did not pass}
+
+The point-query control is unchanged in instructions, as required
+(0.9997, 95\% CI [0.99884, 1.00055]), but its CPU-time interval was not wholly
+inside its band: against a $[0.97, 1.03]$ band the interval is
+$[0.967321, 0.987021]$, so the point estimate of 0.977 sits inside and the lower
+bound falls below. The offset is roughly 2.3\%, appears in all six arm-order
+strata, survives minimum-based aggregation, and decomposes onto the arms
+(22920, 22767 and 22396~ns for A, B and C) rather than onto execution position
+(22721, 22657 and 22706~ns for first, second and third within a block). The
+change cannot execute on that plan, so this is a property of the binaries and
+not of the optimization --- most likely code layout, though this campaign counts
+only instructions and elapsed time and so cannot separate clock from work.
+
+The consequence is that \textbf{no CPU-time or wall-time claim is made anywhere
+in this experiment}, including for the count endpoints. This is a decision to
+discard a result the protocol permitted, not a result the protocol denied: the
+pre-registered CPU non-regression gate \emph{passed} for C/A on all three
+endpoints and marked a CPU speed-up claim eligible, with point estimates of
+0.956, 0.962 and 0.935. Those would have read as a 4--6\% CPU reduction. The
+same instrument reports 0.977 on the point query and 0.991 on the
+\code{FETCH}-based count, two plans on which the candidate's instruction count
+is unchanged, so a few percent of apparent CPU improvement is available to this
+binary on code the change never executes. The count-endpoint CPU numbers cannot
+be separated from that, and are therefore not claimed.
+
+The un-optimized control failed for two distinct reasons. Its band was
+$\pm$0.2\%, applied to a between-process ratio whose per-block standard
+deviation turned out to be 1.57\%; at that dispersion a 95\% interval reaches a
+0.2\% half-width at roughly 240 blocks, so as specified it was never attainable
+at 30. The protocol records a written justification for the 1\% noninferiority
+margin but none for either control band, so the band is best described as
+having been set by analogy with repetition-level reproducibility rather than
+from any recorded analysis of between-process dispersion.
+
+The dispersion itself is not diffuse noise but a per-process two-state latch:
+each of the 90 processes lies wholly in one of two states 2.32\% apart, 56 in
+the lower and 34 in the upper, and no process straddles them at repetition
+level. Within a state \emph{and} within an arm the process-to-process
+coefficient of variation is at most 0.0025\%; pooling arms within a state leaves a 0.26\%
+spread, which is the rejected arm's offset. Conditioning on the state, the
+candidate is indistinguishable from the base on this workload (0.999990 over the
+10 blocks where both landed in the lower state, 1.000000 over the 7 in the
+upper; standard deviations $2.8\times10^{-5}$ and $2.2\times10^{-5}$), which
+answers the control's question even though its gate could not be evaluated as
+written.
+
+That conditioning is \textbf{post-hoc}. It is not in \code{analyze.py}, which
+was hashed into the pre-registration and knows nothing about states, and it
+conditions on a variable measured after treatment whose incidence differs by arm
+(13/30 upper-state blocks for A, 7/30 for B, 14/30 for C). It is reproducible:
+\path{analyze_controls_posthoc.py} in the bundle states the threshold rule --- cut
+at the single widest relative gap in the sorted process means, which is 2.11\%
+against a next-widest gap of 0.25\% --- and prints every conditioned figure
+quoted here alongside its pre-registered marginal counterpart.
+
+\subsubsection{What the rejected implementation bought}
+
+The rejected heavyweight implementation retires fewer instructions than the
+candidate on all three count endpoints, unfavourably in every one of the 30
+blocks, with Bonferroni-adjusted upper bounds of 1.00453, 1.00330 and 1.00329
+against the pre-registered 1.01 noninferiority margin. Its extra saving is 11.0,
+9.0 and 10.0 instructions per \emph{stage iteration} --- flat, where the
+candidate's saving is per counted document --- out of the 116.1 to 134.1 that
+either implementation removes. That normalisation is the same test applied above
+to the candidate, and here it points the other way, which fits the mechanism:
+what B still does that C does not is replace the two virtual calls per iteration
+between \code{CountStage} and \code{CountScan} with typed ones.
+
+That advantage does not survive contact with the un-optimized control. On the
+count whose plan cannot use \code{COUNT\_SCAN}, the rejected implementation
+retires \textbf{24 more instructions per fetched document} than either the
+candidate or the base, in both states (B/A is 1.002558 over 14 concordant blocks
+in the lower state and 1.002499 over 4 in the upper; B/C is 1.002564 over 11 and
+1.002521 over 2), while the candidate is indistinguishable from the base there.
+This is consistent with the cost of routing every classic stage's \code{work()}
+through a new base-class helper, at roughly 8 instructions across the three
+\code{work()} calls per document. That is the largest of the B-only changes that
+execute on this plan --- arm B also adds a null-pointer branch to
+\code{CountStage::doWork()} and \code{isEOF()} --- but no arm isolates any of
+them, so the attribution is an inference and not a measurement. Note also that
+the pre-registered marginal estimator reports 0.9979
+for this comparison and so inverts its sign: the rejected arm landed in the
+high-instruction state 7 times in 30 against the base's 13, and the mean over
+blocks absorbs the difference. The conditioned figure is reported alongside the
+pre-registered one rather than in place of it.
+
+\subsection{Validation and limits}
+
+The optimized build passes for \code{mongod}, \code{mongos}, \code{mongo} and
+\code{dbtest}; the query benchmarks were built separately, from the campaign's
+own worktree. Both count dbtest suites pass in
+optimized and runtime-\code{dassert} builds. Forced-classic resmoke passes all
+60 result entries it produces: 42 over eight core files, 12 over two aggregation
+files, 3 over one no-passthrough file and 3 over one sharding file. Twelve of the
+60 are the jstests themselves; the rest are their per-test \code{RunQueryStats}
+and \code{ValidateCollections} hooks and fixture setup and teardown. The core set
+includes \code{profile\_count.js}, which checks indexed-count \code{keysExamined}
+and the \code{COUNT\_SCAN} plan summary directly.
+
+The strongest non-intrusion evidence is a field-by-field comparison of
+\code{explain(\allowbreak"executionStats")} against a separately built binary of
+the base commit: over 542 leaf fields there are 4 differences and none is
+substantive, all four being the same optimization-time counter, three of whose
+four instances also differ between two runs of the identical binary. The comparison includes the count-like aggregation
+shape, which executes a bare \code{CountScan} with no \code{CountStage} and
+therefore dereferences the returned identifier unconditionally; it returns 200
+materialized results on both binaries, so the opt-in does not leak to that path.
+
+These validation runs are retained in the bundle under \path{validation/}, with
+the resmoke reports and logs, the dbtest logs, all three explain captures, the diffs
+and a hashed provenance record. They were performed on \code{ac20554f}, not on
+arm~C: the two commits differ by exactly one line, a \code{clang-format} include
+reorder in \code{count.cpp}, and the validation was not re-run after it. No
+statement, declaration or build setting differs between them.
+
+The result is limited to warmed, single-threaded, in-process counts on one host,
+and to plans forced by an index hint to the shape under test. It does not
+establish improvement for MongoDB~7.0.34, for SBE, for unhinted counts subject
+to multi-planning or the plan cache, for cold caches, for concurrent or mixed
+load, for remote clients, for the ConDB endpoint, or for production latency. CPU
+time here is benchmark-thread time, not whole-server or whole-process CPU.
+Retired instructions are not latency, and the reduction is stated as such. The
+two builds of arm~C bracket the builds of arms A and B in one worktree and one
+build output base; the first was a build-cache hit and the second re-executed
+1001 actions and reproduced the same binary, so what this evidences is that
+building the other two arms in between left the build state undisturbed. Both
+preceded the campaign, and it is not a from-scratch reproducibility proof.
+
+Upstream submission remains blocked on matters that cannot be satisfied here: a
+real MongoDB ticket, the contributor-agreement and code-owner path, and an
+Evergreen run. The fork pull request is therefore a draft and is not represented
+as ready to merge. The complete protocol, source patches, per-arm manifests,
+build attestation, attempt ledger, raw JSON, logs and analysis are frozen under
+\path{bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6}.
+
+Three disclosures about that bundle. First, the protocol was committed and pushed
+40 seconds before the first benchmark process, but it was not written blind: the
+attested build smokes had already run all five workloads at campaign size on all
+three arms, so the per-arm instruction levels --- and with them the endpoint
+ratios --- were visible before the protocol was frozen, and recomputing those
+ratios from the smoke files reproduces the campaign result to within
+$4\times10^{-4}$. The attempt ledger discloses this in each of its three
+pre-registrations, but the frozen \code{campaign.json} does not: its
+noninferiority-margin rationale states that no measurement of the present arms
+had been taken, which is false. The protocol is left unaltered and the error is
+recorded here. What the 30-block campaign establishes is the intervals, the
+block-level consistency and the controls, not the discovery.
+
+Second, the pre-registration cites the wrong anchor commit: it was written before
+its own commit existed and so recorded the then-current \code{1c1d4287}, which
+holds the previous attempt's protocol. The executed protocol first appears in
+\code{1688ea3d}. The freeze did precede execution; only the citation was wrong.
+Both the correction and the record of how it was filed are in
+\path{anchor_correction.json}.
+
+Third, the campaign measured \code{90814b83d3e5}. A later blank review of the
+change, conducted as a MongoDB reviewer would read it, produced fixes ---
+including an assertion that closes a second, previously unremarked
+\code{CountStage} construction site in
+\code{ClassicPlannerInterface::makeExecutor()} --- and the commit now under
+review is \code{90781b36b2}. None of those fixes executes inside the per-key
+path, and the reviewed binary was re-smoked at campaign size: its instruction
+counts differ from arm~C's 30-process means by less than arm~C's own
+process-to-process spread on all three endpoints. The complete diff, the smoke
+output and that comparison are in
+\path{validation/review_fix_equivalence/}. The intervals in
+Table~\ref{tab:countscan-ca} remain pinned to the measured commit.
 
 \section{Optimization experiments}\label{sec:optimization}
 
@@ -1172,12 +1400,26 @@ materialized covered-Metadata subtree path: small batches add \code{getMore}
 traffic, while large requests fail to improve Metadata retrieval. Remote RTT,
 streaming, and early termination remain unmeasured.
 
-Separately, activating the master-snapshot direct non-deduplicating count path
-reduces benchmark-thread user-space retired instructions by 5.447\% (95\% CI
-5.445--5.448\%) and CPU time by 6.981\% (95\% CI 5.425--8.616\%) against its
-activation-disabled candidate control. That narrow source
-microbenchmark is not a MongoDB version comparison or evidence of ConDB,
-whole-process, concurrent, or production improvement.
+Separately, a direct \code{CountStage}$\rightarrow$\code{CountScan} pair that
+skips an unread working-set member reduces benchmark-thread user-space retired
+instructions against a pinned upstream base carrying the same benchmark harness
+by 4.600\%, 2.055\% and 3.680\% on the three indexed-count shapes measured,
+favourably in all 30 blocks and consistent at about 117 instructions per counted
+document. The optimization fires only where \code{CountStage}'s child is a bare
+\code{CountScan}, that is on single-solution plans, and every plan measured is
+forced by an index hint; multi-planned and plan-cached counts are outside its
+scope. That campaign's pre-registered adoption gate did not pass: its
+point-query control showed a binary-level CPU-time offset that the change cannot
+cause, and its un-optimized control had a band that was never attainable at 30
+blocks. No CPU-time or wall-time result is claimed. A post-hoc analysis of that
+second control, conditioning on a two-state instruction latch that the
+pre-registered estimator averages over, indicates that an earlier, rejected
+implementation of the idea intrudes on a plan shape where the optimization
+cannot fire; the pre-registered marginal estimator inverts the sign of that
+comparison, and both figures are reported in
+Section~\ref{sec:master-countscan}. This narrow source experiment is not a
+MongoDB version comparison or evidence of ConDB, whole-process, concurrent, or
+production improvement.
 
 DFS buckets improve the measured large-subtree cohort but are not ready for an
 adoption decision because small reads regress and the size-based router itself

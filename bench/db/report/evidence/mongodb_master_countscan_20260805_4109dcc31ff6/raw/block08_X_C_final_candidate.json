@@ -1,0 +1,152 @@
+{
+  "context": {
+    "date": "2026-08-06T05:48:00+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-countscan-C-final-candidate",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [1.83594,1.97705,2.39697],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.5086174011230469e+08,
+      "cpu_time": 1.5060147699999994e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1681968200000000e+08,
+      "instructions_per_iteration": 1.8758858360000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.4952397346496582e+08,
+      "cpu_time": 1.4942828199999970e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1400835800000000e+08,
+      "instructions_per_iteration": 1.8757271150000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.5179491043090820e+08,
+      "cpu_time": 1.5161782699999994e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1877669000000000e+08,
+      "instructions_per_iteration": 1.8756883900000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.5074896812438965e+08,
+      "cpu_time": 1.5064015699999976e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1658035400000000e+08,
+      "instructions_per_iteration": 1.8759612190000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.5278959274291992e+08,
+      "cpu_time": 1.5268833499999967e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.2086632800000000e+08,
+      "instructions_per_iteration": 1.8756587930000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_mean",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 1.5114383697509769e+08,
+      "cpu_time": 1.5099521559999985e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1741028240000004e+08,
+      "instructions_per_iteration": 1.8757842706000001e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_median",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 1.5086174011230469e+08,
+      "cpu_time": 1.5064015699999979e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1681968200000000e+08,
+      "instructions_per_iteration": 1.8757271150000000e+09
+    },
+    {
+      "name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_stddev",
+      "run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 1.2239144713653498e+06,
+      "cpu_time": 1.2237928602734248e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5701167543245968e+06,
+      "instructions_per_iteration": 1.3212753838621228e+05
+    }
+  ]
+}

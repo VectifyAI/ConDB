@@ -1,0 +1,386 @@
+{
+  "artifact_hashes": {
+    "base-capture.json": {
+      "sha256": "b2f7d7335cdb25655a6735b638642622c37ea01adbd64bb531a7cd0386bcfb2b",
+      "size_bytes": 12792
+    },
+    "base-capture.raw": {
+      "sha256": "4b6ee8fe19de9f3382d3aa5d59d7a749a1d25f646e0dc858a63c3ffca4d41847",
+      "size_bytes": 12886
+    },
+    "base-mongod-start.log": {
+      "sha256": "742b8844f791b824a0e3b9c50a97838ad10b15499600a63d1fd54c515e6157cd",
+      "size_bytes": 572
+    },
+    "base-mongod.log": {
+      "sha256": "fa8e42ebdc4df432f6f80783f3c517e5d0ef92e14e7f450e0749cddab22d01ef",
+      "size_bytes": 92273
+    },
+    "binaries-head.txt": {
+      "sha256": "bd6ef8958a214fada5e42e056775bfd63fe8915c49726a1de1b665f8808262dd",
+      "size_bytes": 1174
+    },
+    "build-base.log": {
+      "sha256": "04cdc01c2651e9f451540d9ebb6107db4f26966f93dd4c22f315c671c4a6a778",
+      "size_bytes": 359494
+    },
+    "build-dbg.log": {
+      "sha256": "734fbdb0cba10022e080a0ea67da7c580047635582f7fc1a834af91191322bc2",
+      "size_bytes": 168421
+    },
+    "build.log": {
+      "sha256": "1c43e8c1b483049919e09e579e3166a32c2997335fa3e8a339962aa4b02bc962",
+      "size_bytes": 4615
+    },
+    "change.diff": {
+      "sha256": "38805d5d00f12b245d07f408417f17cc0bac81d5cb10e45d6bd7476abaf96a2c",
+      "size_bytes": 10817
+    },
+    "commands.json": {
+      "sha256": "6873ba40c7bd3d66030de41ebaa4deb0797d3b62f76bbcb7dce2ad3508aa6f59",
+      "size_bytes": 6905
+    },
+    "dbtest-dbg.log": {
+      "sha256": "be4aa18ee3eac9d0ea33b42bba02b2cabd6ef31d9008adc5708a08dc976f0f60",
+      "size_bytes": 237857
+    },
+    "dbtest-opt-persuite.log": {
+      "sha256": "a1a83913cc33d0c662969b14dc60d22ae78b1042c7a992ff7bf862391854b68c",
+      "size_bytes": 5417
+    },
+    "dbtest-opt.log": {
+      "sha256": "2739d44383bdfa6db1dda0381d84ae1793f9f4acdb11ab19c0a4d33472d8b1d7",
+      "size_bytes": 44002
+    },
+    "diff-base-vs-head-run2.txt": {
+      "sha256": "312a443e1c8de83e7eb81d64c2c0a11d9a76c83e8d857e5c2b7a658b103320a3",
+      "size_bytes": 776
+    },
+    "diff-base-vs-head.txt": {
+      "sha256": "c41305d2f1b4d27d4524710c6ecfa35613966ac07d3270001ebd6ce8a2bfe4dd",
+      "size_bytes": 789
+    },
+    "diff-head-run1-vs-run2.txt": {
+      "sha256": "c5cf6c32fb17691aa47a17cd7a6ebea2ac01fea6224d265152bae67dc818a0f8",
+      "size_bytes": 683
+    },
+    "diff_capture.py": {
+      "sha256": "37751a5778d6469f224d0afb6a9c96dee3458d56b8962ab76231765abf4b8309",
+      "size_bytes": 2794
+    },
+    "explain_parity.js": {
+      "sha256": "64717b84f021612d1166ea7edf277adfc25bc2123af0bfbda600162cc3ab7227",
+      "size_bytes": 8225
+    },
+    "head-run1-capture.json": {
+      "sha256": "f11c7e3b7de547053c6534fbb5a7411f92ee4d29690ca27521cd188338d0da43",
+      "size_bytes": 12796
+    },
+    "head-run1-capture.raw": {
+      "sha256": "0e949ca0e3c21bd22c5a74d805ffed2fb35b2c398354a5c550f6c9333469b863",
+      "size_bytes": 12890
+    },
+    "head-run1-mongod-start.log": {
+      "sha256": "87bca14d9e09eca96fd3433fd7ec9c1fc53e044f624248a0114b6b5ce976f233",
+      "size_bytes": 572
+    },
+    "head-run1-mongod.log": {
+      "sha256": "5b026832bb49407409772ade6349014c2a276e51da93dbe4e21b33c3ee376591",
+      "size_bytes": 103842
+    },
+    "head-run1-mongod.log.2026-08-05T18-00-21": {
+      "sha256": "5d79d1caa754decf689c641ae83914798076ce51015c5689cc10ee5ba242261a",
+      "size_bytes": 72523
+    },
+    "head-run1-mongod.log.2026-08-05T18-01-21": {
+      "sha256": "227eb7e5758ec23f9bfa838eeed3237065d19994140a7bf29a45d065dbbf7804",
+      "size_bytes": 89147
+    },
+    "head-run1-mongod.log.2026-08-05T18-02-17": {
+      "sha256": "f0d125018a5ec2571bf8962117afee53734243de199e5654b813f9277cc91230",
+      "size_bytes": 88202
+    },
+    "head-run2-capture.json": {
+      "sha256": "c40927c5eaa257ab882b4a1b70928efdf4e4c400d5da0f711fae003ea94bd66d",
+      "size_bytes": 12796
+    },
+    "head-run2-capture.raw": {
+      "sha256": "c828bb8ff0bca0ee4e409597d8a92df0d4c9c1f0ec20d1bde1a757abc2a6a720",
+      "size_bytes": 12890
+    },
+    "head-run2-mongod-start.log": {
+      "sha256": "8a1b41f7803d09e944cf4b5639f3c71f9ea50f6ca6dd5f2dd25bb1081fab5771",
+      "size_bytes": 571
+    },
+    "head-run2-mongod.log": {
+      "sha256": "e81f117ef62980970fe455e690ad62eb03faccae844a143ee28cef5e2a0e6ca1",
+      "size_bytes": 102920
+    },
+    "make_provenance.py": {
+      "sha256": "795f0719850cb4894b7ab05d0da7ce2f9b4c408681dc8e7e205f8a12ed937412",
+      "size_bytes": 5030
+    },
+    "provenance.json": {
+      "sha256": "47e8d803dd89e72c9fee69bc9010bb46f8dc849bb7d6ba92afb30d16b94c424d",
+      "size_bytes": 18302
+    },
+    "resmoke/aggregation.json": {
+      "sha256": "8e6ac854cc70bdcfbf51bac7444b9ad2f50a90b81488155335c6bf7a8b24acd2",
+      "size_bytes": 4246
+    },
+    "resmoke/aggregation.log": {
+      "sha256": "a2217a14559555390e9fbf2ddcc737c435056b4c53b2f9230c24fed85b10cf04",
+      "size_bytes": 240752
+    },
+    "resmoke/core.json": {
+      "sha256": "02fc4d4432d29262eb121d4310ed6afe838b84601d67bdf38c8bdce2484f9bb0",
+      "size_bytes": 14885
+    },
+    "resmoke/core.log": {
+      "sha256": "0714c8c0c6d049d1463e2c4ae8aeb241926b22b3688df7a717456f288788356c",
+      "size_bytes": 806327
+    },
+    "resmoke/no_passthrough.json": {
+      "sha256": "c3798056dcb36417c9daeaa41cb24c8330c157e370fe6061260ec77a515141b6",
+      "size_bytes": 1092
+    },
+    "resmoke/no_passthrough.log": {
+      "sha256": "7f18b09d22fe23529ebef9b6ba274fce3ece773f0970b97c5f3c931f50add1ff",
+      "size_bytes": 189346
+    },
+    "resmoke/sharding.json": {
+      "sha256": "736ba3a368cb3184114a7ba3a561d4ba55c7a1cb3bf6762f1b2fdc46df3b6520",
+      "size_bytes": 1074
+    },
+    "resmoke/sharding.log": {
+      "sha256": "3612035dc97091bad1f20a023d816a3f3770f4eb78ddaf2cfa51069754619016",
+      "size_bytes": 11833834
+    },
+    "run_parity.sh": {
+      "sha256": "12205e13795033fed5e4aeff25fb21d0a9edc1996fde6596360866ae6d3227e8",
+      "size_bytes": 1587
+    }
+  },
+  "base_sha": "0561c098b99ac5e929005e70a2e37d7a97a82423",
+  "bazel_version": "bazel 7.5.0-mongo_90b8a7b661",
+  "binaries": [
+    {
+      "exists": true,
+      "gnu_build_id": "85f75d906186ce8373413d8f9a853397ef4a7356",
+      "label": "head_mongod_opt",
+      "real_path": "/home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/db/mongod_with_debug",
+      "requested_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/db/mongod",
+      "sha256": "be6deffae5f09758db41019844a7c84d537f69bd34e5f446353d100d090aca62",
+      "size_bytes": 740640984
+    },
+    {
+      "exists": true,
+      "gnu_build_id": "962c46cd84d9ad625cca24768421a66984ad1610",
+      "label": "head_mongos_opt",
+      "real_path": "/home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/s/mongos_with_debug",
+      "requested_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/s/mongos",
+      "sha256": "2d3b563102abe4873378c97f863235ee43c5354ba5a2861783f035888e80c08f",
+      "size_bytes": 579757104
+    },
+    {
+      "exists": true,
+      "gnu_build_id": "9c6ad47ee29f817daf848a98deec7af10b0543aa",
+      "label": "head_mongo_shell_opt",
+      "real_path": "/home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/shell/mongo_with_debug",
+      "requested_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/shell/mongo",
+      "sha256": "54d4f2183ce5c78310bae63a661401e544dc0e240ef78daedd2df40e9b345ad8",
+      "size_bytes": 322512832
+    },
+    {
+      "captured_from": "binaries-head.txt (recorded before the dbg build ran)",
+      "exists": false,
+      "gnu_build_id": "4018f12d31fef5b43b89b4049b9efde3f3d15e86",
+      "label": "head_dbtest_opt_PURE (task 2, no longer on disk)",
+      "overwritten_by": "bazel build --config=opt --dbg=True //src/mongo/dbtests:dbtest",
+      "real_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/dbtests/dbtest_with_debug",
+      "requested_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/dbtests/dbtest_with_debug",
+      "sha256": "2402ec61de39f507633e5763993d6b44883dc01f00c4edc635315904c3632509",
+      "size_bytes": 674230168
+    },
+    {
+      "exists": true,
+      "gnu_build_id": "40d0f2c8b31990af6e714d69dcf987f463dda7eb",
+      "label": "head_dbtest_opt_dbg (task 2b, dassert live)",
+      "real_path": "/home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/dbtests/dbtest_with_debug",
+      "requested_path": "/home/junyao/code/mongo/bazel-out/k8-opt/bin/src/mongo/dbtests/dbtest",
+      "sha256": "5d499d11749504eb7de64c4c0321bf13340ce424d097b2aa10afefe5e076e16d",
+      "size_bytes": 739841736
+    },
+    {
+      "exists": true,
+      "gnu_build_id": "f831fb117006dfdbcd52361d49f7c848c5357972",
+      "label": "base_mongod_opt",
+      "real_path": "/home/junyao/.cache/bazel/_bazel_junyao/efd21758c14fec4181df0b50c4680ccc/execroot/_main/bazel-out/k8-opt/bin/src/mongo/db/mongod_with_debug",
+      "requested_path": "/home/junyao/.cache/bazel/_bazel_junyao/efd21758c14fec4181df0b50c4680ccc/execroot/_main/bazel-out/k8-opt/bin/src/mongo/db/mongod_with_debug",
+      "sha256": "6ed5794964082ba108c9edefbe14c9d80298174bfd583d48f0ff269c261a8a38",
+      "size_bytes": 740635152
+    }
+  ],
+  "commands": [
+    {
+      "cmd": "git status --short; git rev-parse HEAD; git rev-parse --abbrev-ref HEAD",
+      "cwd": "/home/junyao/code/mongo",
+      "note": "status empty, HEAD ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd, branch agent/condb-count-minimal",
+      "task": "0-precheck"
+    },
+    {
+      "artifact": "change.diff",
+      "cmd": "git diff 0561c098b99ac5e929005e70a2e37d7a97a82423..ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd",
+      "cwd": "/home/junyao/code/mongo",
+      "task": "0-diff"
+    },
+    {
+      "artifact": "build.log",
+      "cmd": "taskset -c 1-47,49-95 bazel build --config=opt //src/mongo/dbtests:dbtest //src/mongo/db:mongod //src/mongo/s:mongos //src/mongo/shell:mongo",
+      "cwd": "/home/junyao/code/mongo",
+      "elapsed_s": 54.206,
+      "exit_code": 0,
+      "note": "incremental; 562 targets in graph, 119 actions executed",
+      "targets_found": 4,
+      "task": "1-build",
+      "total_actions": 119,
+      "wall_s": 56.23
+    },
+    {
+      "artifact": "dbtest-opt.log",
+      "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=query_stage_count_scan --suite=query_stage_count --tempPath=<out>/dbtests-opt-tmp",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "result_line": "874 TOTAL / 21 PASS / 0 FAIL / 0 SKIP",
+      "task": "2-dbtests-opt-combined"
+    },
+    {
+      "artifact": "dbtest-opt-persuite.log",
+      "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=<S> --showEachTest --tempPath=<out>/dbtests-opt-tmp   for S in query_stage_count_scan query_stage_count",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "result_lines": [
+        "query_stage_count_scan: 874 TOTAL / 14 PASS / 0 FAIL / 0 SKIP",
+        "query_stage_count: 874 TOTAL / 7 PASS / 0 FAIL / 0 SKIP"
+      ],
+      "task": "2-dbtests-opt-per-suite"
+    },
+    {
+      "artifact": "build-dbg.log",
+      "cmd": "taskset -c 1-47,49-95 bazel build --config=opt --dbg=True //src/mongo/dbtests:dbtest",
+      "cwd": "/home/junyao/code/mongo",
+      "elapsed_s": 1663.745,
+      "exit_code": 0,
+      "note": "writes into the SAME bazel-out/k8-opt tree and DISPLACES the pure-opt dbtest binary",
+      "task": "2b-build-dbg",
+      "total_actions": 7532
+    },
+    {
+      "artifact": "dbtest-dbg.log",
+      "cmd": "taskset -c 1-47,49-95 ./bazel-bin/src/mongo/dbtests/dbtest --suite=<S> --showEachTest --tempPath=<out>/dbtests-dbg-tmp   for S in query_stage_count_scan query_stage_count",
+      "cwd": "/home/junyao/code/mongo",
+      "dassert_live_evidence": "startup log emits {\"c\":\"TEST\",\"id\":22491,\"msg\":\"DEBUG build\"} (framework_options.cpp:143 guards it with the same kDebugBuild constant that gates dassert); absent from both opt dbtest logs",
+      "exit_code": 0,
+      "result_lines": [
+        "query_stage_count_scan: 874 TOTAL / 14 PASS / 0 FAIL / 0 SKIP",
+        "query_stage_count: 874 TOTAL / 7 PASS / 0 FAIL / 0 SKIP"
+      ],
+      "task": "2b-dbtests-dbg"
+    },
+    {
+      "artifact": "resmoke/core.log, resmoke/core.json",
+      "cmd": "PATH=$PWD/bazel-bin/src/mongo/db:$PWD/bazel-bin/src/mongo/s:$PWD/bazel-bin/src/mongo/shell:$PATH taskset -c 1-47,49-95 ./.venv/bin/python3 buildscripts/resmoke.py run --suites=core --mongodSetParameters='{internalQueryFrameworkControl: \"forceClassicEngine\"}' --dbpathPrefix=<out>/resmoke/core-db --reportFile=<out>/resmoke/core.json --continueOnFailure --jobs=1 jstests/core/index/index_count_scan.js jstests/core/index/wildcard/compound_wildcard_index_count.js jstests/core/index/wildcard/wildcard_index_count.js jstests/core/query/count/count_scan_memory_limit.js jstests/core/query/explain/explain_count.js jstests/core/query/explain/explain_multi_plan_count.js jstests/core/query/explain/explain_multikey.js jstests/core/administrative/profile/profile_count.js",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "result": "42/42 report entries pass (8 requested jstests + per-test hooks), 32.31s",
+      "task": "3-resmoke-core"
+    },
+    {
+      "artifact": "resmoke/aggregation.log, resmoke/aggregation.json",
+      "cmd": "... --suites=aggregation ... jstests/aggregation/optimization/count_scan_optimization.js jstests/aggregation/optimization/is_count_like.js",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "result": "12/12 report entries pass (2 requested jstests + hooks), 15.35s",
+      "task": "3-resmoke-aggregation"
+    },
+    {
+      "artifact": "resmoke/no_passthrough.log, resmoke/no_passthrough.json",
+      "cmd": "... --suites=no_passthrough ... jstests/noPassthrough/memory_tracking/count_scan_reports_memory_metrics.js",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "note": "CRITICAL: exercises a bare CountScan with no CountStage under forceClassicEngine",
+      "result": "3/3 report entries pass (1 requested jstest + fixture setup/teardown), 11.64s",
+      "task": "3-resmoke-no_passthrough"
+    },
+    {
+      "artifact": "resmoke/sharding.log, resmoke/sharding.json",
+      "cmd": "... --suites=sharding ... jstests/sharding/query/queries_elide_shard_filter.js",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "result": "3/3 report entries pass, 81.98s",
+      "task": "3-resmoke-sharding"
+    },
+    {
+      "cmd": "git worktree add --detach /tmp/mongo-count-minimal-validation/base-worktree 0561c098b99ac5e929005e70a2e37d7a97a82423   (removed with `git worktree remove` at end)",
+      "cwd": "/home/junyao/code/mongo",
+      "exit_code": 0,
+      "task": "4-base-worktree"
+    },
+    {
+      "artifact": "build-base.log",
+      "cmd": "taskset -c 1-47,49-95 bazel build --config=opt --jobs=48 //src/mongo/db:mongod",
+      "cwd": "/tmp/mongo-count-minimal-validation/base-worktree",
+      "elapsed_s": 2341.458,
+      "exit_code": 0,
+      "note": "separate bazel output base (efd21758c14fec4181df0b50c4680ccc); pure opt (MONGO_CONFIG_DEBUG_BUILD undefined)",
+      "task": "4-build-base",
+      "total_actions": 12876
+    },
+    {
+      "artifacts": [
+        "head-run1-capture.json",
+        "head-run2-capture.json",
+        "base-capture.json",
+        "explain_parity.js",
+        "run_parity.sh"
+      ],
+      "cmd": "bash <out>/run_parity.sh <label> <mongod> <port>  -> starts standalone mongod under taskset with --setParameter internalQueryFrameworkControl=forceClassicEngine, runs <out>/explain_parity.js with the HEAD-built mongo shell for BOTH sides, then shuts down",
+      "labels": {
+        "base": "port 27819, BASE opt mongod from worktree",
+        "head-run1": "port 27817, HEAD opt mongod",
+        "head-run2": "port 27818, HEAD opt mongod (run-to-run determinism baseline)"
+      },
+      "task": "4-parity-capture"
+    },
+    {
+      "artifacts": [
+        "diff-head-run1-vs-run2.txt",
+        "diff-base-vs-head.txt",
+        "diff-base-vs-head-run2.txt"
+      ],
+      "cmd": "python3 <out>/diff_capture.py <A>.json <B>.json <labelA> <labelB>",
+      "result": "base vs HEAD: 542 leaf fields compared, 0 substantive differences; 4 optimizationTimeMicros deltas, the same field that varies between two runs of the identical HEAD binary",
+      "task": "4-diff"
+    }
+  ],
+  "compiler": {
+    "full_version_output": "MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)\nTarget: x86_64-mongodb-linux\nThread model: posix\nInstalledDir: /home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/external/mongo_toolchain_v5/stow/llvm-v5/bin",
+    "path": "/home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/external/mongo_toolchain_v5/stow/llvm-v5/bin/clang++",
+    "sha256": "fa753e6d2bc8039c81f1c80839104cc54ce9993f451ed62e152982f084bf48be",
+    "version": "MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)"
+  },
+  "cpu_pinning": "taskset -c 1-47,49-95 (CPU 0 and CPU 48 deliberately avoided)",
+  "cpus_total": 96,
+  "diff_bytes": 10814,
+  "diff_sha256": "a80d4f9fc07e88ac7a6e2456efa5a1ff0a0452b41c3109ebfb20f1dc92a9a42a",
+  "generated_utc": "2026-08-05T18:30:04Z",
+  "git_status_empty": true,
+  "git_status_short": "",
+  "git_worktree_list": "/home/junyao/code/mongo                 ac20554faa [agent/condb-count-minimal]\n/tmp/mongo-countscan-alt                696f0d5d30 (detached HEAD)\n/tmp/mongo-countscan-attested-20260806  0561c098b9 (detached HEAD)\n/tmp/mongo-countscan-formal-a           4109dcc31f (detached HEAD)\n/tmp/mongo-countscan-formal-b           1b7362ef8c [bench/countscan-arm-b]",
+  "head_actual": "ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd",
+  "head_expected": "ac20554faaf2e7ab6e1b2e2aad2a81308fae82cd",
+  "head_unchanged": true,
+  "hostname": "dmal-longcws3",
+  "kernel": "Linux dmal-longcws3 6.8.0-84-generic #84~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Tue Sep  9 14:29:36 UTC 2 x86_64 x86_64 x86_64 GNU/Linux",
+  "repo": "/home/junyao/code/mongo"
+}

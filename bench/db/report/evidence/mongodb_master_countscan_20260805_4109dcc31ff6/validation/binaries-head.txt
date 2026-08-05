@@ -1,0 +1,16 @@
+path: /home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/db/mongod_with_debug
+  size: 740640984
+  sha256: be6deffae5f09758db41019844a7c84d537f69bd34e5f446353d100d090aca62
+  build-id: 85f75d906186ce8373413d8f9a853397ef4a7356
+path: /home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/s/mongos_with_debug
+  size: 579757104
+  sha256: 2d3b563102abe4873378c97f863235ee43c5354ba5a2861783f035888e80c08f
+  build-id: 962c46cd84d9ad625cca24768421a66984ad1610
+path: /home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/shell/mongo_with_debug
+  size: 322512832
+  sha256: 54d4f2183ce5c78310bae63a661401e544dc0e240ef78daedd2df40e9b345ad8
+  build-id: 9c6ad47ee29f817daf848a98deec7af10b0543aa
+path: /home/junyao/.cache/bazel/_bazel_junyao/f9d2a126f5a2d8a662948099aef4ca45/execroot/_main/bazel-out/k8-opt/bin/src/mongo/dbtests/dbtest_with_debug
+  size: 674230168
+  sha256: 2402ec61de39f507633e5763993d6b44883dc01f00c4edc635315904c3632509
+  build-id: 4018f12d31fef5b43b89b4049b9efde3f3d15e86
