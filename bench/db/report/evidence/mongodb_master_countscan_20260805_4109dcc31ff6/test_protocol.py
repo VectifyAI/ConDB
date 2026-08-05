@@ -1346,7 +1346,8 @@ def _build_synthetic_bundle(
                     "name": analyze.WORKLOAD_SPECS[workload]["run_name"],
                     "run_name": analyze.WORKLOAD_SPECS[workload]["run_name"],
                     "run_type": "iteration",
-                    "repetitions": analyze.REPETITIONS,
+                    # google-benchmark emits 0 here on iteration rows; only aggregates carry the count.
+                    "repetitions": 0,
                     "repetition_index": repetition,
                     "threads": 1,
                     "iterations": row_iterations,

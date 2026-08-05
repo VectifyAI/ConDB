@@ -6,10 +6,10 @@
   "comparison": "upstream_previous_final_three_arm",
   "attempt_ledger": "attempt_ledger.jsonl",
   "protocol_artifacts": {
-    "analyze.py": "a5ad1f75a62f73c32ea4fa2235fd2171b5297c7aff340c34dd1045e3f93b9850",
+    "analyze.py": "815e94c86bfa3a69401445dc9d4ea215218516f4aa6fc687aefeb89eb893c8cc",
     "build_arms.py": "d601c3be5e35804d2d6ade35fb58152a2bfc84c9e79d5d7fb32551a256109152",
     "run_campaign.py": "da474a56dff13499e8891ef6ec849ef9d1dbbefc1345a8edca4df81f84e57613",
-    "test_protocol.py": "1965dac7821c6f10eb3506fb30444270bc8b4493d66172fce9c31edd2d2d100d"
+    "test_protocol.py": "8efa67b4dbbeb36d6e4aba947f78cee7d747e4b3c60e0ae799543fd19ac0bf48"
   },
   "source_artifacts": {
     "arm_A_production.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

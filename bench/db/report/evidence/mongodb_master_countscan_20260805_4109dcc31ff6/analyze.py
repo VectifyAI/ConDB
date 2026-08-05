@@ -1616,7 +1616,9 @@ def validate_process_artifacts(
     for repetition, row in enumerate(iteration_rows):
         prefix = f"{raw_path.name} repetition {repetition}"
         require_equal(row.get("name"), run_name, f"{prefix} name")
-        require_equal(row.get("repetitions"), REPETITIONS, f"{prefix} repetition total")
+        # google-benchmark reports "repetitions" only on aggregate rows; iteration rows carry 0.
+        # The repetition count is instead pinned by the exact repetition_index sequence above and by
+        # the aggregate rows' own iterations field.
         iteration_counts.append(positive_integer(row.get("iterations"), f"{prefix} iterations"))
         require_equal(row.get("threads"), 1, f"{prefix} threads")
         require_equal(row.get("time_unit"), "ns", f"{prefix} time unit")
