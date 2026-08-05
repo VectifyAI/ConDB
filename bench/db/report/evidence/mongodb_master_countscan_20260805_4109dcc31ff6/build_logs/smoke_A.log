@@ -1,0 +1,80 @@
+
+=== smoke S: taskset -c 2 /tmp/mongo-count-query-bm-4109dcc-attested-A --benchmark_filter=^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$ --benchmark_min_time=0.01 --benchmark_repetitions=1 --benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_S.json --benchmark_out_format=json
+{"t":{"$date":"2026-08-06T04:16:39.812+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":3346933282}}
+2026-08-06T04:16:39+08:00
+Running /tmp/mongo-count-query-bm-4109dcc-attested-A
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 75.33, 76.29, 49.17
+------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                    Time             CPU   Iterations UserCounters...
+------------------------------------------------------------------------------------------------------------------------------
+ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64   80823660 ns     80803553 ns            1 cycles_per_iteration=169.736M instructions_per_iteration=1026.18M items_per_second=4.95028M/s
+
+=== smoke M: taskset -c 2 /tmp/mongo-count-query-bm-4109dcc-attested-A --benchmark_filter=^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$ --benchmark_min_time=0.01 --benchmark_repetitions=1 --benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_M.json --benchmark_out_format=json
+{"t":{"$date":"2026-08-06T04:16:41.473+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":1529427639}}
+2026-08-06T04:16:41+08:00
+Running /tmp/mongo-count-query-bm-4109dcc-attested-A
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 69.45, 75.06, 48.92
+-----------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                   Time             CPU   Iterations UserCounters...
+-----------------------------------------------------------------------------------------------------------------------------
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64   98647833 ns     98648839 ns            1 cycles_per_iteration=207.169M instructions_per_iteration=1.12931G items_per_second=4.05479M/s
+
+=== smoke W: taskset -c 2 /tmp/mongo-count-query-bm-4109dcc-attested-A --benchmark_filter=^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$ --benchmark_min_time=0.01 --benchmark_repetitions=1 --benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_W.json --benchmark_out_format=json
+{"t":{"$date":"2026-08-06T04:16:42.745+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":1815951501}}
+2026-08-06T04:16:42+08:00
+Running /tmp/mongo-count-query-bm-4109dcc-attested-A
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 69.45, 75.06, 48.92
+-----------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                         Time             CPU   Iterations UserCounters...
+-----------------------------------------------------------------------------------------------------------------------------------
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64   53007841 ns     52989340 ns            1 cycles_per_iteration=111.324M instructions_per_iteration=636.113M items_per_second=3.77434M/s
+
+=== smoke P: taskset -c 2 /tmp/mongo-count-query-bm-4109dcc-attested-A --benchmark_filter=^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$ --benchmark_min_time=0.05 --benchmark_repetitions=1 --benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_P.json --benchmark_out_format=json
+{"t":{"$date":"2026-08-06T04:16:43.734+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":1476790790}}
+2026-08-06T04:16:43+08:00
+Running /tmp/mongo-count-query-bm-4109dcc-attested-A
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 69.45, 75.06, 48.92
+---------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                       Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------------------------------------
+ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64      23659 ns        23652 ns         2964 cycles_per_iteration=49.6843k instructions_per_iteration=149.852k items_per_second=42.2805k/s
+
+=== smoke X: taskset -c 2 /tmp/mongo-count-query-bm-4109dcc-attested-A --benchmark_filter=^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$ --benchmark_min_time=0.01 --benchmark_repetitions=1 --benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_X.json --benchmark_out_format=json
+{"t":{"$date":"2026-08-06T04:16:44.421+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":1602268597}}
+2026-08-06T04:16:44+08:00
+Running /tmp/mongo-count-query-bm-4109dcc-attested-A
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 69.45, 75.06, 48.92
+---------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                       Time             CPU   Iterations UserCounters...
+---------------------------------------------------------------------------------------------------------------------------------
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64  147793531 ns    147686790 ns            1 cycles_per_iteration=310.375M instructions_per_iteration=1.87584G

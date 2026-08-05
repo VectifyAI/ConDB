@@ -450,10 +450,19 @@ CPU cycles per key             & 597 & 259 & 2.30$\times$ \\
 \end{table}
 
 Samples place the work in WiredTiger cursor advance and key extraction, the
-storage adapter, and classic executor handoff. The largest hotspot is
-\code{\_\_wt\_\allowbreak btcur\_\allowbreak next}. The scalar count and CPU
-counters show that MongoDB spends more work per scanned key, with covered-row
-handoff adding a second per-row cost.
+storage adapter, and classic executor handoff, with
+\code{\_\_wt\_\allowbreak btcur\_\allowbreak next} the largest single hotspot.
+That profile describes this scalar count specifically and must not be read as
+characterizing subtree retrieval in general: a scalar count runs
+\code{COUNT\_SCAN}, which requests index keys without materializing them, so it
+performs no per-row BSON work. On the document-returning covered path the
+profile inverts. Aggregating the same samples by symbol for a covered child
+scan, key decoding, BSON construction and the \code{Document} wrapper together
+account for roughly three times the cycles attributed to WiredTiger, because
+each returned row is decoded into one BSON object, copied into a second, wrapped
+as a \code{Document}, unwrapped, and copied once more into the reply. The
+per-key finding above therefore motivates the count experiment in
+Section~\ref{sec:master-countscan}, not the subtree path.
 
 \subsection{Entity fetch}
 
@@ -464,6 +473,18 @@ initialization, \code{IDHackStage}, and projection construction. The payload
 control shows no measurable P50 change at 1\,KiB. At 256\,KiB, latency rises
 to 0.391\,ms in MongoDB and 0.619\,ms in PostgreSQL. Fixed lookup work
 dominates only at the 1\,KiB size used by the main workload.
+
+The short-read arms pin an explicit index hint on both the baseline and the
+candidate. That keeps the comparison like-for-like, which is what the coalescing
+result depends on, but it also means the baseline is not the fastest path the
+server offers: a hint suppresses the point-query fast paths, costing about
+19\,\textmu s (roughly 9\%) per lookup against an unhinted \code{IDHACK} on
+7.0.34. On a current master snapshot the same hint would suppress the newer
+\code{EXPRESS} fast path as well. The coalescing ratios reported here are
+therefore ratios between two hinted arms; the absolute baseline latency would be
+modestly lower without the hint, and a deployment that can express its lookup as
+a single-field or \code{\_id} equality without a hint already receives part of
+this benefit from the server.
 
 \section{Separate MongoDB master-snapshot source experiment}
 \label{sec:master-countscan}

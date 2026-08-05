@@ -1,0 +1,23 @@
+[0;32mINFO:[0m running wrapper hook...
+INFO: pre-build generation: 1.355 s
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+WARNING: Build options --//bazel/config:build_atlas, --//bazel/config:build_enterprise, --//bazel/config:dbg, and 6 more have changed, discarding analysis cache (this can be expensive, see https://bazel.build/advanced/performance/iteration-speed).
+Analyzing: target //src/mongo/db/query:count_query_bm (1 packages loaded, 0 targets configured)
+Analyzing: target //src/mongo/db/query:count_query_bm (1 packages loaded, 0 targets configured)
+
+Analyzing: target //src/mongo/db/query:count_query_bm (427 packages loaded, 12250 targets configured)
+
+Analyzing: target //src/mongo/db/query:count_query_bm (804 packages loaded, 61088 targets configured)
+
+Analyzing: target //src/mongo/db/query:count_query_bm (806 packages loaded, 62647 targets configured)
+
+INFO: Analyzed target //src/mongo/db/query:count_query_bm (806 packages loaded, 63547 targets configured).
+[1 / 1] no actions running
+INFO: Found 1 target...
+Target //src/mongo/db/query:count_query_bm up-to-date:
+  bazel-bin/src/mongo/db/query/count_query_bm
+INFO: Elapsed time: 17.177s, Critical Path: 1.33s
+INFO: 1 process: 1 internal.
+INFO: Build completed successfully, 1 total action

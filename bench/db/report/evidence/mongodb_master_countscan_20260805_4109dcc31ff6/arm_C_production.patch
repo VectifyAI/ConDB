@@ -1,0 +1,95 @@
+diff --git a/src/mongo/db/exec/classic/count.cpp b/src/mongo/db/exec/classic/count.cpp
+index 9f4c97f374315f912eda92767ef38b750abc8b92..109f7d553f429de6f8a13f68925f483293a8f8bd 100644
+--- a/src/mongo/db/exec/classic/count.cpp
++++ b/src/mongo/db/exec/classic/count.cpp
+@@ -3,6 +3,8 @@
+ 
+ #include "mongo/db/exec/classic/count.h"
+ 
++#include "mongo/base/checked_cast.h"
++#include "mongo/db/exec/classic/count_scan.h"
+ #include "mongo/util/assert_util.h"
+ 
+ #include <memory>
+@@ -20,6 +22,12 @@ CountStage::CountStage(
+     tassert(11051652, "Expecting non-negative limit parameter", _limit >= 0);
+     tassert(11051651, "Expecting child stage", child);
+     _children.emplace_back(child);
++
++    // We read only our child's StageState, so a direct CountScan need not materialize a result we
++    // would immediately free. CountScan is the only stage reporting STAGE_COUNT_SCAN.
++    if (child->stageType() == STAGE_COUNT_SCAN) {
++        checked_cast<CountScan*>(child)->setDoesNotMaterializeResults();
++    }
+ }
+ 
+ bool CountStage::isEOF() const {
+diff --git a/src/mongo/db/exec/classic/count_scan.cpp b/src/mongo/db/exec/classic/count_scan.cpp
+index 768d1d2066bcab98c6957dba0ce1c28ad057c0c3..87f37933a92a18720ac2e8144fc7d5200ad2f9d4 100644
+--- a/src/mongo/db/exec/classic/count_scan.cpp
++++ b/src/mongo/db/exec/classic/count_scan.cpp
+@@ -168,6 +168,13 @@ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
+                 _memoryTracker.withinMemoryLimit(opCtx()));
+     }
+ 
++    if (!_materializeResults) {
++        // Deduplication and memory accounting above must still run, so this branch sits below them
++        // and skips only the member our consumer would immediately discard.
++        *out = WorkingSet::INVALID_ID;
++        return PlanStage::ADVANCED;
++    }
++
+     WorkingSetID id = _workingSet->allocate();
+     WorkingSetMember* member = _workingSet->get(id);
+     member->recordId = entry->loc;
+diff --git a/src/mongo/db/exec/classic/count_scan.h b/src/mongo/db/exec/classic/count_scan.h
+index 262473b32d38cce412ab29dc6b0f6c6d79cd1273..29b4a8db7bd7ccef98ef6fb59f6d18fe76781e76 100644
+--- a/src/mongo/db/exec/classic/count_scan.h
++++ b/src/mongo/db/exec/classic/count_scan.h
+@@ -77,8 +77,9 @@ struct CountScanParams {
+  * command and some cases of aggregation).
+  *
+  * Scans an index from a start key to an end key. Creates a WorkingSetMember for each matching index
+- * key in RID_AND_OBJ state. It has a null record id and an empty object with a null snapshot id
+- * rather than real data. Returning real data is unnecessary since all we need is the count.
++ * key in RID_AND_OBJ state. It holds the index entry's record id and an empty object with a null
++ * snapshot id rather than real data. Returning real data is unnecessary since all we need is the
++ * count.
+  */
+ class CountScan final : public RequiresIndexStage {
+ public:
+@@ -108,9 +109,19 @@ protected:
+     void doRestoreStateRequiresIndex() final;
+ 
+ private:
++    // A direct CountStage parent reads only our StageState, so it turns off materialization. This
++    // is private because WorkingSet::get() does not check for INVALID_ID outside debug builds: any
++    // other consumer that called this would read out of bounds instead of failing an assertion.
++    friend class CountStage;
++    void setDoesNotMaterializeResults() {
++        _materializeResults = false;
++    }
++
+     // The WorkingSet we annotate with results.  Not owned by us.
+     WorkingSet* _workingSet;
+ 
++    bool _materializeResults = true;
++
+     const BSONObj _keyPattern;
+ 
+     const bool _shouldDedup;
+diff --git a/src/mongo/db/exec/classic/plan_stage.h b/src/mongo/db/exec/classic/plan_stage.h
+index 083e605f7f46a393443ac3b3200eb66dc18bc7f0..6dba84ffd2dceb1c4ed4ccb5130bd751d76db7de 100644
+--- a/src/mongo/db/exec/classic/plan_stage.h
++++ b/src/mongo/db/exec/classic/plan_stage.h
+@@ -178,7 +178,9 @@ public:
+ 
+     /**
+      * Perform a unit of work on the query.  Ask the stage to produce the next unit of output.
+-     * Stage returns StageState::ADVANCED if *out is set to the next unit of output.  Otherwise,
++     * Stage returns StageState::ADVANCED if *out is set to the next unit of output.
++     * A stage whose consumer has told it that its output is ignored may instead set *out to
++     * WorkingSet::INVALID_ID; see CountScan::setDoesNotMaterializeResults().  Otherwise,
+      * returns another value of StageState to indicate the stage's status.
+      *
+      * Throws an exception if an error is encountered while executing the query.

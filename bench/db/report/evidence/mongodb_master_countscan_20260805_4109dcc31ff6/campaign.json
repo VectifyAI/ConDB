@@ -1,0 +1,484 @@
+{
+  "schema_version": 3,
+  "campaign_id": "mongodb-master-countscan-three-arm-20260806-90814b83d3e5",
+  "status": "frozen_ready",
+  "frozen_before_execution": true,
+  "comparison": "upstream_previous_final_three_arm",
+  "attempt_ledger": "attempt_ledger.jsonl",
+  "protocol_artifacts": {
+    "analyze.py": "a5ad1f75a62f73c32ea4fa2235fd2171b5297c7aff340c34dd1045e3f93b9850",
+    "build_arms.py": "d601c3be5e35804d2d6ade35fb58152a2bfc84c9e79d5d7fb32551a256109152",
+    "run_campaign.py": "da474a56dff13499e8891ef6ec849ef9d1dbbefc1345a8edca4df81f84e57613",
+    "test_protocol.py": "cc233d85881e04c4db48eeb8cf288af1c54f12ef5cc949011fe85acb727fab5f"
+  },
+  "source_artifacts": {
+    "arm_A_production.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "arm_A_source_manifest.json": "ca36df892736f2925093531f84e004e6aaa8825799c0f7e0fa66428cb8df69e8",
+    "arm_B_production.patch": "75ce88ce1669b0c1c5e5f7b260faf9c536321af4448d332f1e2fa2d3ffad38da",
+    "arm_B_source_manifest.json": "6bebe04046657d3c71386513c6bdd852df24587489b10a1a5db1e7429ae6f88e",
+    "arm_C_production.patch": "350b91c0fafd41d7b03d3fb4dcf7a3b663258c1704e07b8e04696498c2ef82e4",
+    "arm_C_source_manifest.json": "94728002dde37664edf710d5177292ce36d7592d5381f809cd42015d3d09f924",
+    "build_attestation.json": "ac829567470bc01579d048ee82e83700efb9a91884bc524f20e2786594deb710",
+    "common_harness.patch": "56154ac687aab5bbefbfc6122d72f82c54e9e4e97b9cfefb0487a994d6b7cbaa"
+  },
+  "source_design": {
+    "reconstruction_base_commit": "0561c098b99ac5e929005e70a2e37d7a97a82423",
+    "common_harness_source_commit": "4109dcc31ff6df595c6b2e5caf3fbce077c488ba",
+    "common_harness_patch": "common_harness.patch",
+    "build_attestation": "build_attestation.json",
+    "production_files": [
+      "src/mongo/db/exec/classic/count.cpp",
+      "src/mongo/db/exec/classic/count.h",
+      "src/mongo/db/exec/classic/count_scan.cpp",
+      "src/mongo/db/exec/classic/count_scan.h",
+      "src/mongo/db/exec/classic/plan_stage.h",
+      "src/mongo/db/exec/classic/working_set.h"
+    ],
+    "common_harness_files": [
+      "buildscripts/resmokeconfig/suites/benchmarks_query.yml",
+      "src/mongo/db/query/BUILD.bazel",
+      "src/mongo/db/query/count_query_bm.cpp",
+      "src/mongo/db/query/query_bm_fixture.cpp",
+      "src/mongo/db/query/query_bm_fixture.h"
+    ],
+    "common_harness_rule": "Every arm is reconstructed from the same base and byte-identical common_harness.patch, including the private guarded point-query control; only the six listed production files vary through the arm production patches. Each resulting 11-file source set must match its frozen source manifest.",
+    "reconstruction_recipe": "Create a clean worktree at reconstruction_base_commit; apply common_harness.patch after checking its path whitelist; apply the arm production patch after checking its path whitelist against the six production files (arm A is the required zero-byte production delta); recompute all eleven file identities and compare them to that arm's source manifest; require the five common harness identities to be equal across arms; then run the frozen build command and record the build attestation.",
+    "build_command": [
+      "bazel",
+      "build",
+      "--config=opt",
+      "//src/mongo/db/query:count_query_bm"
+    ],
+    "build_order": [
+      "C1",
+      "A",
+      "B",
+      "C2"
+    ]
+  },
+  "arms": {
+    "A": {
+      "label": "upstream_production_normalized_harness",
+      "description": "The six production files are the pinned upstream production sources; the byte-identical common benchmark harness, including the evidence-only point-query control, is overlaid. This arm is therefore not an unmodified upstream binary.",
+      "production_source_commit": "0561c098b99ac5e929005e70a2e37d7a97a82423",
+      "production_patch": "arm_A_production.patch",
+      "source_manifest": "arm_A_source_manifest.json",
+      "binary_path": "/tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness",
+      "sha256": "c2857234a276717b235ff6fdefa042c8e1a506f7e78c54fc152d9b1a30314062",
+      "build_id": "bf9775938e7262eb6ffe7ed5e8a77b735d8f3c17"
+    },
+    "B": {
+      "label": "rejected_heavyweight_implementation",
+      "description": "The six production files are from the earlier heavyweight implementation that independent review rejected: it adds a trackWork template to PlanStage, the base class of every classic stage, two friend declarations, and a second entry point on CountScan. It is a strict mechanistic superset of the candidate and is therefore expected to be marginally faster; the comparison exists to quantify what that complexity buys.",
+      "production_source_commit": "4109dcc31ff6df595c6b2e5caf3fbce077c488ba",
+      "production_patch": "arm_B_production.patch",
+      "source_manifest": "arm_B_source_manifest.json",
+      "binary_path": "/tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation",
+      "sha256": "de4b3be6856ba5118909cff81966420a3dab53f7ffae82ba897f85fcbbd001d4",
+      "build_id": "085a4d56d150febfcb6c8ab156112d886e36045f"
+    },
+    "C": {
+      "label": "final_candidate",
+      "description": "The six production files are from the minimal candidate: one bool, one branch below deduplication and memory accounting, and a private setter reachable only by a direct CountStage parent.",
+      "production_source_commit": "90814b83d3e55f099c1244266d86700b5f633972",
+      "production_patch": "arm_C_production.patch",
+      "source_manifest": "arm_C_source_manifest.json",
+      "binary_path": "/tmp/mongo-count-query-bm-countscan-C-final-candidate",
+      "sha256": "80a9193b4464ac9f4a48b10578b2b17bb48ce38ab73e76a4cb475feb05d6d7bc",
+      "build_id": "25e5b10c3a0085aa7a593760d0947c48176d4e52"
+    }
+  },
+  "workloads": {
+    "S": {
+      "label": "scalar_count",
+      "filter": "^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+      "expected_run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "role": "count_endpoint",
+      "minimum_time_seconds": 0.01,
+      "iteration_rule": "exactly_one",
+      "guard_contract": "Classic COUNT -> COUNT_SCAN, non-multikey, 400000 counted documents, 400001 works/keys examined, zero documents examined."
+    },
+    "M": {
+      "label": "multikey_count",
+      "filter": "^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$",
+      "expected_run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "role": "count_endpoint",
+      "minimum_time_seconds": 0.01,
+      "iteration_rule": "exactly_one",
+      "guard_contract": "Classic COUNT -> COUNT_SCAN, multikey deduplication, 200000 counted documents, 400001 works/keys examined, zero documents examined."
+    },
+    "W": {
+      "label": "compound_wildcard_count",
+      "filter": "^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$",
+      "expected_run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "role": "count_endpoint",
+      "minimum_time_seconds": 0.01,
+      "iteration_rule": "exactly_one",
+      "guard_contract": "Classic COUNT -> COUNT_SCAN on a non-multikey compound wildcard index, 200000 counted documents, 200001 works/keys examined, zero documents examined."
+    },
+    "P": {
+      "label": "classic_point_control",
+      "filter": "^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$",
+      "expected_run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "role": "negative_control",
+      "minimum_time_seconds": 0.05,
+      "iteration_rule": "equal_and_positive",
+      "guard_contract": "A private benchmark invariant pins the classic engine and a hinted unique-field FETCH -> IXSCAN winning plan, with exactly one returned and examined document. Process success is invalid if this invariant does not execute and pass."
+    },
+    "X": {
+      "label": "unoptimized_fetching_count",
+      "filter": "^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$",
+      "expected_run_name": "UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64",
+      "role": "non_intrusion_control",
+      "minimum_time_seconds": 0.01,
+      "iteration_rule": "exactly_one",
+      "guard_contract": "Classic COUNT -> FETCH -> IXSCAN. A residual predicate on an unindexed field prevents the COUNT_SCAN transform, so CountStage's child is a FETCH and the optimization cannot fire. Every document is fetched, so totalDocsExamined equals the document count."
+    }
+  },
+  "benchmark": {
+    "repetitions_per_process": 5,
+    "report_aggregates_only": false,
+    "expected_library_build_type": "release",
+    "required_metrics": [
+      "instructions_per_iteration",
+      "cpu_time",
+      "real_time"
+    ]
+  },
+  "execution": {
+    "block_count": 30,
+    "process_count": 450,
+    "fresh_process_per_arm_workload_block": true,
+    "process_order_within_block": "workload_then_arm",
+    "cpu_affinity": 0,
+    "sibling_cpu": 48,
+    "taskset_command": [
+      "taskset",
+      "-c",
+      "0"
+    ],
+    "required_cpu_governor": "performance",
+    "governor_checked_before_every_process": true,
+    "no_early_stopping": true,
+    "partial_reruns_forbidden": true,
+    "atomic_partial_journal": "campaign_partial.json",
+    "runtime_gates": {
+      "preflight_max_busy_fraction_selected_and_sibling": 0.1,
+      "per_process_max_sibling_busy_fraction": 0.25,
+      "per_process_min_selected_busy_fraction": 0.5,
+      "cooldown_seconds_before_campaign": 30,
+      "preflight_sample_seconds": 5,
+      "note": "Per-process busy fractions are exact /proc/stat deltas measured across each benchmark process. They are recorded during execution and enforced at analysis time, so a contended host invalidates the whole pre-registered attempt instead of triggering an early stop or a selective rerun."
+    },
+    "arm_permutations": [
+      "ABC",
+      "ACB",
+      "BAC",
+      "BCA",
+      "CAB",
+      "CBA"
+    ],
+    "workload_rotations": [
+      "SMWPX",
+      "MWPXS",
+      "WPXSM",
+      "PXSMW",
+      "XSMWP"
+    ],
+    "blocks": [
+      {
+        "block": 1,
+        "arm_order": "ABC",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 2,
+        "arm_order": "ACB",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 3,
+        "arm_order": "BAC",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 4,
+        "arm_order": "BCA",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 5,
+        "arm_order": "CAB",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 6,
+        "arm_order": "CBA",
+        "workload_order": "SMWPX"
+      },
+      {
+        "block": 7,
+        "arm_order": "ABC",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 8,
+        "arm_order": "ACB",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 9,
+        "arm_order": "BAC",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 10,
+        "arm_order": "BCA",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 11,
+        "arm_order": "CAB",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 12,
+        "arm_order": "CBA",
+        "workload_order": "MWPXS"
+      },
+      {
+        "block": 13,
+        "arm_order": "ABC",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 14,
+        "arm_order": "ACB",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 15,
+        "arm_order": "BAC",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 16,
+        "arm_order": "BCA",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 17,
+        "arm_order": "CAB",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 18,
+        "arm_order": "CBA",
+        "workload_order": "WPXSM"
+      },
+      {
+        "block": 19,
+        "arm_order": "ABC",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 20,
+        "arm_order": "ACB",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 21,
+        "arm_order": "BAC",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 22,
+        "arm_order": "BCA",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 23,
+        "arm_order": "CAB",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 24,
+        "arm_order": "CBA",
+        "workload_order": "PXSMW"
+      },
+      {
+        "block": 25,
+        "arm_order": "ABC",
+        "workload_order": "XSMWP"
+      },
+      {
+        "block": 26,
+        "arm_order": "ACB",
+        "workload_order": "XSMWP"
+      },
+      {
+        "block": 27,
+        "arm_order": "BAC",
+        "workload_order": "XSMWP"
+      },
+      {
+        "block": 28,
+        "arm_order": "BCA",
+        "workload_order": "XSMWP"
+      },
+      {
+        "block": 29,
+        "arm_order": "CAB",
+        "workload_order": "XSMWP"
+      },
+      {
+        "block": 30,
+        "arm_order": "CBA",
+        "workload_order": "XSMWP"
+      }
+    ],
+    "block_execution_order": [
+      21,
+      20,
+      17,
+      13,
+      23,
+      18,
+      22,
+      15,
+      2,
+      26,
+      6,
+      19,
+      12,
+      16,
+      11,
+      14,
+      1,
+      24,
+      29,
+      7,
+      4,
+      9,
+      25,
+      5,
+      10,
+      30,
+      27,
+      28,
+      3,
+      8
+    ],
+    "block_execution_order_seed": 410920260805,
+    "block_execution_order_rule": "random.Random(block_execution_order_seed).shuffle(list(range(1, 31)))",
+    "block_execution_order_note": "Each block keeps its frozen arm-order/workload-rotation assignment; only the temporal order of the 30 blocks is permuted. Executing the blocks in numerical order would place each arm-order stratum at a fixed period of six blocks, so a host disturbance near that period would alias onto one stratum and bias the estimate without widening an interval whose standard error deliberately excludes between-stratum variance."
+  },
+  "analysis": {
+    "process_aggregation": "arithmetic_mean_of_five_iteration_rows",
+    "block_effect": "numerator_arm_process_mean_over_denominator_arm_process_mean_within_the_same_block_and_workload",
+    "overall_estimator": "geometric_mean_of_30_complete_block_ratios",
+    "gate_interval": {
+      "method": "stratified_log_ratio_welch_t",
+      "scale": "natural_log_of_block_ratio",
+      "strata": [
+        "ABC",
+        "ACB",
+        "BAC",
+        "BCA",
+        "CAB",
+        "CBA"
+      ],
+      "blocks_per_stratum": 5,
+      "point_estimator": "theta = (1/H) * sum_h mean_h, exponentiated",
+      "variance_rule": "a_h = s_h^2 / (H^2 * n_h); SE = sqrt(sum_h a_h)",
+      "degrees_of_freedom_rule": "welch_satterthwaite",
+      "degrees_of_freedom_formula": "df = (sum_h a_h)^2 / sum_h (a_h^2 / (n_h - 1))",
+      "interval_construction": "t interval on the log scale, bounds exponentiated; computed separately for every comparison, workload, and metric",
+      "fail_closed_on_zero_or_non_finite_se_or_df": true,
+      "t_quantile_source": "self_contained_validated_against_scipy_with_conservative_floor_df_bracket_guard",
+      "ordinary_confidence_level": 0.95,
+      "count_family_adjustment": {
+        "method": "Bonferroni",
+        "family_alpha": 0.05,
+        "endpoint_count": 3,
+        "two_sided_confidence_level": 0.9833333333333333,
+        "multiplicity_scope": "intersection_union_test_within_each_comparison_family_of_three_count_endpoints",
+        "multiplicity_note": "Six adjusted intervals exist overall (two comparisons x three count endpoints). Within a comparison the adoption decision is an intersection-union test, which requires no multiplicity adjustment at all and for which this Bonferroni level is merely conservative. The two comparisons answer separate pre-registered questions. The 98.333333% level must therefore not be read as simultaneous coverage of all six per-endpoint claims."
+      }
+    },
+    "decision_thresholds": {
+      "superiority_upper": 1.0,
+      "noninferiority_margin": 1.01,
+      "cpu_non_regression_upper": 1.01,
+      "point_control_instruction_band": [
+        0.998,
+        1.002
+      ],
+      "point_control_cpu_band": [
+        0.97,
+        1.03
+      ],
+      "noninferiority_margin_rationale": "Fixed on practical grounds before any measurement of these arms: a difference at or under one percent in retired instructions on the direct-CountScan count path does not justify the previous implementation's additional machinery, which adds a template to the base class of every classic stage, two friend declarations, and a second entry point on CountScan. Disclosed for honesty: an earlier campaign on a different arm pair, and a source-level review of the two implementations, both existed when this margin was chosen; the margin was set from the complexity cost, not from an observed or predicted effect size, and no measurement of the present arms had been taken.",
+      "non_intrusion_band": [
+        0.998,
+        1.002
+      ],
+      "cpu_non_regression_scope": "C_over_A only; C_over_B CPU is unresolvable at this block count and is reported, not gated"
+    },
+    "sensitivity_bootstrap": {
+      "role": "sensitivity_only_never_read_by_any_gate_or_claim",
+      "method": "six_arm_order_strata_complete_block_resampling_with_replacement",
+      "strata": [
+        "ABC",
+        "ACB",
+        "BAC",
+        "BCA",
+        "CAB",
+        "CBA"
+      ],
+      "blocks_per_stratum": 5,
+      "samples": 200000,
+      "seed": 410920260805,
+      "same_draws_across_all_comparisons_workloads_and_metrics": true,
+      "note": "With four blocks per stratum the percentile bootstrap undercovers, so it is reported only as a sensitivity output. The gate function receives an input mapping derived solely from the Welch-t intervals and cannot read these values."
+    },
+    "comparisons": {
+      "C_over_A": {
+        "numerator": "C",
+        "denominator": "A",
+        "role": "final_vs_upstream_adoption"
+      },
+      "C_over_B": {
+        "numerator": "C",
+        "denominator": "B",
+        "role": "final_vs_previous_incremental_adoption"
+      },
+      "B_over_A": {
+        "numerator": "B",
+        "denominator": "A",
+        "role": "descriptive_previous_vs_upstream_only"
+      }
+    },
+    "metric_roles": {
+      "instructions_per_iteration": "primary",
+      "cpu_time": "secondary",
+      "real_time": "auxiliary"
+    },
+    "adoption_gates": {
+      "interval_family": "All adoption gates read the stratified log-ratio Welch-t interval only.",
+      "C_over_A_count_family": "For S, M, and W, each Bonferroni-adjusted 98.333333% two-sided instructions ratio CI must have upper bound below 1.0.",
+      "C_over_B_count_family": "For S, M, and W, each Bonferroni-adjusted 98.333333% two-sided instructions ratio CI upper bound must be below 1.01. This is a noninferiority claim, not a superiority claim: the previous implementation is a strict mechanistic superset of the candidate and is expected to be marginally faster, so the question is whether its additional complexity bought a difference worth paying for. An endpoint is called faster only when its adjusted upper bound is below 1.0. This comparison is reported as a complexity trade-off and deliberately does not veto adoption, which is decided by C/A, the controls, and CPU non-regression.",
+      "C_over_B_scalar_wording_states": [
+        "faster",
+        "noninferior_only",
+        "noninferiority_failed"
+      ],
+      "cpu_non_regression": "For S, M, and W on C/A only, the ordinary 95% CPU-time ratio CI upper bound must be below 1.01. CPU time is secondary but not absent from the decision: an instruction reduction paired with a CPU-time regression must not be adopted. The same bound is deliberately NOT applied to C/B, because CPU time at this block count resolves to roughly plus or minus 1.5 percent, which cannot separate two implementations expected to differ by about one percent; the C/B CPU interval is reported and marked unresolvable rather than gated.",
+      "point_controls": "For both C/A and C/B on P, the ordinary 95% instructions ratio CI must be wholly within [0.998, 1.002] and the ordinary 95% CPU-time ratio CI wholly within [0.97, 1.03].",
+      "B_over_A": "Always descriptive; never an adoption gate.",
+      "cpu_speedup_wording": "A CPU-time speedup may be claimed for a specific comparison/count workload only when its ordinary 95% CI upper bound is below 1.0.",
+      "wall_time_wording": "Real time is auxiliary and cannot independently establish a performance claim.",
+      "non_intrusion_control": "On workload X, whose plan is COUNT -> FETCH -> IXSCAN so the optimization cannot fire, the ordinary 95% instructions ratio CI must lie wholly within [0.998, 1.002] for both C/A and C/B. The band is two-sided because on a path neither arm touches an apparent improvement is as diagnostic of an uncontrolled difference as a regression. This is the only workload where a regression could hide."
+    }
+  }
+}

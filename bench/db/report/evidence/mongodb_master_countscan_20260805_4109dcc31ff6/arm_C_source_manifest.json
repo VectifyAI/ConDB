@@ -1,0 +1,60 @@
+{
+  "arm": "C",
+  "common_harness_patch": {
+    "path": "common_harness.patch",
+    "sha256": "56154ac687aab5bbefbfc6122d72f82c54e9e4e97b9cfefb0487a994d6b7cbaa"
+  },
+  "files": {
+    "buildscripts/resmokeconfig/suites/benchmarks_query.yml": {
+      "git_blob": "0aa7433db8e59c5b9a258d131993a1bcbc0db9e3",
+      "sha256": "0128126d1186541c699dc14bd1adc84aaf9155a10f66fdbce0b21cc04dfe3dca"
+    },
+    "src/mongo/db/exec/classic/count.cpp": {
+      "git_blob": "109f7d553f429de6f8a13f68925f483293a8f8bd",
+      "sha256": "93ed68da179a677414424299538df30d1107a78f5dfb97ac5f92e554786c3ee6"
+    },
+    "src/mongo/db/exec/classic/count.h": {
+      "git_blob": "e74f83b830b5be94bda5250f4f700c801e32b3bf",
+      "sha256": "d913f14f00b3221bdd830c0a2549355ff8569cbd6fda923854016394f36d0753"
+    },
+    "src/mongo/db/exec/classic/count_scan.cpp": {
+      "git_blob": "87f37933a92a18720ac2e8144fc7d5200ad2f9d4",
+      "sha256": "9e2b9ca9d5aa383f0a7d74044fda4246e9f0e5d68b8abd7cade3ef12c52422f2"
+    },
+    "src/mongo/db/exec/classic/count_scan.h": {
+      "git_blob": "29b4a8db7bd7ccef98ef6fb59f6d18fe76781e76",
+      "sha256": "6c6d3486599c8a282955af4148945fc4109902bc4838298d530eaa39ac001691"
+    },
+    "src/mongo/db/exec/classic/plan_stage.h": {
+      "git_blob": "6dba84ffd2dceb1c4ed4ccb5130bd751d76db7de",
+      "sha256": "60786a1a1f4757980bb2f6d9b6da78dc1572c1ae1133a444933b2188bd7638c7"
+    },
+    "src/mongo/db/exec/classic/working_set.h": {
+      "git_blob": "011adacfe93c532104f2e5d02e08b750fcf614c3",
+      "sha256": "6db966bdd9d7b855baa315c065ade9be1011d3c8c80879bf9f3a6eb8c6a34d32"
+    },
+    "src/mongo/db/query/BUILD.bazel": {
+      "git_blob": "bbc0ea37c3478f7767b0157944b0d148e4f7a907",
+      "sha256": "2b80934970f5771819648f0ed1cea00fff4ce50041172d74ae0dd1a8ac149be5"
+    },
+    "src/mongo/db/query/count_query_bm.cpp": {
+      "git_blob": "223e28efbc6b474cf4c32bc7328f7578b4569edc",
+      "sha256": "1b3640b4e12d5eb02d9548f1728593e8b5646790054ece6ce4e69e3d954c17c7"
+    },
+    "src/mongo/db/query/query_bm_fixture.cpp": {
+      "git_blob": "55e0c66e2825c62972d1a60be4cce759ca55be7c",
+      "sha256": "3cef7a4d338ce73e5dccb185afd97b7f699da30c66e7808e9e7e27875e160542"
+    },
+    "src/mongo/db/query/query_bm_fixture.h": {
+      "git_blob": "a37c66eee4446692be9ad5cd825e9fc40d7ef1b3",
+      "sha256": "3ad8c57d5b8503e9e4f8bc3d950df8e19564027e7e4787d3416abadf37faa077"
+    }
+  },
+  "production_patch": {
+    "path": "arm_C_production.patch",
+    "sha256": "350b91c0fafd41d7b03d3fb4dcf7a3b663258c1704e07b8e04696498c2ef82e4"
+  },
+  "production_source_commit": "90814b83d3e55f099c1244266d86700b5f633972",
+  "reconstruction_base_commit": "0561c098b99ac5e929005e70a2e37d7a97a82423",
+  "schema_version": 1
+}
