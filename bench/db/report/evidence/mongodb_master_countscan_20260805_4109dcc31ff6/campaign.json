@@ -9,7 +9,7 @@
     "analyze.py": "a5ad1f75a62f73c32ea4fa2235fd2171b5297c7aff340c34dd1045e3f93b9850",
     "build_arms.py": "d601c3be5e35804d2d6ade35fb58152a2bfc84c9e79d5d7fb32551a256109152",
     "run_campaign.py": "da474a56dff13499e8891ef6ec849ef9d1dbbefc1345a8edca4df81f84e57613",
-    "test_protocol.py": "cc233d85881e04c4db48eeb8cf288af1c54f12ef5cc949011fe85acb727fab5f"
+    "test_protocol.py": "1965dac7821c6f10eb3506fb30444270bc8b4493d66172fce9c31edd2d2d100d"
   },
   "source_artifacts": {
     "arm_A_production.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

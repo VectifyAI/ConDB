@@ -705,19 +705,32 @@ def _draft_campaign() -> dict[str, Any]:
     return analyze.load_json(REAL_EVIDENCE_DIR / "campaign.json")
 
 
-def test_draft_template_validates_but_cannot_execute() -> None:
-    campaign = _draft_campaign()
-    analyze.validate_campaign(campaign, allow_placeholders=True)
-    # The draft is blocked twice over: first by its status, and then, even if the status were
-    # flipped by hand, by every remaining identity placeholder.
+def test_placeholders_block_execution_and_the_frozen_campaign_validates() -> None:
+    """Two invariants, tested against synthetic states rather than the file's current one.
+
+    An earlier version of this test asserted that campaign.json was still a draft, which made it
+    fail the moment the campaign was legitimately frozen. The invariants worth pinning are that a
+    draft cannot execute and that the frozen article validates strictly -- not which of the two the
+    file happens to be today.
+    """
+    frozen = _draft_campaign()
+    if frozen["status"] == "frozen_ready":
+        analyze.validate_campaign(frozen, allow_placeholders=False)
+    else:
+        analyze.validate_campaign(frozen, allow_placeholders=True)
+
+    # A draft with placeholders must be refused by strict validation, whichever gate fires first.
+    draft = _draft_campaign()
+    draft["status"] = "protocol_draft_unexecutable_placeholders"
     assert_fails(
-        lambda: analyze.validate_campaign(_draft_campaign(), allow_placeholders=False),
+        lambda: analyze.validate_campaign(draft, allow_placeholders=False),
         "campaign.status must be one of ['frozen_ready']",
     )
-    forced = _draft_campaign()
-    forced["status"] = "frozen_ready"
+    placeholdered = _draft_campaign()
+    placeholdered["status"] = "frozen_ready"
+    placeholdered["arms"]["C"]["sha256"] = "PLACEHOLDER_BINARY_SHA256_ARM_C"
     assert_fails(
-        lambda: analyze.validate_campaign(forced, allow_placeholders=False),
+        lambda: analyze.validate_campaign(placeholdered, allow_placeholders=False),
         "execution-blocking placeholder",
     )
 
