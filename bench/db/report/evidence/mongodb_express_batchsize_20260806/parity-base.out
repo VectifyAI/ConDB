@@ -1,0 +1,566 @@
+PARITY_JSON_BEGIN
+{
+ "unique_nobatch": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "EXPRESS_IXSCAN",
+  "isExpress": true
+ },
+ "unique_batch1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch2": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch100": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch0": {
+  "ok": 1,
+  "firstBatch": [],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch1_singleBatch": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch1_limit1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "LIMIT",
+  "isExpress": false
+ },
+ "unique_batch1_proj": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [],
+  "winningPlanStage": "PROJECTION_SIMPLE",
+  "isExpress": false
+ },
+ "unique_batch1_nomatch": {
+  "ok": 1,
+  "firstBatch": [],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "id_nobatch": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "EXPRESS_IXSCAN",
+  "isExpress": true
+ },
+ "id_batch1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "IDHACK",
+  "isExpress": false
+ },
+ "id_batch0": {
+  "ok": 1,
+  "firstBatch": [],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "winningPlanStage": "IDHACK",
+  "isExpress": false
+ },
+ "id_batch1_nomatch": {
+  "ok": 1,
+  "firstBatch": [],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "IDHACK",
+  "isExpress": false
+ },
+ "nonunique_batch1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 3,
+    "uniqueField": 3,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [
+   {
+    "_id": 13,
+    "uniqueField": 13,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 23,
+    "uniqueField": 23,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 33,
+    "uniqueField": 33,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 43,
+    "uniqueField": 43,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 53,
+    "uniqueField": 53,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 63,
+    "uniqueField": 63,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 73,
+    "uniqueField": 73,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 83,
+    "uniqueField": 83,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 93,
+    "uniqueField": 93,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 103,
+    "uniqueField": 103,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 113,
+    "uniqueField": 113,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 123,
+    "uniqueField": 123,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 133,
+    "uniqueField": 133,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 143,
+    "uniqueField": 143,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 153,
+    "uniqueField": 153,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 163,
+    "uniqueField": 163,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 173,
+    "uniqueField": 173,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 183,
+    "uniqueField": 183,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 193,
+    "uniqueField": 193,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "nonunique_batch1_limit1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 3,
+    "uniqueField": 3,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": true,
+  "ns": "expressparity.coll",
+  "winningPlanStage": "LIMIT",
+  "isExpress": false
+ },
+ "nonunique_batch5": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 3,
+    "uniqueField": 3,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 13,
+    "uniqueField": 13,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 23,
+    "uniqueField": 23,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 33,
+    "uniqueField": 33,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 43,
+    "uniqueField": 43,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [
+   {
+    "_id": 53,
+    "uniqueField": 53,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 63,
+    "uniqueField": 63,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 73,
+    "uniqueField": 73,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 83,
+    "uniqueField": 83,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 93,
+    "uniqueField": 93,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 103,
+    "uniqueField": 103,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 113,
+    "uniqueField": 113,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 123,
+    "uniqueField": 123,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 133,
+    "uniqueField": 133,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 143,
+    "uniqueField": 143,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 153,
+    "uniqueField": 153,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 163,
+    "uniqueField": 163,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 173,
+    "uniqueField": 173,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 183,
+    "uniqueField": 183,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 193,
+    "uniqueField": 193,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch1_sort": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ },
+ "unique_batch1_returnKey": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "uniqueField": 7
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [],
+  "winningPlanStage": "RETURN_KEY",
+  "isExpress": false
+ },
+ "range_batch1": {
+  "ok": 1,
+  "firstBatch": [
+   {
+    "_id": 5,
+    "uniqueField": 5,
+    "nonUnique": 5,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "cursorIdIsZero": false,
+  "ns": "expressparity.coll",
+  "drained": [
+   {
+    "_id": 6,
+    "uniqueField": 6,
+    "nonUnique": 6,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 7,
+    "uniqueField": 7,
+    "nonUnique": 7,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 8,
+    "uniqueField": 8,
+    "nonUnique": 8,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 9,
+    "uniqueField": 9,
+    "nonUnique": 9,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 10,
+    "uniqueField": 10,
+    "nonUnique": 0,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 11,
+    "uniqueField": 11,
+    "nonUnique": 1,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 12,
+    "uniqueField": 12,
+    "nonUnique": 2,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 13,
+    "uniqueField": 13,
+    "nonUnique": 3,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   {
+    "_id": 14,
+    "uniqueField": 14,
+    "nonUnique": 4,
+    "payload": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   }
+  ],
+  "winningPlanStage": "FETCH",
+  "isExpress": false
+ }
+}
+PARITY_JSON_END
+All pids dead / alive (0): 
+Searching for files in: /home/junyao/code/pageindex/ConDB

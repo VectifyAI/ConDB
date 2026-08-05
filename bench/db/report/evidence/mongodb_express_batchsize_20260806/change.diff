@@ -1,0 +1,144 @@
+diff --git a/jstests/core/index/express.js b/jstests/core/index/express.js
+index faac80d142..5867d48dea 100644
+--- a/jstests/core/index/express.js
++++ b/jstests/core/index/express.js
+@@ -392,3 +392,30 @@ runWithParamsAllNodes(
+         runExpressTest({coll, filter: {_id: 10}, limit: 1, result: [], usesExpress: true});
+     },
+ );
++
++// A batchSize does not by itself disqualify the express path. An express plan returns at most one
++// document and is exhausted once it has, so a positive batchSize cannot change what it produces.
++// batchSize 0 is different: it asks for a cursor with an empty first batch, which would require the
++// express executor to survive in a ClientCursor, so it stays ineligible.
++recreateCollWith(docs);
++assert.commandWorked(coll.createIndex({a: 1}, {unique: true}));
++for (const batchSize of [1, 2, 100]) {
++    const explain =
++        coll.find({a: 0}).batchSize(batchSize).limit(1).explain();
++    assert(isExpress(db, explain), tojson(explain));
++    assert.eq(coll.find({a: 0}).batchSize(batchSize).limit(1).toArray(), [{_id: 0, a: 0, b: 0}]);
++
++    const idExplain = coll.find({_id: 0}).batchSize(batchSize).explain();
++    assert(isExpress(db, idExplain), tojson(idExplain));
++    assert.eq(coll.find({_id: 0}).batchSize(batchSize).toArray(), [{_id: 0, a: 0, b: 0}]);
++}
++assert(!isExpress(db, coll.find({a: 0}).batchSize(0).limit(1).explain()));
++assert(!isExpress(db, coll.find({_id: 0}).batchSize(0).explain()));
++
++// A batchSize equal to the number of matching documents previously left an open cursor, because the
++// classic executor stops at the batch boundary without knowing it is at EOF. The express executor
++// knows it is exhausted, so the reply carries no cursor to fetch from.
++const reply = assert.commandWorked(
++    db.runCommand({find: coll.getName(), filter: {a: 0}, limit: 1, batchSize: 1}));
++assert.eq(reply.cursor.id, 0, tojson(reply));
++assert.eq(reply.cursor.firstBatch, [{_id: 0, a: 0, b: 0}], tojson(reply));
+diff --git a/src/mongo/db/query/point_query_bm.cpp b/src/mongo/db/query/point_query_bm.cpp
+index a9233ea383..4302adbde5 100644
+--- a/src/mongo/db/query/point_query_bm.cpp
++++ b/src/mongo/db/query/point_query_bm.cpp
+@@ -47,6 +47,15 @@ BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldPointQuery)
+     runBenchmark(BSON("uniqueField" << fieldValue), BSONObj{} /*projection*/, state);
+ }
+ 
++// The same unique-field lookup, but with an explicit batchSize. A batchSize is what a driver sets
++// when it wants a bounded first batch, and it decides whether the query is routed to the express
++// executor or through full planning, so both routes are measured.
++BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldPointQueryWithBatchSize)
++(benchmark::State& state) {
++    int64_t fieldValue = docs().size() / 2;
++    runBenchmark(BSON("uniqueField" << fieldValue), BSONObj{} /*projection*/, 1, state);
++}
++
+ BENCHMARK_DEFINE_F(PointQueryBenchmark, NonUniqueFieldPointQuery)
+ (benchmark::State& state) {
+     int64_t fieldValue = docs().size() / 3;
+@@ -122,6 +131,8 @@ static void configureProjectionBenchmarks(benchmark::internal::Benchmark* bm) {
+ 
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, IdPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldPointQuery)->Apply(configureBenchmarks);
++BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldPointQueryWithBatchSize)
++    ->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, NonUniqueFieldPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, ArrayFieldPointQuery)->Apply(configureBenchmarks);
+ 
+diff --git a/src/mongo/db/query/query_bm_fixture.cpp b/src/mongo/db/query/query_bm_fixture.cpp
+index 458b8da7ad..a4d0966af9 100644
+--- a/src/mongo/db/query/query_bm_fixture.cpp
++++ b/src/mongo/db/query/query_bm_fixture.cpp
+@@ -31,8 +31,22 @@ void QueryBenchmarkFixture::tearDownSharedResources(benchmark::State& state) {
+ void QueryBenchmarkFixture::runBenchmark(BSONObj filter,
+                                          BSONObj projection,
+                                          benchmark::State& state) {
+-    BSONObj command = BSON("find" << kNss.coll() << "$db" << kNss.db_forTest() << "filter" << filter
+-                                  << "projection" << projection);
++    runBenchmark(std::move(filter), std::move(projection), boost::none, state);
++}
++
++void QueryBenchmarkFixture::runBenchmark(BSONObj filter,
++                                         BSONObj projection,
++                                         boost::optional<std::int64_t> batchSize,
++                                         benchmark::State& state) {
++    BSONObjBuilder builder;
++    builder.append("find", kNss.coll());
++    builder.append("$db", kNss.db_forTest());
++    builder.append("filter", filter);
++    builder.append("projection", projection);
++    if (batchSize) {
++        builder.append("batchSize", *batchSize);
++    }
++    BSONObj command = builder.obj();
+     OpMsgRequest request;
+     request.body = command;
+     auto msg = request.serialize();
+diff --git a/src/mongo/db/query/query_bm_fixture.h b/src/mongo/db/query/query_bm_fixture.h
+index 782cc4f7b9..768358cd72 100644
+--- a/src/mongo/db/query/query_bm_fixture.h
++++ b/src/mongo/db/query/query_bm_fixture.h
+@@ -9,11 +9,13 @@
+ #include "mongo/unittest/benchmark_util.h"
+ #include "mongo/util/modules.h"
+ 
++#include <cstdint>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+ 
+ #include <benchmark/benchmark.h>
++#include <boost/optional/optional.hpp>
+ 
+ namespace mongo {
+ 
+@@ -26,6 +28,14 @@ public:
+ 
+     void runBenchmark(BSONObj filter, BSONObj projection, benchmark::State& state);
+ 
++    // As above, but issues the find with an explicit batchSize. Whether a batchSize is present
++    // changes which executor the query is routed to, so a benchmark cannot exercise that without
++    // being able to set it.
++    void runBenchmark(BSONObj filter,
++                      BSONObj projection,
++                      boost::optional<std::int64_t> batchSize,
++                      benchmark::State& state);
++
+ protected:
+     const std::vector<BSONObj>& docs() const {
+         return _docs;
+diff --git a/src/mongo/db/query/query_utils.h b/src/mongo/db/query/query_utils.h
+index d8bcacabca..c075382e89 100644
+--- a/src/mongo/db/query/query_utils.h
++++ b/src/mongo/db/query/query_utils.h
+@@ -117,7 +117,12 @@ inline ExpressEligibility isExpressEligible(OperationContext* opCtx,
+ 
+     const auto& findCommandReq = cq.getFindCommandRequest();
+ 
+-    if (!coll || findCommandReq.getReturnKey() || findCommandReq.getBatchSize() ||
++    // An express plan returns at most one document and is exhausted once it has, so a positive
++    // batchSize cannot change what it produces. batchSize 0 is different: it asks for a cursor with
++    // an empty first batch, which would require the express executor to survive in a ClientCursor.
++    const bool wantsEmptyFirstBatch = findCommandReq.getBatchSize().value_or(1) == 0;
++
++    if (!coll || findCommandReq.getReturnKey() || wantsEmptyFirstBatch ||
+         (cq.getProj() != nullptr && !cq.getProj()->isSimple())) {
+         return ExpressEligibility::Ineligible;
+     }
