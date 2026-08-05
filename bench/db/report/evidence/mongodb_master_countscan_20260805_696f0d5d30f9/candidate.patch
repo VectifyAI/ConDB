@@ -1,0 +1,733 @@
+diff --git a/buildscripts/resmokeconfig/suites/benchmarks_query.yml b/buildscripts/resmokeconfig/suites/benchmarks_query.yml
+index ce6414c5340fcb6aa3b6a642b1c11fae3b9bf40c..0aa7433db8e59c5b9a258d131993a1bcbc0db9e3 100644
+--- a/buildscripts/resmokeconfig/suites/benchmarks_query.yml
++++ b/buildscripts/resmokeconfig/suites/benchmarks_query.yml
+@@ -5,6 +5,7 @@ selector:
+   root: bazel-bin/install/install-query_bm_test_list.txt
+   include_files:
+     # The trailing asterisk is for handling the .exe extension on Windows.
++    - bazel-bin/**/count_query_bm*
+     - bazel-bin/**/complex_query_bm*
+     - bazel-bin/**/query_bm*
+     - bazel-bin/**/point_query_bm*
+diff --git a/src/mongo/db/exec/classic/count.cpp b/src/mongo/db/exec/classic/count.cpp
+index 9f4c97f374315f912eda92767ef38b750abc8b92..a4db745d8707d3068229abc955d142e6789415e2 100644
+--- a/src/mongo/db/exec/classic/count.cpp
++++ b/src/mongo/db/exec/classic/count.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "mongo/db/exec/classic/count.h"
+ 
++#include "mongo/db/exec/classic/count_scan.h"
+ #include "mongo/util/assert_util.h"
+ 
+ #include <memory>
+@@ -20,6 +21,12 @@ CountStage::CountStage(
+     tassert(11051652, "Expecting non-negative limit parameter", _limit >= 0);
+     tassert(11051651, "Expecting child stage", child);
+     _children.emplace_back(child);
++    if (this->child()->stageType() == STAGE_COUNT_SCAN) {
++        auto* countScan = static_cast<CountScan*>(this->child().get());
++        if (countScan->supportsResultlessCount()) {
++            _resultlessCountScan = countScan;
++        }
++    }
+ }
+ 
+ bool CountStage::isEOF() const {
+@@ -42,7 +49,8 @@ PlanStage::StageState CountStage::doWork(WorkingSetID* out) {
+     // For cases where we can't ask the record store directly, we should always have a child stage
+     // from which we can retrieve results.
+     WorkingSetID id = WorkingSet::INVALID_ID;
+-    PlanStage::StageState state = child()->work(&id);
++    const PlanStage::StageState state =
++        _resultlessCountScan ? _resultlessCountScan->workForCountStage() : child()->work(&id);
+ 
+     if (PlanStage::IS_EOF == state) {
+         _commonStats.isEOF = true;
+@@ -57,8 +65,8 @@ PlanStage::StageState CountStage::doWork(WorkingSetID* out) {
+             _specificStats.nCounted++;
+         }
+ 
+-        // Count doesn't need the actual results, so we just discard any valid working
+-        // set members that got returned from the child.
++        // The resultless CountScan protocol does not create a WorkingSetMember. Results from other
++        // children are discarded as before.
+         if (WorkingSet::INVALID_ID != id) {
+             _ws->free(id);
+         }
+diff --git a/src/mongo/db/exec/classic/count.h b/src/mongo/db/exec/classic/count.h
+index e74f83b830b5be94bda5250f4f700c801e32b3bf..f91ebdd05aa1955df9f6d904abb18ab2ae141c67 100644
+--- a/src/mongo/db/exec/classic/count.h
++++ b/src/mongo/db/exec/classic/count.h
+@@ -16,6 +16,8 @@
+ namespace mongo {
+ using namespace std::literals::string_view_literals;
+ 
++class CountScan;
++
+ /**
+  * Stage used by the count command. This stage sits at the root of a plan tree and counts the number
+  * of results returned by its child stage.
+@@ -70,6 +72,10 @@ private:
+     // by us.
+     WorkingSet* _ws;
+ 
++    // Non-owning alias of the direct child when it is a non-deduplicating CountScan. Such a child
++    // can use its private resultless protocol because CountStage consumes only its execution state.
++    CountScan* _resultlessCountScan = nullptr;
++
+     CountStats _specificStats;
+ };
+ 
+diff --git a/src/mongo/db/exec/classic/count_scan.cpp b/src/mongo/db/exec/classic/count_scan.cpp
+index 768d1d2066bcab98c6957dba0ce1c28ad057c0c3..32e7776e016c0abef9b6947053be11da03d08756 100644
+--- a/src/mongo/db/exec/classic/count_scan.cpp
++++ b/src/mongo/db/exec/classic/count_scan.cpp
+@@ -99,6 +99,10 @@ CountScan::CountScan(ExpressionContext* expCtx,
+ }
+ 
+ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
++    return doWorkImpl(out, true);
++}
++
++PlanStage::StageState CountScan::doWorkImpl(WorkingSetID* out, bool materializeResult) {
+     if (_commonStats.isEOF)
+         return PlanStage::IS_EOF;
+ 
+@@ -168,6 +172,10 @@ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
+                 _memoryTracker.withinMemoryLimit(opCtx()));
+     }
+ 
++    if (!materializeResult) {
++        return PlanStage::ADVANCED;
++    }
++
+     WorkingSetID id = _workingSet->allocate();
+     WorkingSetMember* member = _workingSet->get(id);
+     member->recordId = entry->loc;
+@@ -176,6 +184,13 @@ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
+     return PlanStage::ADVANCED;
+ }
+ 
++PlanStage::StageState CountScan::workForCountStage() {
++    dassert(supportsResultlessCount());
++
++    WorkingSetID ignored = WorkingSet::INVALID_ID;
++    return trackWork([&] { return doWorkImpl(&ignored, false); });
++}
++
+ bool CountScan::isEOF() const {
+     return _commonStats.isEOF;
+ }
+diff --git a/src/mongo/db/exec/classic/count_scan.h b/src/mongo/db/exec/classic/count_scan.h
+index 262473b32d38cce412ab29dc6b0f6c6d79cd1273..2f2a82dbf65eb11b4661c87f78bdf58f561c939f 100644
+--- a/src/mongo/db/exec/classic/count_scan.h
++++ b/src/mongo/db/exec/classic/count_scan.h
+@@ -27,6 +27,7 @@
+ namespace mongo {
+ using namespace std::literals::string_view_literals;
+ 
++class CountStage;
+ class WorkingSet;
+ 
+ struct CountScanParams {
+@@ -76,9 +77,11 @@ struct CountScanParams {
+  * Used when don't need to return the actual records from the index or the collection (e.g. count
+  * command and some cases of aggregation).
+  *
+- * Scans an index from a start key to an end key. Creates a WorkingSetMember for each matching index
+- * key in RID_AND_OBJ state. It has a null record id and an empty object with a null snapshot id
+- * rather than real data. Returning real data is unnecessary since all we need is the count.
++ * Scans an index from a start key to an end key. By default, creates a WorkingSetMember for each
++ * matching index key in RID_AND_OBJ state. It has the index entry's record id and an empty object
++ * with a null snapshot id rather than real data. A direct CountStage parent can use a private
++ * resultless protocol for a non-deduplicating scan, while the public PlanStage interface retains
++ * its normal WorkingSet output contract.
+  */
+ class CountScan final : public RequiresIndexStage {
+ public:
+@@ -108,6 +111,18 @@ protected:
+     void doRestoreStateRequiresIndex() final;
+ 
+ private:
++    friend class CountStage;
++
++    bool supportsResultlessCount() const {
++        // This is an adoption gate, not a capability check. Keep deduplicating scans on the
++        // existing WorkingSet path until resultless execution for them is independently validated.
++        return !_shouldDedup;
++    }
++
++    StageState workForCountStage();
++
++    StageState doWorkImpl(WorkingSetID* out, bool materializeResult);
++
+     // The WorkingSet we annotate with results.  Not owned by us.
+     WorkingSet* _workingSet;
+ 
+diff --git a/src/mongo/db/exec/classic/plan_stage.h b/src/mongo/db/exec/classic/plan_stage.h
+index 083e605f7f46a393443ac3b3200eb66dc18bc7f0..9649aac1d351227d60f61482d0ab5152f9e86c6c 100644
+--- a/src/mongo/db/exec/classic/plan_stage.h
++++ b/src/mongo/db/exec/classic/plan_stage.h
+@@ -184,27 +184,7 @@ public:
+      * Throws an exception if an error is encountered while executing the query.
+      */
+     StageState work(WorkingSetID* out) {
+-        auto optTimer(getOptTimer());
+-
+-        ++_commonStats.works;
+-
+-        StageState workResult;
+-        try {
+-            workResult = doWork(out);
+-        } catch (...) {
+-            _commonStats.failed = true;
+-            throw;
+-        }
+-
+-        if (StageState::ADVANCED == workResult) {
+-            ++_commonStats.advanced;
+-        } else if (StageState::NEED_TIME == workResult) {
+-            ++_commonStats.needTime;
+-        } else if (StageState::NEED_YIELD == workResult) {
+-            ++_commonStats.needYield;
+-        }
+-
+-        return workResult;
++        return trackWork([&] { return doWork(out); });
+     }
+ 
+     /**
+@@ -352,6 +332,36 @@ public:
+     }
+ 
+ protected:
++    /**
++     * Runs exactly one unit of stage work while maintaining the same timing and CommonStats
++     * accounting as work(). Specialized internal entry points may use this when they intentionally
++     * bypass doWork().
++     */
++    template <typename WorkFn>
++    StageState trackWork(WorkFn&& workFn) {
++        auto optTimer(getOptTimer());
++
++        ++_commonStats.works;
++
++        StageState workResult;
++        try {
++            workResult = std::forward<WorkFn>(workFn)();
++        } catch (...) {
++            _commonStats.failed = true;
++            throw;
++        }
++
++        if (StageState::ADVANCED == workResult) {
++            ++_commonStats.advanced;
++        } else if (StageState::NEED_TIME == workResult) {
++            ++_commonStats.needTime;
++        } else if (StageState::NEED_YIELD == workResult) {
++            ++_commonStats.needYield;
++        }
++
++        return workResult;
++    }
++
+     /**
+      * Performs one unit of work.  See comment at work() above.
+      */
+diff --git a/src/mongo/db/exec/classic/working_set.h b/src/mongo/db/exec/classic/working_set.h
+index 011adacfe93c532104f2e5d02e08b750fcf614c3..a7488fa87416c966ce4e56f1226026fb7755d353 100644
+--- a/src/mongo/db/exec/classic/working_set.h
++++ b/src/mongo/db/exec/classic/working_set.h
+@@ -400,6 +400,8 @@ public:
+     WorkingSetID emplace(WorkingSetMember&&);
+ 
+ private:
++    friend class CountScanWorkingSetTestAccess;
++
+     struct MemberHolder {
+         // Free list link if freed. Points to self if in use.
+         WorkingSetID nextFreeOrSelf;
+diff --git a/src/mongo/db/query/BUILD.bazel b/src/mongo/db/query/BUILD.bazel
+index 64e00ced10d0007beecc4a9314a9df274fc26a05..bbc0ea37c3478f7767b0157944b0d148e4f7a907 100644
+--- a/src/mongo/db/query/BUILD.bazel
++++ b/src/mongo/db/query/BUILD.bazel
+@@ -918,6 +918,18 @@ mongo_cc_benchmark(
+     deps = ["query_bm_fixture"],
+ )
+ 
++mongo_cc_benchmark(
++    name = "count_query_bm",
++    srcs = [
++        "count_query_bm.cpp",
++    ],
++    tags = ["query_bm"],
++    deps = [
++        "query_bm_fixture",
++        "//src/mongo/rpc:get_status_from_command_result",
++    ],
++)
++
+ mongo_cc_benchmark(
+     name = "complex_query_bm",
+     srcs = [
+diff --git a/src/mongo/db/query/count_query_bm.cpp b/src/mongo/db/query/count_query_bm.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..e95cfd83df7718c113ae36418f841410d2e258ce
+--- /dev/null
++++ b/src/mongo/db/query/count_query_bm.cpp
+@@ -0,0 +1,64 @@
++// Copyright (c) MongoDB, Inc.
++// SPDX-License-Identifier: SSPL-1.0
++
++#include "mongo/db/query/query_bm_fixture.h"
++#include "mongo/rpc/get_status_from_command_result.h"
++#include "mongo/util/assert_util.h"
++#include "mongo/util/version.h"
++
++#include <cstdint>
++#include <utility>
++
++#include <benchmark/benchmark.h>
++
++namespace mongo {
++namespace {
++
++class CountQueryBenchmark : public QueryBenchmarkFixture {
++private:
++    BSONObj generateDocument(size_t index, size_t approximateSize) override {
++        return BSON("_id" << static_cast<long long>(index) << "scanKey"
++                          << static_cast<long long>(index) << "padding"
++                          << randomLowercaseAlphaString(approximateSize));
++    }
++
++    std::vector<BSONObj> getIndexSpecs() const override {
++        return {buildIndexSpec("scanKey", false)};
++    }
++};
++
++BENCHMARK_DEFINE_F(CountQueryBenchmark, DirectNonDeduplicatingCountScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    auto command = BSON("count" << kNss.coll() << "$db" << kNss.db_forTest() << "query"
++                                << BSON("scanKey" << GTE << 0 << LT << numDocs) << "hint"
++                                << "scanKey_1");
++
++    const auto reply = runCommand(command);
++    uassertStatusOK(getStatusFromCommandResult(reply));
++    invariant(reply.getField("n").safeNumberLong() == numDocs);
++
++    // Keep this benchmark pinned to the optimized classic plan shape. The index hint alone would
++    // not prevent a future planner change from silently benchmarking another stage tree.
++    const auto& versionInfo =
++        VersionInfoInterface::instance(VersionInfoInterface::NotEnabledAction::kFallback);
++    VersionInfoInterface::enable(&versionInfo);
++    const auto explainReply = runCommand(BSON("explain" << command.removeField("$db") << "verbosity"
++                                                        << "queryPlanner"
++                                                        << "$db" << kNss.db_forTest()));
++    uassertStatusOK(getStatusFromCommandResult(explainReply));
++    const auto winningPlan =
++        explainReply.getObjectField("queryPlanner").getObjectField("winningPlan");
++    invariant(winningPlan.getField("stage").String() == "COUNT");
++    invariant(winningPlan.getObjectField("inputStage").getField("stage").String() == "COUNT_SCAN");
++
++    runCommandBenchmark(std::move(command), state);
++    state.SetItemsProcessed(state.iterations() * numDocs);
++}
++
++BENCHMARK_REGISTER_F(CountQueryBenchmark, DirectNonDeduplicatingCountScan)
++    ->Args({10'000, 64})
++    ->Args({400'000, 64});
++
++}  // namespace
++}  // namespace mongo
+diff --git a/src/mongo/db/query/query_bm_fixture.cpp b/src/mongo/db/query/query_bm_fixture.cpp
+index 458b8da7ad4ae5f706a35ea2e30bab2028a572e4..777354fffa18608e043526c77a37ddebc622c555 100644
+--- a/src/mongo/db/query/query_bm_fixture.cpp
++++ b/src/mongo/db/query/query_bm_fixture.cpp
+@@ -4,16 +4,38 @@
+ #include "mongo/db/query/query_bm_fixture.h"
+ 
+ #include "mongo/db/shard_role/shard_role.h"
++#include "mongo/rpc/op_msg.h"
+ #include "mongo/transport/service_entry_point.h"
+ 
+ #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kTest
+ 
+ namespace mongo {
++namespace {
++
++Message serializeCommand(BSONObj command) {
++    OpMsgRequest request;
++    request.body = std::move(command);
++    return request.serialize();
++}
++
++Message handleCommandRequest(const Message& request) {
++    Client& client = cc();
++    auto opCtx = client.makeOperationContext();
++    auto response = client.getService()
++                        ->getServiceEntryPoint()
++                        ->handleRequest(opCtx.get(), request, opCtx->fastClockSource().now())
++                        .getNoThrow();
++    iassert(response);
++    return response.getValue().response;
++}
++
++}  // namespace
+ 
+ const NamespaceString QueryBenchmarkFixture::kNss =
+     NamespaceString::createNamespaceString_forTest("test", "coll");
+ 
+ void QueryBenchmarkFixture::setUpSharedResources(benchmark::State& state) {
++    unittest::BenchmarkWithProfiler::setUpSharedResources(state);
+     _fixture.emplace(CatalogScopedGlobalServiceContextForTest::Options{}, false);
+ 
+     ReadWriteConcernDefaults::create(getGlobalServiceContext()->getService(),
+@@ -26,6 +48,7 @@ void QueryBenchmarkFixture::setUpSharedResources(benchmark::State& state) {
+ void QueryBenchmarkFixture::tearDownSharedResources(benchmark::State& state) {
+     _fixture.reset();
+     _docs.clear();
++    unittest::BenchmarkWithProfiler::tearDownSharedResources(state);
+ }
+ 
+ void QueryBenchmarkFixture::runBenchmark(BSONObj filter,
+@@ -33,27 +56,29 @@ void QueryBenchmarkFixture::runBenchmark(BSONObj filter,
+                                          benchmark::State& state) {
+     BSONObj command = BSON("find" << kNss.coll() << "$db" << kNss.db_forTest() << "filter" << filter
+                                   << "projection" << projection);
+-    OpMsgRequest request;
+-    request.body = command;
+-    auto msg = request.serialize();
++    runCommandBenchmark(std::move(command), state);
++}
++
++BSONObj QueryBenchmarkFixture::runCommand(BSONObj command) {
++    auto msg = serializeCommand(std::move(command));
++
++    ThreadClient threadClient{getGlobalServiceContext()->getService()};
++    const auto response = handleCommandRequest(msg);
++    return OpMsg::parse(response).body.getOwned();
++}
++
++void QueryBenchmarkFixture::runCommandBenchmark(BSONObj command, benchmark::State& state) {
++    auto msg = serializeCommand(std::move(command));
+ 
+     ThreadClient threadClient{getGlobalServiceContext()->getService()};
+     runBenchmarkWithProfiler(
+         [&]() {
+-            Client& client = cc();
+-            auto opCtx = client.makeOperationContext();
+-            auto statusWithResponse =
+-                client.getService()
+-                    ->getServiceEntryPoint()
+-                    ->handleRequest(opCtx.get(), msg, opCtx->fastClockSource().now())
+-                    .getNoThrow();
+-            iassert(statusWithResponse);
++            const auto response = handleCommandRequest(msg);
+             LOGV2_DEBUG(9278700,
+                         1,
+                         "db response",
+                         "request"_attr = msg.opMsgDebugString(),
+-                        "response"_attr =
+-                            statusWithResponse.getValue().response.opMsgDebugString());
++                        "response"_attr = response.opMsgDebugString());
+         },
+         state);
+ }
+diff --git a/src/mongo/db/query/query_bm_fixture.h b/src/mongo/db/query/query_bm_fixture.h
+index 782cc4f7b9a9dc31ef5c07591d2dcbe4e0c55c5e..a37c66eee4446692be9ad5cd825e9fc40d7ef1b3 100644
+--- a/src/mongo/db/query/query_bm_fixture.h
++++ b/src/mongo/db/query/query_bm_fixture.h
+@@ -27,6 +27,9 @@ public:
+     void runBenchmark(BSONObj filter, BSONObj projection, benchmark::State& state);
+ 
+ protected:
++    BSONObj runCommand(BSONObj command);
++
++    void runCommandBenchmark(BSONObj command, benchmark::State& state);
+     const std::vector<BSONObj>& docs() const {
+         return _docs;
+     }
+diff --git a/src/mongo/dbtests/query_stage_count_scan.cpp b/src/mongo/dbtests/query_stage_count_scan.cpp
+index 43cf33922655b8d98fe4b10ba3a6f5f51dc2842c..6df1d16d4e0e3e8e230eb4857772de53a08ee491 100644
+--- a/src/mongo/dbtests/query_stage_count_scan.cpp
++++ b/src/mongo/dbtests/query_stage_count_scan.cpp
+@@ -5,6 +5,7 @@
+ #include "mongo/bson/bsonobjbuilder.h"
+ #include "mongo/db/client.h"
+ #include "mongo/db/dbdirectclient.h"
++#include "mongo/db/exec/classic/count.h"
+ #include "mongo/db/exec/classic/count_scan.h"
+ #include "mongo/db/exec/classic/plan_stage.h"
+ #include "mongo/db/exec/classic/working_set.h"
+@@ -19,16 +20,27 @@
+ #include "mongo/db/shard_role/shard_catalog/database.h"
+ #include "mongo/db/shard_role/shard_catalog/index_catalog.h"
+ #include "mongo/db/shard_role/shard_catalog/index_descriptor.h"
++#include "mongo/db/storage/record_store_write_conflict_fail_points.h"
+ #include "mongo/dbtests/dbtests.h"  // IWYU pragma: keep
+ #include "mongo/unittest/server_parameter_guard.h"
+ #include "mongo/unittest/unittest.h"
++#include "mongo/util/fail_point.h"
+ 
++#include <memory>
+ #include <string>
+ #include <vector>
+ 
+ #include <boost/smart_ptr/intrusive_ptr.hpp>
+ 
+ namespace mongo {
++
++class CountScanWorkingSetTestAccess {
++public:
++    static size_t numBackingSlots(const WorkingSet& ws) {
++        return ws._data.size();
++    }
++};
++
+ namespace QueryStageCountScan {
+ 
+ class CountBase {
+@@ -203,6 +215,228 @@ public:
+     }
+ };
+ 
++//
++// Check that CountScan's public work() preserves its WorkingSet output contract.
++//
++class QueryStageCountScanPublicOutput : public CountBase {
++public:
++    void run() {
++        dbtests::WriteContextForTests ctx(&_opCtx, ns().ns_forTest());
++
++        insert(BSON("a" << 1));
++        addIndex(BSON("a" << 1));
++
++        const auto coll = ctx.getCollection();
++        auto params = makeCountScanParams(&_opCtx, coll, getIndex(ctx.db(), BSON("a" << 1)));
++        params.startKey = BSON("" << 1);
++        params.endKey = BSON("" << 1);
++
++        WorkingSet ws;
++        CountScan count(_expCtx.get(), coll, params, &ws);
++
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++
++        WorkingSetID wsid = WorkingSet::INVALID_ID;
++
++        ASSERT_EQUALS(PlanStage::ADVANCED, count.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID != wsid);
++        ASSERT_EQUALS(1U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        const auto* member = ws.get(wsid);
++        ASSERT_EQUALS(WorkingSetMember::RID_AND_OBJ, member->getState());
++        ASSERT_TRUE(member->hasRecordId());
++        ASSERT_TRUE(member->hasObj());
++        ws.free(wsid);
++    }
++};
++
++//
++// Check skip and limit accounting when CountStage consumes the resultless protocol, including a
++// parent reaching EOF before its child.
++//
++class QueryStageCountScanDirectCountStageSkipAndLimit : public CountBase {
++public:
++    void run() {
++        dbtests::WriteContextForTests ctx(&_opCtx, ns().ns_forTest());
++
++        insert(BSON("a" << 1));
++        insert(BSON("a" << 2));
++        insert(BSON("a" << 3));
++        insert(BSON("a" << 4));
++        addIndex(BSON("a" << 1));
++
++        const auto coll = ctx.getCollection();
++        auto params = makeCountScanParams(&_opCtx, coll, getIndex(ctx.db(), BSON("a" << 1)));
++        params.startKey = BSON("" << 1);
++        params.endKey = BSON("" << 4);
++
++        WorkingSet ws;
++        auto countScan = std::make_unique<CountScan>(_expCtx.get(), coll, params, &ws);
++        CountStage countStage(_expCtx.get(), 2, 1, &ws, countScan.release());
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        WorkingSetID wsid = 0;
++
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++
++        const auto* stats = static_cast<const CountStats*>(countStage.getSpecificStats());
++        ASSERT_EQUALS(2, stats->nCounted);
++        ASSERT_EQUALS(1, stats->nSkipped);
++        ASSERT_TRUE(countStage.isEOF());
++        ASSERT_EQUALS(PlanStage::IS_EOF, countStage.work(&wsid));
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++
++        auto planStats = countStage.getStats();
++        ASSERT_EQUALS(1U, planStats->children.size());
++        const auto& childStats = planStats->children.front()->common;
++        ASSERT_EQUALS(3U, childStats.works);
++        ASSERT_EQUALS(3U, childStats.advanced);
++        ASSERT_EQUALS(0U, childStats.needTime);
++        ASSERT_EQUALS(0U, childStats.needYield);
++        ASSERT_FALSE(childStats.failed);
++        ASSERT_FALSE(childStats.isEOF);
++    }
++};
++
++//
++// Check that CountStage preserves NEED_YIELD and CommonStats while using the resultless protocol.
++//
++class QueryStageCountScanCountStageYield : public CountBase {
++public:
++    void run() {
++        dbtests::WriteContextForTests ctx(&_opCtx, ns().ns_forTest());
++
++        insert(BSON("a" << 1));
++        insert(BSON("a" << 2));
++        addIndex(BSON("a" << 1));
++
++        const auto coll = ctx.getCollection();
++        auto params = makeCountScanParams(&_opCtx, coll, getIndex(ctx.db(), BSON("a" << 1)));
++        params.startKey = BSON("" << 1);
++        params.endKey = BSON("" << 2);
++
++        WorkingSet ws;
++        auto countScan = std::make_unique<CountScan>(_expCtx.get(), coll, params, &ws);
++        CountStage countStage(_expCtx.get(), 0, 0, &ws, countScan.release());
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        WorkingSetID wsid = 0;
++
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++
++        {
++            auto failPoint = enableWriteConflictForReads(
++                FailPoint::ModeOptions{.mode = FailPoint::Mode::nTimes, .val = 1});
++            ASSERT_EQUALS(PlanStage::NEED_YIELD, countStage.work(&wsid));
++            ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++            ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        }
++
++        auto yieldStats = countStage.getStats();
++        ASSERT_EQUALS(1U, yieldStats->common.needYield);
++        ASSERT_EQUALS(1U, yieldStats->children.front()->common.needYield);
++
++        countStage.saveState();
++        countStage.restoreState(RestoreContext(nullptr));
++
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(PlanStage::IS_EOF, countStage.work(&wsid));
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++
++        const auto* stats = static_cast<const CountStats*>(countStage.getSpecificStats());
++        ASSERT_EQUALS(2, stats->nCounted);
++        auto finalStats = countStage.getStats();
++        ASSERT_EQUALS(1U, finalStats->common.needYield);
++        ASSERT_EQUALS(1U, finalStats->children.front()->common.needYield);
++        ASSERT_EQUALS(4U, finalStats->children.front()->common.works);
++        ASSERT_EQUALS(2U, finalStats->children.front()->common.advanced);
++        ASSERT_TRUE(finalStats->children.front()->common.isEOF);
++    }
++};
++
++//
++// Check that CountStage's optimization leaves the deduplicating path's output contract unchanged.
++//
++class QueryStageCountScanCountStageMultikeyOutput : public CountBase {
++public:
++    void run() {
++        dbtests::WriteContextForTests ctx(&_opCtx, ns().ns_forTest());
++
++        insert(BSON("a" << BSON_ARRAY(1 << 2)));
++        addIndex(BSON("a" << 1));
++
++        const auto coll = ctx.getCollection();
++        auto params = makeCountScanParams(&_opCtx, coll, getIndex(ctx.db(), BSON("a" << 1)));
++        params.startKey = BSON("" << 1);
++        params.endKey = BSON("" << 2);
++
++        WorkingSet ws;
++        auto countScan = std::make_unique<CountScan>(_expCtx.get(), coll, params, &ws);
++        CountStage countStage(_expCtx.get(), 0, 0, &ws, countScan.release());
++        ASSERT_EQUALS(0U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        WorkingSetID wsid = 0;
++
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(1U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_TRUE(WorkingSet::INVALID_ID == wsid);
++        ASSERT_EQUALS(PlanStage::IS_EOF, countStage.work(&wsid));
++
++        const auto* stats = static_cast<const CountStats*>(countStage.getSpecificStats());
++        ASSERT_EQUALS(1, stats->nCounted);
++        auto planStats = countStage.getStats();
++        const auto& childStats = planStats->children.front()->common;
++        ASSERT_EQUALS(3U, childStats.works);
++        ASSERT_EQUALS(1U, childStats.advanced);
++        ASSERT_EQUALS(1U, childStats.needTime);
++        ASSERT_TRUE(childStats.isEOF);
++    }
++};
++
++//
++// Check that a scalar compound wildcard index remains on the materializing path even though the
++// index is not multikey. Compound wildcard CountScans must deduplicate independently of multikey.
++//
++class QueryStageCountScanCountStageCompoundWildcardFallback : public CountBase {
++public:
++    void run() {
++        dbtests::WriteContextForTests ctx(&_opCtx, ns().ns_forTest());
++
++        insert(BSON("a" << 1 << "obj" << BSON("b" << 1 << "c" << 2)));
++        const auto keyPattern = BSON("a" << 1 << "obj.$**" << 1);
++        addIndex(keyPattern);
++
++        const auto coll = ctx.getCollection();
++        auto params = makeCountScanParams(&_opCtx, coll, getIndex(ctx.db(), keyPattern));
++        ASSERT_FALSE(params.isMultiKey);
++        params.keyPattern = BSON("a" << 1 << "$_path" << 1 << "obj.$**" << 1);
++        params.startKey = BSON("" << 1 << "" << MINKEY << "" << MINKEY);
++        params.endKey = BSON("" << 1 << "" << MAXKEY << "" << MAXKEY);
++
++        WorkingSet ws;
++        auto countScan = std::make_unique<CountScan>(_expCtx.get(), coll, params, &ws);
++        CountStage countStage(_expCtx.get(), 0, 0, &ws, countScan.release());
++        WorkingSetID wsid = WorkingSet::INVALID_ID;
++
++        ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
++        ASSERT_EQUALS(1U, CountScanWorkingSetTestAccess::numBackingSlots(ws));
++        while (PlanStage::IS_EOF != countStage.work(&wsid)) {
++        }
++
++        const auto* stats = static_cast<const CountStats*>(countStage.getSpecificStats());
++        ASSERT_EQUALS(1, stats->nCounted);
++    }
++};
++
+ //
+ // Check that cursor returns no results if all docs are below lower bound
+ //
+@@ -665,6 +899,11 @@ public:
+         add<QueryStageCountScanDups>();
+         add<QueryStageCountScanInclusiveBounds>();
+         add<QueryStageCountScanExclusiveBounds>();
++        add<QueryStageCountScanPublicOutput>();
++        add<QueryStageCountScanDirectCountStageSkipAndLimit>();
++        add<QueryStageCountScanCountStageYield>();
++        add<QueryStageCountScanCountStageMultikeyOutput>();
++        add<QueryStageCountScanCountStageCompoundWildcardFallback>();
+         add<QueryStageCountScanLowerBound>();
+         add<QueryStageCountScanNothingInInterval>();
+         add<QueryStageCountScanNothingInIntervalFirstMatchTooHigh>();

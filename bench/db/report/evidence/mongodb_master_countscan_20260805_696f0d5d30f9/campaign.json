@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "campaign_id": "mongodb-master-countscan-activation-ablation-20260805-696f0d5d30f9",
+  "comparison": "activation_ablation",
+  "source_commit": "696f0d5d30f9bb6bcdb96ade8388e6bea36a92f9",
+  "frozen_before_execution": true,
+  "harness_artifacts": {
+    "run_blocks.sh": "2dbc850779eb3effd1dc390b1aba66855603152a09914aaf7e432db13924ac44",
+    "analyze.py": "c19e3b8fa0b8d1db2bac18ad660b1f25b3b70ad21a8c024f7f6dc8e1c7edc7ca",
+    "activation_disable.patch": "305c2c258f45ad74a20f8a789a64cdbb85cb42b4e56ddf2649daf819bf9c242b",
+    "candidate.patch": "187c3c5768b66c33f43533b7903d572bc96179ae9160181e4275e00987d9348b"
+  },
+  "arms": {
+    "B": {
+      "label": "disabled_control",
+      "description": "Final source commit with only CountStage resultless CountScan activation disabled.",
+      "binary_path": "/tmp/mongo-count-query-bm-696f0d5d-disabled",
+      "sha256": "ed2bdc05a6188a0ebb6433923391417c183e3471df78516eac3523c2f825bebc",
+      "build_id": "d14aea10c20ca862734eb72e930225a1e5ea263e"
+    },
+    "C": {
+      "label": "enabled_candidate",
+      "description": "Final source commit with CountStage resultless CountScan activation enabled.",
+      "binary_path": "/tmp/mongo-count-query-bm-696f0d5d-enabled",
+      "sha256": "02628346e4357ab9a48d5c0dea0de68df4c0b2921ded3fb44c4f643eb5c043be",
+      "build_id": "482d4815330592895592815012509a756b70ccf8"
+    }
+  },
+  "activation_disable_patch": "activation_disable.patch",
+  "benchmark": {
+    "filter": "CountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+    "expected_run_name": "CountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+    "arguments": [
+      400000,
+      64
+    ],
+    "repetitions_per_process": 5,
+    "minimum_time_seconds": 0.01,
+    "report_aggregates_only": false,
+    "expected_iteration_count_per_repetition": 1,
+    "expected_library_build_type": "release"
+  },
+  "execution": {
+    "pair_count": 20,
+    "process_count": 40,
+    "fresh_process_per_arm_per_pair": true,
+    "cpu_affinity": 0,
+    "taskset_command": [
+      "taskset",
+      "-c",
+      "0"
+    ],
+    "no_early_stopping": true,
+    "partial_reruns_forbidden": true,
+    "pair_order": [
+      {"pair": 1, "order": "BC"},
+      {"pair": 2, "order": "CB"},
+      {"pair": 3, "order": "CB"},
+      {"pair": 4, "order": "BC"},
+      {"pair": 5, "order": "BC"},
+      {"pair": 6, "order": "CB"},
+      {"pair": 7, "order": "BC"},
+      {"pair": 8, "order": "CB"},
+      {"pair": 9, "order": "BC"},
+      {"pair": 10, "order": "CB"},
+      {"pair": 11, "order": "CB"},
+      {"pair": 12, "order": "BC"},
+      {"pair": 13, "order": "BC"},
+      {"pair": 14, "order": "CB"},
+      {"pair": 15, "order": "CB"},
+      {"pair": 16, "order": "BC"},
+      {"pair": 17, "order": "CB"},
+      {"pair": 18, "order": "BC"},
+      {"pair": 19, "order": "CB"},
+      {"pair": 20, "order": "BC"}
+    ]
+  },
+  "analysis": {
+    "process_aggregation": "arithmetic_mean_of_five_iteration_rows",
+    "pair_effect": "candidate_C_over_control_B",
+    "overall_estimator": "geometric_mean_of_complete_pair_ratios",
+    "order_strata": [
+      "BC",
+      "CB"
+    ],
+    "bootstrap": {
+      "method": "stratified_complete_pair_resampling_with_replacement",
+      "samples": 100000,
+      "seed": 20260805,
+      "confidence_level": 0.95,
+      "same_draws_across_metrics": true
+    },
+    "metrics": [
+      {"name": "instructions_per_iteration", "role": "primary"},
+      {"name": "cpu_time", "role": "secondary"},
+      {"name": "real_time", "role": "auxiliary"}
+    ],
+    "primary_claim_gate": "overall_ci95_upper_below_one_and_both_order_stratum_point_estimates_below_one",
+    "timing_claim_gate": "metric_specific_overall_ci95_upper_below_one"
+  }
+}
