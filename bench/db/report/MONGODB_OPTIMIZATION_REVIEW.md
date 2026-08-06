@@ -15,7 +15,7 @@ status is not the same:
 | Coalesce already-known node, parent, or entity IDs | Two grouping seeds, exact output checks, listener-free wall time, and a control against individual requests submitted through at most 16 workers | Promising in the MongoDB storage harness. Not implemented in a MongoDB ConDB backend; group formation, remote RTT, and API-level load remain unmeasured. |
 | Change `Cursor.batch_size` for subtree reads | 100 matched paths, five repeats, exact ordered-output checks, separate listener-free latency and command-count telemetry, ID-only and covered-Metadata projections | Reject manual tuning for the covered-Metadata path. The large request has no meaningful covered-Metadata gain; small batches regress. Keep the driver default. |
 | Store consecutive DFS rows in bounded bucket documents | Frozen five-size selection, 100-root holdout, seven paired repeats, a 67-root range-disjoint sensitivity, 250 unused small/deep roots, full 10M-row digest, BSON-size check, and an independent live output audit | Promising only for the measured large-subtree cohort. Do not adopt until the size estimator/router, mutable-tree updates, atomic publication, multi-tree behavior, and end-to-end API path are measured. |
-| Let a direct `CountStage` -> `CountScan` pair skip an unread working-set member, on a pinned MongoDB master snapshot | Optimized and runtime-dassert count dbtest suites; 60 forced-classic resmoke result entries; a 542-field `explain` comparison against a separately built base binary showing no substantive difference, including on the bare-`CountScan` aggregation path (all three retained under `evidence/.../validation/`, run on `ac20554f`, which differs from the candidate by one include-order line); a pre-registered 450-process three-arm campaign | Local source candidate only, and its adoption gate did not pass. The instruction reduction against the pinned base is real and consistent (30/30 blocks, ~117 instructions per counted document), but both controls fell outside their bands, so no CPU-time or wall-time claim is made. Applies only to single-solution plans; every measured plan is hint-forced. Not an upstream, 7.0.34, or end-to-end ConDB comparison. |
+| Let a direct `CountStage` -> `CountScan` pair skip an unread working-set member, on a pinned MongoDB master snapshot | Optimized and runtime-dassert count dbtest suites; 60 forced-classic resmoke result entries; a 542-field `explain` comparison against a separately built base binary showing no substantive difference, including on the bare-`CountScan` aggregation path (all three retained under `evidence/.../validation/`, run on `ac20554f`, which differs from the candidate by one include-order line); a pre-registered 450-process three-arm campaign | Local source candidate only, and its adoption gate did not pass. The instruction reduction against the pinned base is real and consistent (30/30 blocks, ~117 instructions per counted document), but both controls fell outside their bands, so no CPU-time or wall-time claim is made. Fires on the whole classic `COUNT_SCAN` fast path -- `QueryPlanner::plan` returns a count scan as the single solution as soon as one exists, so such plans are never multi-planned or cached; counts that plan to `FETCH` or a collection scan are untouched. Every measured plan is hint-forced. Not an upstream, 7.0.34, or end-to-end ConDB comparison. |
 
 No MongoDB optimization described by the main report is currently integrated
 into ConDB's public storage path. The executor candidate is committed only on
@@ -42,7 +42,7 @@ The source audit rejected redundant or unsafe directions before implementation:
 |---|---|
 | Reintroduce an `_id` fast path | Reject as redundant: the pinned snapshot already routes eligible point queries through EXPRESS planning. |
 | Generalize compound unique equality conjunctions into EXPRESS | Reject for this round. A correct gate must prove full canonical-key coverage and account for multikey, collation, sparse/partial indexes, sharding, projection, and planner semantics. A multikey counterexample invalidates a broad rewrite. |
-| Avoid unused `WorkingSetMember` materialization under direct count | Accept narrowly. The opt-in is per instance and set only by a direct `CountStage` parent, so every other `CountScan` consumer keeps the public `RID_AND_OBJ` output contract. It applies only when `CountStage`'s child is a bare `CountScan`, i.e. the single-solution plan case; a multi-planned or plan-cached count is unaffected. |
+| Avoid unused `WorkingSetMember` materialization under direct count | Accept narrowly. The opt-in is per instance and set only by a direct `CountStage` parent, so every other `CountScan` consumer keeps the public `RID_AND_OBJ` output contract. It applies when `CountStage`'s child is a bare `CountScan`, which the planner guarantees for every classic `COUNT_SCAN` plan; counts that plan to `FETCH` or a collection scan are unaffected. |
 
 The committed design went through three shapes. Reusing one live member across
 advances bent generic ownership and lifetime expectations and was dropped. The
@@ -77,7 +77,7 @@ memory. No measurements from the discarded prototypes appear in the report.
 | `d71566a55e` (`SERVER-14098`) | Introduced `CountStage`, whose parent consumes execution state rather than a child result. This motivates the narrow optimization but did not establish the present public-output-safe protocol. |
 | `dac2f722f8` (`SERVER-22133`) | Restored correct `COUNT_SCAN` generation from the plan cache and reinforces that generic/public consumers need a valid WorkingSet result. |
 | `d8ee635331` (`SERVER-22407`) | Changed public `COUNT_SCAN` output from `OWNED_OBJ` to `RID_AND_OBJ`, recovering most of a reported regression while preserving a valid result contract. The candidate does not undo this. |
-| `09b89f0986` (`SERVER-19377`) | Centralized stage timing/statistics around non-virtual `work()`. The candidate reuses the resulting accounting through `trackWork` rather than duplicating it. |
+| `09b89f0986` (`SERVER-19377`) | Centralized stage timing/statistics around non-virtual `work()`. The candidate leaves that accounting alone: it changes only what `doWork()` writes to its out-parameter, and `CommonStats` is still derived from the returned `StageState` in `work()`. |
 | `8f52dfc863` (`SERVER-75037`) | Made compound-wildcard `COUNT_SCAN` deduplicate independently of multikey status. The candidate explicitly leaves that path materializing and deduplicating. |
 
 The inspected GitHub PRs are closed without a merged-PR marker, but their
@@ -180,7 +180,7 @@ records a written justification for the 1% noninferiority margin but none for ei
 that band is best described as set by analogy with repetition-level reproducibility rather than from
 any recorded analysis of between-process dispersion. The dispersion is a per-process two-state latch:
 all 90 processes lie wholly in one of two states 2.32% apart (56 lower, 34 upper), none straddles them
-at repetition level, and within a state *and* within an arm the coefficient of variation is 0.002%.
+at repetition level, and within a state *and* within an arm the coefficient of variation is at most 0.0025%.
 Pooling arms within a state leaves a 0.26% spread, which is the rejected arm's offset. Conditioned on
 state, the candidate is indistinguishable from the base there (0.999990 over the 10 blocks where both
 arms landed low, 1.000000 over the 7 where both landed high; sd 2.8e-5 and 2.2e-5).
@@ -198,7 +198,7 @@ in the upper). This is consistent with the cost of routing every classic stage's
 new base-class helper — the only B-only change that executes on this plan, at roughly 8 instructions
 across the three `work()` calls per document — but no arm carries that change in isolation, so the
 attribution is an inference rather than a measurement. Note that the pre-registered marginal
-estimator reports 0.9978 for the comparison and so inverts the sign: the rejected arm landed in the
+estimator reports 0.9979 for the comparison and so inverts the sign: the rejected arm landed in the
 high-instruction state 7 times in 30 against the base's 13. Both figures are reported.
 
 On the three count endpoints the rejected implementation retires 0.33-0.45% fewer instructions than

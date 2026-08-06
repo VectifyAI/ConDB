@@ -91,9 +91,11 @@ master-snapshot source experiment, letting a direct
 member reduces benchmark-thread user-space retired instructions against a pinned
 upstream base carrying the same benchmark harness by 4.600\%, 2.055\% and
 3.680\% on scalar, multikey and compound-wildcard indexed counts, favourably in
-all 30 blocks --- about 117 instructions per counted document. The change fires
-only on single-solution plans, so multi-planned and plan-cached counts are
-unaffected, and every plan measured is forced by an index hint. That campaign's
+all 30 blocks --- about 117 instructions per counted document. It fires wherever
+\code{CountStage}'s child is a bare \code{CountScan}, which the planner
+guarantees for every classic \code{COUNT\_SCAN} plan; counts that plan to
+\code{FETCH} or a collection scan are untouched. Every plan measured is forced
+by an index hint. That campaign's
 pre-registered adoption gate nevertheless did not pass, because both of its
 control workloads fell outside their bands; no CPU-time or wall-time result is
 claimed from it, and it is not a 7.0.34, ConDB, or production result. The SQLite-backed Beam path now
@@ -516,11 +518,14 @@ builds awaiting its second caller. Deduplication, memory accounting and its
 limit, write-conflict and yield handling, and save/restore all run before the
 skipped step, and \code{CommonStats} and \code{CountScanStats} are unchanged.
 
-The optimization applies only when \code{CountStage}'s child is a bare
-\code{CountScan}, which is the single-solution plan case. A multi-planned or
-plan-cached count has a \code{MultiPlanStage} or \code{CachedPlanStage} in
-between and is unaffected. This is a real limit on the scope of the result, not
-a caveat about its validity.
+The optimization applies when \code{CountStage}'s child is a bare
+\code{CountScan}. That is not the narrow case it first appears to be:
+\code{QueryPlanner::plan} returns a count scan as the single solution as soon as
+one candidate is available, so a \code{COUNT\_SCAN} plan is never multi-planned
+and never plan-cached, and the opt-in covers the whole classic
+\code{COUNT\_SCAN} fast path. What it does not cover is counts that plan to
+\code{COUNT}$\rightarrow$\code{FETCH}$\rightarrow$\code{IXSCAN} or to a
+collection scan, where the child is a different stage.
 
 An earlier implementation of the same idea, \code{4109dcc31ff6}, was rejected in
 independent review: it added a template to \code{PlanStage}, the base class of
@@ -800,9 +805,12 @@ including an assertion that closes a second, previously unremarked
 \code{CountStage} construction site in
 \code{ClassicPlannerInterface::makeExecutor()} --- and the commit now under
 review is \code{90781b36b2}. None of those fixes executes inside the per-key
-path, and the reviewed binary was re-smoked at campaign size: its instruction
-counts differ from arm~C's 30-process means by less than arm~C's own
-process-to-process spread on all three endpoints. The complete diff, the smoke
+path, and the reviewed binary was re-smoked at campaign size. That smoke is one
+process per endpoint against a 30-process mean, not a repeat of the campaign:
+its instruction counts differ from arm~C's means by less than the range arm~C's
+own 30 processes span, which on the multikey endpoint is about 2.3 of arm~C's
+per-process standard deviations, or $+0.54$ instructions per counted document
+against an effect of 116. The complete diff, the smoke
 output and that comparison are in
 \path{validation/review_fix_equivalence/}. The intervals in
 Table~\ref{tab:countscan-ca} remain pinned to the measured commit.
@@ -1405,10 +1413,12 @@ skips an unread working-set member reduces benchmark-thread user-space retired
 instructions against a pinned upstream base carrying the same benchmark harness
 by 4.600\%, 2.055\% and 3.680\% on the three indexed-count shapes measured,
 favourably in all 30 blocks and consistent at about 117 instructions per counted
-document. The optimization fires only where \code{CountStage}'s child is a bare
-\code{CountScan}, that is on single-solution plans, and every plan measured is
-forced by an index hint; multi-planned and plan-cached counts are outside its
-scope. That campaign's pre-registered adoption gate did not pass: its
+document. The optimization fires wherever \code{CountStage}'s child is a bare
+\code{CountScan}. \code{QueryPlanner::plan} returns a count scan as the single
+solution as soon as one is available, so that is every classic
+\code{COUNT\_SCAN} plan rather than an occasional case; counts that plan to
+\code{FETCH} or a collection scan are untouched. Every plan measured is forced
+by an index hint. That campaign's pre-registered adoption gate did not pass: its
 point-query control showed a binary-level CPU-time offset that the change cannot
 cause, and its un-optimized control had a band that was never attainable at 30
 blocks. No CPU-time or wall-time result is claimed. A post-hoc analysis of that

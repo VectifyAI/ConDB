@@ -24,7 +24,7 @@ index 109f7d553f..2d8d45a4a8 100644
  }
  
 diff --git a/src/mongo/db/exec/classic/count_scan.h b/src/mongo/db/exec/classic/count_scan.h
-index 29b4a8db7b..951e5dcd04 100644
+index 29b4a8db7b..491c94624d 100644
 --- a/src/mongo/db/exec/classic/count_scan.h
 +++ b/src/mongo/db/exec/classic/count_scan.h
 @@ -80,6 +80,10 @@ struct CountScanParams {
@@ -38,7 +38,7 @@ index 29b4a8db7b..951e5dcd04 100644
   */
  class CountScan final : public RequiresIndexStage {
  public:
-@@ -109,23 +113,31 @@ protected:
+@@ -109,23 +113,37 @@ protected:
      void doRestoreStateRequiresIndex() final;
  
  private:
@@ -51,12 +51,18 @@ index 29b4a8db7b..951e5dcd04 100644
      friend class CountStage;
 -    void setDoesNotMaterializeResults() {
 +    void disableResultMaterialization() {
-+        // Our parent adopts us before either of us is worked. Enforced rather than assumed because
-+        // ClassicPlannerInterface::makeExecutor() also wraps already-executed roots in a CountStage
-+        // when explaining a count, and a stage that has advanced may have live WorkingSetIDs.
-+        tassert(11051690,
-+                "materialization must be disabled before CountScan does any work",
-+                _commonStats.works == 0);
++        // Two of the four places that construct a CountStage wrap an already-built rejected plan
++        // root when explaining a count -- ClassicPlannerInterface::makeExecutor() and
++        // buildRejectedExecutableTreesForExplain(). A rejected plan may have been worked during
++        // multiplanning and may hold live WorkingSetIDs, so opting it out is not safe. Today a
++        // COUNT_SCAN solution is never a rejected plan, because QueryPlanner::plan returns it as
++        // the single solution; SERVER-118659 proposes to bring count scans under cost-based
++        // ranking, which would change that. Decline rather than assert, so that landing it costs
++        // this optimization instead of a user's explain. dassert catches the change in testing.
++        if (_commonStats.works != 0) {
++            dassert(false, "CountStage adopted a CountScan that had already been worked");
++            return;
++        }
          _materializeResults = false;
      }
  
@@ -124,10 +130,10 @@ index 64e00ced10..bbc0ea37c3 100644
      srcs = [
 diff --git a/src/mongo/db/query/count_query_bm.cpp b/src/mongo/db/query/count_query_bm.cpp
 new file mode 100644
-index 0000000000..31675a4ddc
+index 0000000000..35873070a3
 --- /dev/null
 +++ b/src/mongo/db/query/count_query_bm.cpp
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,217 @@
 +// Copyright (c) MongoDB, Inc.
 +// SPDX-License-Identifier: SSPL-1.0
 +
@@ -149,6 +155,19 @@ index 0000000000..31675a4ddc
 +
 +class CountQueryBenchmark : public QueryBenchmarkFixture {
 +protected:
++    // explain() needs version info to be available, and these benchmarks run outside the server
++    // startup that would normally provide it.
++    BSONObj explain(const BSONObj& command) {
++        const auto& versionInfo =
++            VersionInfoInterface::instance(VersionInfoInterface::NotEnabledAction::kFallback);
++        VersionInfoInterface::enable(&versionInfo);
++        auto reply = runCommand(BSON("explain" << command.removeField("$db") << "verbosity"
++                                               << "executionStats"
++                                               << "$db" << kNss.db_forTest()));
++        uassertStatusOK(getStatusFromCommandResult(reply));
++        return reply;
++    }
++
 +    void runCountScanBenchmark(benchmark::State& state,
 +                               BSONObj query,
 +                               std::string_view hint,
@@ -164,14 +183,7 @@ index 0000000000..31675a4ddc
 +
 +        // Keep these benchmarks pinned to the optimized classic plan shape. An index hint alone
 +        // would not prevent a future planner change from silently benchmarking another stage tree.
-+        const auto& versionInfo =
-+            VersionInfoInterface::instance(VersionInfoInterface::NotEnabledAction::kFallback);
-+        VersionInfoInterface::enable(&versionInfo);
-+        const auto explainReply =
-+            runCommand(BSON("explain" << command.removeField("$db") << "verbosity"
-+                                      << "executionStats"
-+                                      << "$db" << kNss.db_forTest()));
-+        uassertStatusOK(getStatusFromCommandResult(explainReply));
++        const auto explainReply = explain(command);
 +        const auto winningPlan =
 +            explainReply.getObjectField("queryPlanner").getObjectField("winningPlan");
 +        invariant(winningPlan.getField("stage").String() == "COUNT", winningPlan.toString());
@@ -296,14 +308,7 @@ index 0000000000..31675a4ddc
 +
 +        // Pin the un-optimized plan shape. If this ever became a COUNT_SCAN the control would
 +        // silently start measuring the optimized path instead of the un-optimized one.
-+        const auto& versionInfo =
-+            VersionInfoInterface::instance(VersionInfoInterface::NotEnabledAction::kFallback);
-+        VersionInfoInterface::enable(&versionInfo);
-+        const auto explainReply =
-+            runCommand(BSON("explain" << command.removeField("$db") << "verbosity"
-+                                      << "executionStats"
-+                                      << "$db" << kNss.db_forTest()));
-+        uassertStatusOK(getStatusFromCommandResult(explainReply));
++        const auto explainReply = explain(command);
 +        const auto winningPlan =
 +            explainReply.getObjectField("queryPlanner").getObjectField("winningPlan");
 +        invariant(winningPlan.getField("stage").String() == "COUNT", winningPlan.toString());
