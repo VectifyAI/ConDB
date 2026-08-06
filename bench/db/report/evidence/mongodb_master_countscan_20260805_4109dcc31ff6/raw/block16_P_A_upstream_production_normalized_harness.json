@@ -1,0 +1,160 @@
+{
+  "context": {
+    "date": "2026-08-06T05:27:42+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [2.79736,2.60303,3.42578],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 3085,
+      "real_time": 2.3303348782383255e+04,
+      "cpu_time": 2.3285938087520259e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.8938358508914098e+04,
+      "instructions_per_iteration": 1.4962789659643435e+05,
+      "items_per_second": 4.2944372532534326e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 3085,
+      "real_time": 2.3167948668741137e+04,
+      "cpu_time": 2.3155514424635327e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.8654619773095626e+04,
+      "instructions_per_iteration": 1.4990715883306321e+05,
+      "items_per_second": 4.3186257133466766e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 3085,
+      "real_time": 2.4137775167653781e+04,
+      "cpu_time": 2.4131247649918983e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 5.0690775364667745e+04,
+      "instructions_per_iteration": 1.4975070988654782e+05,
+      "items_per_second": 4.1440045475781990e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 3085,
+      "real_time": 2.2968326240922874e+04,
+      "cpu_time": 2.2961610048622351e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.8235058670988656e+04,
+      "instructions_per_iteration": 1.4969907001620746e+05,
+      "items_per_second": 4.3550952998611603e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 3085,
+      "real_time": 2.2733771820315666e+04,
+      "cpu_time": 2.2727137115072910e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.7742370826580227e+04,
+      "instructions_per_iteration": 1.4969590956239871e+05,
+      "items_per_second": 4.4000262546785452e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_mean",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 2.3262234136003339e+04,
+      "cpu_time": 2.3252289465153968e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.8852236628849270e+04,
+      "instructions_per_iteration": 1.4973614897893029e+05,
+      "items_per_second": 4.3024378137436033e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_median",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 2.3167948668741134e+04,
+      "cpu_time": 2.3155514424635327e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.8654619773095626e+04,
+      "instructions_per_iteration": 1.4969907001620746e+05,
+      "items_per_second": 4.3186257133466766e+04
+    },
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64_stddev",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 5.3451064804176417e+02,
+      "cpu_time": 5.3463647528247998e+02,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1224309348155418e+03,
+      "instructions_per_iteration": 1.0508214489362861e+02,
+      "items_per_second": 9.7112655634917394e+02
+    }
+  ]
+}

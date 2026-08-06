@@ -1,0 +1,280 @@
+{
+  "benchmark": "sqlite_production_beam_batching_load",
+  "concurrency": {
+    "client_levels": [
+      1,
+      4,
+      16
+    ],
+    "connection_per_client": true,
+    "hard_cap": 16,
+    "max_concurrent_clients": 16
+  },
+  "environment": {
+    "load_average_after": [
+      5.9375,
+      5.23046875,
+      5.16845703125
+    ],
+    "load_average_before": [
+      4.81201171875,
+      4.98779296875,
+      5.09375
+    ],
+    "logical_cpus": 96,
+    "platform": "Linux-6.8.0-84-generic-x86_64-with-glibc2.35",
+    "python": "3.10.12",
+    "sqlite": "3.37.2"
+  },
+  "generated_at_unix_ms": 1785260977709,
+  "provenance": {
+    "argv": [
+      "bench/db/bench_sqlite_beam_batching_load.py",
+      "--output",
+      "bench/db/sqlite_beam_batching_load_20260729.json"
+    ],
+    "beam_retriever_sha256": "353eb6752106b6f4208fbb66207ba34e4e943991fdc022944d0b160dcf90b820",
+    "git_head": "73c6109f07970083023c2b74fb065ce12a7b112e",
+    "script_sha256": "dd65776cfd2f74ea975b48701fb69c5f2334e03456cfd73176e2127096c41bb9",
+    "single_client_script_sha256": "e09781b5fbf603b12ffd7e14bbdd67ab7ef27ccf4dc368f00d1c602835772ec0",
+    "storage_sha256": "775059a073d87157c2c5cb732a515ec36c67d3265ee97a8ff3feef93e1557711"
+  },
+  "rounds": [
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 651.0395,
+        "latency_p95_us": 753.6137,
+        "queries": 100,
+        "throughput_qps": 1467.798231464589,
+        "wall_seconds": 0.068129255
+      },
+      "clients": 1,
+      "ratio": {
+        "latency_p50": 1.2099496267123577,
+        "latency_p95": 1.2121277121156369,
+        "throughput": 1.1984973855944852
+      },
+      "round": 1,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 787.725,
+        "latency_p95_us": 913.4760499999999,
+        "queries": 100,
+        "throughput_qps": 1224.698734521247,
+        "wall_seconds": 0.081652734
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 7233.6725,
+        "latency_p95_us": 8410.978249999998,
+        "queries": 400,
+        "throughput_qps": 554.0423289835257,
+        "wall_seconds": 0.721966498
+      },
+      "clients": 4,
+      "ratio": {
+        "latency_p50": 1.2613205809358938,
+        "latency_p95": 1.269377262983649,
+        "throughput": 1.2657829685055553
+      },
+      "round": 1,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 9123.98,
+        "latency_p95_us": 10676.70455,
+        "queries": 400,
+        "throughput_qps": 437.70720792495337,
+        "wall_seconds": 0.913852897
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 58589.9205,
+        "latency_p95_us": 65742.51435,
+        "queries": 1600,
+        "throughput_qps": 272.2155353610192,
+        "wall_seconds": 5.8776954
+      },
+      "clients": 16,
+      "ratio": {
+        "latency_p50": 1.1638158392790445,
+        "latency_p95": 1.1729553898633327,
+        "throughput": 1.1662590053577802
+      },
+      "round": 1,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 68187.8775,
+        "latency_p95_us": 77113.03654999999,
+        "queries": 1600,
+        "throughput_qps": 233.40916049562253,
+        "wall_seconds": 6.854915191
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 627.1215,
+        "latency_p95_us": 779.05105,
+        "queries": 100,
+        "throughput_qps": 1501.4265654368842,
+        "wall_seconds": 0.066603324
+      },
+      "clients": 1,
+      "ratio": {
+        "latency_p50": 1.473141169613863,
+        "latency_p95": 1.203013525236889,
+        "throughput": 1.333371274382642
+      },
+      "round": 2,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 923.8385000000001,
+        "latency_p95_us": 937.20895,
+        "queries": 100,
+        "throughput_qps": 1126.037881783566,
+        "wall_seconds": 0.088806959
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 7245.9805,
+        "latency_p95_us": 8645.41595,
+        "queries": 400,
+        "throughput_qps": 549.2379754928395,
+        "wall_seconds": 0.728281761
+      },
+      "clients": 4,
+      "ratio": {
+        "latency_p50": 1.2569318948622619,
+        "latency_p95": 1.2634354625817625,
+        "throughput": 1.2390045121561133
+      },
+      "round": 2,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 9107.704,
+        "latency_p95_us": 10922.925099999999,
+        "queries": 400,
+        "throughput_qps": 443.2897298630952,
+        "wall_seconds": 0.902344388
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 58624.1645,
+        "latency_p95_us": 66062.12044999999,
+        "queries": 1600,
+        "throughput_qps": 271.5415012573167,
+        "wall_seconds": 5.892285314
+      },
+      "clients": 16,
+      "ratio": {
+        "latency_p50": 1.1457365503264443,
+        "latency_p95": 1.1372318385823172,
+        "throughput": 1.144357968372473
+      },
+      "round": 2,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 67167.848,
+        "latency_p95_us": 75127.94669999999,
+        "queries": 1600,
+        "throughput_qps": 237.28720274785002,
+        "wall_seconds": 6.742883651
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 628.7305,
+        "latency_p95_us": 730.3695,
+        "queries": 100,
+        "throughput_qps": 1551.1084174217644,
+        "wall_seconds": 0.064470026
+      },
+      "clients": 1,
+      "ratio": {
+        "latency_p50": 1.212599038856871,
+        "latency_p95": 1.3088739329887131,
+        "throughput": 1.2071182660915944
+      },
+      "round": 3,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 762.398,
+        "latency_p95_us": 955.9616,
+        "queries": 100,
+        "throughput_qps": 1284.9680607053863,
+        "wall_seconds": 0.077822946
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 7181.7294999999995,
+        "latency_p95_us": 8512.8922,
+        "queries": 400,
+        "throughput_qps": 551.3491376249585,
+        "wall_seconds": 0.725493109
+      },
+      "clients": 4,
+      "ratio": {
+        "latency_p50": 1.2302283175661242,
+        "latency_p95": 1.2036361743192283,
+        "throughput": 1.20893851108929
+      },
+      "round": 3,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 8835.167000000001,
+        "latency_p95_us": 10246.425,
+        "queries": 400,
+        "throughput_qps": 456.0605296030948,
+        "wall_seconds": 0.877076559
+      }
+    },
+    {
+      "batched": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 58066.1315,
+        "latency_p95_us": 64471.94024999999,
+        "queries": 1600,
+        "throughput_qps": 275.34597736608845,
+        "wall_seconds": 5.810871164
+      },
+      "clients": 16,
+      "ratio": {
+        "latency_p50": 1.156015585436409,
+        "latency_p95": 1.1469477227343101,
+        "throughput": 1.1574179187910834
+      },
+      "round": 3,
+      "scalar": {
+        "fingerprint": "24ca8e4c0c1659d20100e92bc1287ee6e370126b48cc4a1c40a5578cff53cef3",
+        "latency_p50_us": 67125.353,
+        "latency_p95_us": 73945.94505,
+        "queries": 1600,
+        "throughput_qps": 237.89676390502558,
+        "wall_seconds": 6.725606409
+      }
+    }
+  ],
+  "workload": {
+    "beam_size": 3,
+    "branches": 8,
+    "leaves_per_branch": 8,
+    "max_turns": "tree-depth default",
+    "payload_bytes": 1024,
+    "queries_per_client": 100,
+    "rounds": 3,
+    "select_k": 1,
+    "storage": "file-backed SQLite with warm caches"
+  }
+}

@@ -1,0 +1,248 @@
+diff --git a/src/mongo/db/exec/classic/count.cpp b/src/mongo/db/exec/classic/count.cpp
+index 9f4c97f374315f912eda92767ef38b750abc8b92..6cc8d99e0c433d0fa1fe297159d970008e10020f 100644
+--- a/src/mongo/db/exec/classic/count.cpp
++++ b/src/mongo/db/exec/classic/count.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "mongo/db/exec/classic/count.h"
+ 
++#include "mongo/db/exec/classic/count_scan.h"
+ #include "mongo/util/assert_util.h"
+ 
+ #include <memory>
+@@ -20,6 +21,9 @@ CountStage::CountStage(
+     tassert(11051652, "Expecting non-negative limit parameter", _limit >= 0);
+     tassert(11051651, "Expecting child stage", child);
+     _children.emplace_back(child);
++    if (this->child()->stageType() == STAGE_COUNT_SCAN) {
++        _resultlessCountScan = static_cast<CountScan*>(this->child().get());
++    }
+ }
+ 
+ bool CountStage::isEOF() const {
+@@ -27,7 +31,7 @@ bool CountStage::isEOF() const {
+         return true;
+     }
+ 
+-    return child()->isEOF();
++    return _resultlessCountScan ? _resultlessCountScan->isEOF() : child()->isEOF();
+ }
+ 
+ PlanStage::StageState CountStage::doWork(WorkingSetID* out) {
+@@ -42,7 +46,8 @@ PlanStage::StageState CountStage::doWork(WorkingSetID* out) {
+     // For cases where we can't ask the record store directly, we should always have a child stage
+     // from which we can retrieve results.
+     WorkingSetID id = WorkingSet::INVALID_ID;
+-    PlanStage::StageState state = child()->work(&id);
++    const PlanStage::StageState state =
++        _resultlessCountScan ? _resultlessCountScan->workForCountStage() : child()->work(&id);
+ 
+     if (PlanStage::IS_EOF == state) {
+         _commonStats.isEOF = true;
+@@ -57,8 +62,8 @@ PlanStage::StageState CountStage::doWork(WorkingSetID* out) {
+             _specificStats.nCounted++;
+         }
+ 
+-        // Count doesn't need the actual results, so we just discard any valid working
+-        // set members that got returned from the child.
++        // The resultless CountScan protocol does not create a WorkingSetMember. Results from other
++        // children are discarded as before.
+         if (WorkingSet::INVALID_ID != id) {
+             _ws->free(id);
+         }
+diff --git a/src/mongo/db/exec/classic/count.h b/src/mongo/db/exec/classic/count.h
+index e74f83b830b5be94bda5250f4f700c801e32b3bf..0f638ba2b822a9d0a642de5d3d95e569a5dfdfe7 100644
+--- a/src/mongo/db/exec/classic/count.h
++++ b/src/mongo/db/exec/classic/count.h
+@@ -16,6 +16,8 @@
+ namespace mongo {
+ using namespace std::literals::string_view_literals;
+ 
++class CountScan;
++
+ /**
+  * Stage used by the count command. This stage sits at the root of a plan tree and counts the number
+  * of results returned by its child stage.
+@@ -70,6 +72,10 @@ private:
+     // by us.
+     WorkingSet* _ws;
+ 
++    // Non-owning alias of the direct child when it is a CountScan. Such a child can use its private
++    // resultless protocol because CountStage consumes only its execution state.
++    CountScan* _resultlessCountScan = nullptr;
++
+     CountStats _specificStats;
+ };
+ 
+diff --git a/src/mongo/db/exec/classic/count_scan.cpp b/src/mongo/db/exec/classic/count_scan.cpp
+index 768d1d2066bcab98c6957dba0ce1c28ad057c0c3..0cb3b921e84754d7f7cb125934696319f80d660c 100644
+--- a/src/mongo/db/exec/classic/count_scan.cpp
++++ b/src/mongo/db/exec/classic/count_scan.cpp
+@@ -99,6 +99,10 @@ CountScan::CountScan(ExpressionContext* expCtx,
+ }
+ 
+ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
++    return doWorkImpl(out, true);
++}
++
++PlanStage::StageState CountScan::doWorkImpl(WorkingSetID* out, bool materializeResult) {
+     if (_commonStats.isEOF)
+         return PlanStage::IS_EOF;
+ 
+@@ -168,6 +172,10 @@ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
+                 _memoryTracker.withinMemoryLimit(opCtx()));
+     }
+ 
++    if (!materializeResult) {
++        return PlanStage::ADVANCED;
++    }
++
+     WorkingSetID id = _workingSet->allocate();
+     WorkingSetMember* member = _workingSet->get(id);
+     member->recordId = entry->loc;
+@@ -176,8 +184,9 @@ PlanStage::StageState CountScan::doWork(WorkingSetID* out) {
+     return PlanStage::ADVANCED;
+ }
+ 
+-bool CountScan::isEOF() const {
+-    return _commonStats.isEOF;
++PlanStage::StageState CountScan::workForCountStage() {
++    WorkingSetID ignored = WorkingSet::INVALID_ID;
++    return trackWork([&] { return doWorkImpl(&ignored, false); });
+ }
+ 
+ void CountScan::doSaveStateRequiresIndex() {
+diff --git a/src/mongo/db/exec/classic/count_scan.h b/src/mongo/db/exec/classic/count_scan.h
+index 262473b32d38cce412ab29dc6b0f6c6d79cd1273..b958a1210eefa8f9eccfbf8a6b14387cf20be5ca 100644
+--- a/src/mongo/db/exec/classic/count_scan.h
++++ b/src/mongo/db/exec/classic/count_scan.h
+@@ -27,6 +27,7 @@
+ namespace mongo {
+ using namespace std::literals::string_view_literals;
+ 
++class CountStage;
+ class WorkingSet;
+ 
+ struct CountScanParams {
+@@ -76,9 +77,11 @@ struct CountScanParams {
+  * Used when don't need to return the actual records from the index or the collection (e.g. count
+  * command and some cases of aggregation).
+  *
+- * Scans an index from a start key to an end key. Creates a WorkingSetMember for each matching index
+- * key in RID_AND_OBJ state. It has a null record id and an empty object with a null snapshot id
+- * rather than real data. Returning real data is unnecessary since all we need is the count.
++ * Scans an index from a start key to an end key. By default, creates a WorkingSetMember for each
++ * matching index key in RID_AND_OBJ state. It has the index entry's record id and an empty object
++ * with a null snapshot id rather than real data. A direct CountStage parent can use a private
++ * resultless protocol, while the public PlanStage interface retains its normal WorkingSet output
++ * contract.
+  */
+ class CountScan final : public RequiresIndexStage {
+ public:
+@@ -88,7 +91,9 @@ public:
+               WorkingSet* workingSet);
+ 
+     StageState doWork(WorkingSetID* out) final;
+-    bool isEOF() const final;
++    bool isEOF() const final {
++        return _commonStats.isEOF;
++    }
+     void doDetachFromOperationContext() final;
+     void doReattachToOperationContext() final;
+ 
+@@ -108,6 +113,12 @@ protected:
+     void doRestoreStateRequiresIndex() final;
+ 
+ private:
++    friend class CountStage;
++
++    StageState workForCountStage();
++
++    StageState doWorkImpl(WorkingSetID* out, bool materializeResult);
++
+     // The WorkingSet we annotate with results.  Not owned by us.
+     WorkingSet* _workingSet;
+ 
+diff --git a/src/mongo/db/exec/classic/plan_stage.h b/src/mongo/db/exec/classic/plan_stage.h
+index 083e605f7f46a393443ac3b3200eb66dc18bc7f0..9649aac1d351227d60f61482d0ab5152f9e86c6c 100644
+--- a/src/mongo/db/exec/classic/plan_stage.h
++++ b/src/mongo/db/exec/classic/plan_stage.h
+@@ -184,27 +184,7 @@ public:
+      * Throws an exception if an error is encountered while executing the query.
+      */
+     StageState work(WorkingSetID* out) {
+-        auto optTimer(getOptTimer());
+-
+-        ++_commonStats.works;
+-
+-        StageState workResult;
+-        try {
+-            workResult = doWork(out);
+-        } catch (...) {
+-            _commonStats.failed = true;
+-            throw;
+-        }
+-
+-        if (StageState::ADVANCED == workResult) {
+-            ++_commonStats.advanced;
+-        } else if (StageState::NEED_TIME == workResult) {
+-            ++_commonStats.needTime;
+-        } else if (StageState::NEED_YIELD == workResult) {
+-            ++_commonStats.needYield;
+-        }
+-
+-        return workResult;
++        return trackWork([&] { return doWork(out); });
+     }
+ 
+     /**
+@@ -352,6 +332,36 @@ public:
+     }
+ 
+ protected:
++    /**
++     * Runs exactly one unit of stage work while maintaining the same timing and CommonStats
++     * accounting as work(). Specialized internal entry points may use this when they intentionally
++     * bypass doWork().
++     */
++    template <typename WorkFn>
++    StageState trackWork(WorkFn&& workFn) {
++        auto optTimer(getOptTimer());
++
++        ++_commonStats.works;
++
++        StageState workResult;
++        try {
++            workResult = std::forward<WorkFn>(workFn)();
++        } catch (...) {
++            _commonStats.failed = true;
++            throw;
++        }
++
++        if (StageState::ADVANCED == workResult) {
++            ++_commonStats.advanced;
++        } else if (StageState::NEED_TIME == workResult) {
++            ++_commonStats.needTime;
++        } else if (StageState::NEED_YIELD == workResult) {
++            ++_commonStats.needYield;
++        }
++
++        return workResult;
++    }
++
+     /**
+      * Performs one unit of work.  See comment at work() above.
+      */
+diff --git a/src/mongo/db/exec/classic/working_set.h b/src/mongo/db/exec/classic/working_set.h
+index 011adacfe93c532104f2e5d02e08b750fcf614c3..a7488fa87416c966ce4e56f1226026fb7755d353 100644
+--- a/src/mongo/db/exec/classic/working_set.h
++++ b/src/mongo/db/exec/classic/working_set.h
+@@ -400,6 +400,8 @@ public:
+     WorkingSetID emplace(WorkingSetMember&&);
+ 
+ private:
++    friend class CountScanWorkingSetTestAccess;
++
+     struct MemberHolder {
+         // Free list link if freed. Points to self if in use.
+         WorkingSetID nextFreeOrSelf;

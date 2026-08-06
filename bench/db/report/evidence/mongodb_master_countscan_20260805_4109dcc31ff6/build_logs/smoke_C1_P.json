@@ -1,0 +1,55 @@
+{
+  "context": {
+    "date": "2026-08-06T04:11:02+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [26.2773,43.4292,29.6748],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_name": "ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 2882,
+      "real_time": 2.5298924681050012e+04,
+      "cpu_time": 2.5287505204718971e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 5.3129025676613463e+04,
+      "instructions_per_iteration": 1.4935729111727967e+05,
+      "items_per_second": 3.9545221717379507e+04
+    }
+  ]
+}

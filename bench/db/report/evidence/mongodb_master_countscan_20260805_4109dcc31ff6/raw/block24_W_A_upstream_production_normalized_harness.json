@@ -1,0 +1,160 @@
+{
+  "context": {
+    "date": "2026-08-06T05:33:38+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [2.00586,2.35889,3.05957],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.4860115051269531e+07,
+      "cpu_time": 5.4852518000000015e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1521274600000000e+08,
+      "instructions_per_iteration": 6.3621471400000000e+08,
+      "items_per_second": 3.6461407295832788e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.0426006317138672e+07,
+      "cpu_time": 5.0407546000000194e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.0590027600000000e+08,
+      "instructions_per_iteration": 6.3618187600000000e+08,
+      "items_per_second": 3.9676599213935002e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.4857730865478516e+07,
+      "cpu_time": 5.4838082999999925e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1520860400000000e+08,
+      "instructions_per_iteration": 6.3619595400000000e+08,
+      "items_per_second": 3.6471005013067336e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.5177211761474609e+07,
+      "cpu_time": 5.5177919999999769e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1587879400000000e+08,
+      "instructions_per_iteration": 6.3615772500000000e+08,
+      "items_per_second": 3.6246382611015574e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.4442167282104492e+07,
+      "cpu_time": 5.4442847999999881e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1433578600000000e+08,
+      "instructions_per_iteration": 6.3614373200000000e+08,
+      "items_per_second": 3.6735771060323748e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_mean",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 5.3952646255493164e+07,
+      "cpu_time": 5.3943782999999955e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1330724120000000e+08,
+      "instructions_per_iteration": 6.3617880020000005e+08,
+      "items_per_second": 3.7118233038834888e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_median",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 5.4857730865478516e+07,
+      "cpu_time": 5.4838082999999925e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.1520860400000000e+08,
+      "instructions_per_iteration": 6.3618187600000000e+08,
+      "items_per_second": 3.6471005013067336e+06
+    },
+    {
+      "name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_stddev",
+      "run_name": "CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 1.9886590039062880e+06,
+      "cpu_time": 1.9939097220901966e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 4.1767227201132230e+06,
+      "instructions_per_iteration": 2.8580836936660900e+04,
+      "items_per_second": 1.4406562734914743e+05
+    }
+  ]
+}

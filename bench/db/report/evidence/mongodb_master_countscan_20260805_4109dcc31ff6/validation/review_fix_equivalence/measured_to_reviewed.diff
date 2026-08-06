@@ -1,0 +1,496 @@
+diff --git a/buildscripts/resmokeconfig/suites/benchmarks_query.yml b/buildscripts/resmokeconfig/suites/benchmarks_query.yml
+index ce6414c534..0aa7433db8 100644
+--- a/buildscripts/resmokeconfig/suites/benchmarks_query.yml
++++ b/buildscripts/resmokeconfig/suites/benchmarks_query.yml
+@@ -5,6 +5,7 @@ selector:
+   root: bazel-bin/install/install-query_bm_test_list.txt
+   include_files:
+     # The trailing asterisk is for handling the .exe extension on Windows.
++    - bazel-bin/**/count_query_bm*
+     - bazel-bin/**/complex_query_bm*
+     - bazel-bin/**/query_bm*
+     - bazel-bin/**/point_query_bm*
+diff --git a/src/mongo/db/exec/classic/count.cpp b/src/mongo/db/exec/classic/count.cpp
+index 109f7d553f..2d8d45a4a8 100644
+--- a/src/mongo/db/exec/classic/count.cpp
++++ b/src/mongo/db/exec/classic/count.cpp
+@@ -26,7 +26,7 @@ CountStage::CountStage(
+     // We read only our child's StageState, so a direct CountScan need not materialize a result we
+     // would immediately free. CountScan is the only stage reporting STAGE_COUNT_SCAN.
+     if (child->stageType() == STAGE_COUNT_SCAN) {
+-        checked_cast<CountScan*>(child)->setDoesNotMaterializeResults();
++        checked_cast<CountScan*>(child)->disableResultMaterialization();
+     }
+ }
+ 
+diff --git a/src/mongo/db/exec/classic/count_scan.h b/src/mongo/db/exec/classic/count_scan.h
+index 29b4a8db7b..491c94624d 100644
+--- a/src/mongo/db/exec/classic/count_scan.h
++++ b/src/mongo/db/exec/classic/count_scan.h
+@@ -80,6 +80,10 @@ struct CountScanParams {
+  * key in RID_AND_OBJ state. It holds the index entry's record id and an empty object with a null
+  * snapshot id rather than real data. Returning real data is unnecessary since all we need is the
+  * count.
++ *
++ * The exception is a direct CountStage parent, which never reads that member and so disables
++ * materialization when it adopts us. doWork() then returns ADVANCED with WorkingSet::INVALID_ID and
++ * builds nothing.
+  */
+ class CountScan final : public RequiresIndexStage {
+ public:
+@@ -109,23 +113,37 @@ protected:
+     void doRestoreStateRequiresIndex() final;
+ 
+ private:
+-    // A direct CountStage parent reads only our StageState, so it turns off materialization. This
+-    // is private because WorkingSet::get() does not check for INVALID_ID outside debug builds: any
+-    // other consumer that called this would read out of bounds instead of failing an assertion.
++    // Private because WorkingSet::get() does not check for INVALID_ID outside debug builds, so any
++    // consumer other than CountStage that called this would read out of bounds in a release build
++    // instead of failing an assertion.
+     friend class CountStage;
+-    void setDoesNotMaterializeResults() {
++    void disableResultMaterialization() {
++        // Two of the four places that construct a CountStage wrap an already-built rejected plan
++        // root when explaining a count -- ClassicPlannerInterface::makeExecutor() and
++        // buildRejectedExecutableTreesForExplain(). A rejected plan may have been worked during
++        // multiplanning and may hold live WorkingSetIDs, so opting it out is not safe. Today a
++        // COUNT_SCAN solution is never a rejected plan, because QueryPlanner::plan returns it as
++        // the single solution; SERVER-118659 proposes to bring count scans under cost-based
++        // ranking, which would change that. Decline rather than assert, so that landing it costs
++        // this optimization instead of a user's explain. dassert catches the change in testing.
++        if (_commonStats.works != 0) {
++            dassert(false, "CountStage adopted a CountScan that had already been worked");
++            return;
++        }
+         _materializeResults = false;
+     }
+ 
+     // The WorkingSet we annotate with results.  Not owned by us.
+     WorkingSet* _workingSet;
+ 
+-    bool _materializeResults = true;
+-
+     const BSONObj _keyPattern;
+ 
+     const bool _shouldDedup;
+ 
++    // When false, doWork() returns ADVANCED with WorkingSet::INVALID_ID rather than building a
++    // member. Only a direct CountStage parent may clear this.
++    bool _materializeResults = true;
++
+     const BSONObj _startKey;
+     const bool _startKeyInclusive = true;
+ 
+diff --git a/src/mongo/db/exec/classic/plan_stage.h b/src/mongo/db/exec/classic/plan_stage.h
+index 6dba84ffd2..f9f1e0bcc5 100644
+--- a/src/mongo/db/exec/classic/plan_stage.h
++++ b/src/mongo/db/exec/classic/plan_stage.h
+@@ -178,11 +178,15 @@ public:
+ 
+     /**
+      * Perform a unit of work on the query.  Ask the stage to produce the next unit of output.
+-     * Stage returns StageState::ADVANCED if *out is set to the next unit of output.
+-     * A stage whose consumer has told it that its output is ignored may instead set *out to
+-     * WorkingSet::INVALID_ID; see CountScan::setDoesNotMaterializeResults().  Otherwise,
++     * Stage returns StageState::ADVANCED if *out is set to the next unit of output.  Otherwise,
+      * returns another value of StageState to indicate the stage's status.
+      *
++     * CountScan is the sole exception: when its parent CountStage has disabled materialization it
++     * returns ADVANCED with *out set to WorkingSet::INVALID_ID.  No other stage may do this.
++     * Consumers dereference *out on ADVANCED without checking it, and WorkingSet::get() validates
++     * its argument only under dassert, so a second stage doing this would be an out-of-bounds read
++     * in release builds.
++     *
+      * Throws an exception if an error is encountered while executing the query.
+      */
+     StageState work(WorkingSetID* out) {
+diff --git a/src/mongo/db/query/BUILD.bazel b/src/mongo/db/query/BUILD.bazel
+index 64e00ced10..bbc0ea37c3 100644
+--- a/src/mongo/db/query/BUILD.bazel
++++ b/src/mongo/db/query/BUILD.bazel
+@@ -918,6 +918,18 @@ mongo_cc_benchmark(
+     deps = ["query_bm_fixture"],
+ )
+ 
++mongo_cc_benchmark(
++    name = "count_query_bm",
++    srcs = [
++        "count_query_bm.cpp",
++    ],
++    tags = ["query_bm"],
++    deps = [
++        "query_bm_fixture",
++        "//src/mongo/rpc:get_status_from_command_result",
++    ],
++)
++
+ mongo_cc_benchmark(
+     name = "complex_query_bm",
+     srcs = [
+diff --git a/src/mongo/db/query/count_query_bm.cpp b/src/mongo/db/query/count_query_bm.cpp
+new file mode 100644
+index 0000000000..35873070a3
+--- /dev/null
++++ b/src/mongo/db/query/count_query_bm.cpp
+@@ -0,0 +1,217 @@
++// Copyright (c) MongoDB, Inc.
++// SPDX-License-Identifier: SSPL-1.0
++
++#include "mongo/db/query/query_bm_fixture.h"
++#include "mongo/rpc/get_status_from_command_result.h"
++#include "mongo/util/assert_util.h"
++#include "mongo/util/version.h"
++
++#include <cstdint>
++#include <string_view>
++#include <utility>
++
++#include <benchmark/benchmark.h>
++
++namespace mongo {
++using namespace std::literals::string_view_literals;
++
++namespace {
++
++class CountQueryBenchmark : public QueryBenchmarkFixture {
++protected:
++    // explain() needs version info to be available, and these benchmarks run outside the server
++    // startup that would normally provide it.
++    BSONObj explain(const BSONObj& command) {
++        const auto& versionInfo =
++            VersionInfoInterface::instance(VersionInfoInterface::NotEnabledAction::kFallback);
++        VersionInfoInterface::enable(&versionInfo);
++        auto reply = runCommand(BSON("explain" << command.removeField("$db") << "verbosity"
++                                               << "executionStats"
++                                               << "$db" << kNss.db_forTest()));
++        uassertStatusOK(getStatusFromCommandResult(reply));
++        return reply;
++    }
++
++    void runCountScanBenchmark(benchmark::State& state,
++                               BSONObj query,
++                               std::string_view hint,
++                               int64_t indexedKeys,
++                               bool expectedMultiKey) {
++        const auto numDocs = static_cast<int64_t>(docs().size());
++        auto command = BSON("count" << kNss.coll() << "$db" << kNss.db_forTest() << "query" << query
++                                    << "hint" << hint);
++
++        const auto reply = runCommand(command);
++        uassertStatusOK(getStatusFromCommandResult(reply));
++        invariant(reply.getField("n").safeNumberLong() == numDocs);
++
++        // Keep these benchmarks pinned to the optimized classic plan shape. An index hint alone
++        // would not prevent a future planner change from silently benchmarking another stage tree.
++        const auto explainReply = explain(command);
++        const auto winningPlan =
++            explainReply.getObjectField("queryPlanner").getObjectField("winningPlan");
++        invariant(winningPlan.getField("stage").String() == "COUNT", winningPlan.toString());
++        const auto countScanPlan = winningPlan.getObjectField("inputStage");
++        invariant(countScanPlan.getField("stage").String() == "COUNT_SCAN", winningPlan.toString());
++        invariant(countScanPlan.getBoolField("isMultiKey") == expectedMultiKey,
++                  countScanPlan.toString());
++        const auto executionStats = explainReply.getObjectField("executionStats");
++        // CountScan includes its terminal EOF probe in keysExamined, in addition to each matching
++        // index entry represented by the throughput denominator.
++        invariant(executionStats.getField("totalKeysExamined").safeNumberLong() == indexedKeys + 1,
++                  executionStats.toString());
++        invariant(executionStats.getField("totalDocsExamined").safeNumberLong() == 0,
++                  executionStats.toString());
++        const auto executionStages = executionStats.getObjectField("executionStages");
++        invariant(executionStages.getField("nCounted").safeNumberLong() == numDocs,
++                  executionStages.toString());
++        const auto countScanStats = executionStages.getObjectField("inputStage");
++        invariant(countScanStats.getField("works").safeNumberLong() == indexedKeys + 1,
++                  countScanStats.toString());
++        invariant(countScanStats.getField("advanced").safeNumberLong() == numDocs,
++                  countScanStats.toString());
++        invariant(countScanStats.getField("needTime").safeNumberLong() == indexedKeys - numDocs,
++                  countScanStats.toString());
++
++        runCommandBenchmark(std::move(command), state);
++        state.SetItemsProcessed(state.iterations() * indexedKeys);
++    }
++};
++
++class ScalarCountQueryBenchmark : public CountQueryBenchmark {
++private:
++    BSONObj generateDocument(size_t index, size_t approximateSize) override {
++        return BSON("_id" << static_cast<long long>(index) << "scanKey"
++                          << static_cast<long long>(index) << "padding"
++                          << randomLowercaseAlphaString(approximateSize));
++    }
++
++    std::vector<BSONObj> getIndexSpecs() const override {
++        return {buildIndexSpec("scanKey", false)};
++    }
++};
++
++BENCHMARK_DEFINE_F(ScalarCountQueryBenchmark, DirectNonDeduplicatingCountScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    runCountScanBenchmark(
++        state, BSON("scanKey" << GTE << 0 << LT << numDocs), "scanKey_1"sv, numDocs, false);
++}
++
++BENCHMARK_REGISTER_F(ScalarCountQueryBenchmark, DirectNonDeduplicatingCountScan)
++    ->Args({10'000, 64})
++    ->Args({400'000, 64});
++
++class MultikeyCountQueryBenchmark : public CountQueryBenchmark {
++private:
++    BSONObj generateDocument(size_t index, size_t approximateSize) override {
++        const auto firstKey = static_cast<long long>(index) * 2;
++        return BSON("_id" << static_cast<long long>(index) << "scanKey"
++                          << BSON_ARRAY(firstKey << firstKey + 1) << "padding"
++                          << randomLowercaseAlphaString(approximateSize));
++    }
++
++    std::vector<BSONObj> getIndexSpecs() const override {
++        return {buildIndexSpec("scanKey", false)};
++    }
++};
++
++BENCHMARK_DEFINE_F(MultikeyCountQueryBenchmark, DirectDeduplicatingCountScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    runCountScanBenchmark(state, BSONObj{}, "scanKey_1"sv, numDocs * 2, true);
++}
++
++BENCHMARK_REGISTER_F(MultikeyCountQueryBenchmark, DirectDeduplicatingCountScan)
++    ->Args({10'000, 64})
++    ->Args({200'000, 64});
++
++class CompoundWildcardCountQueryBenchmark : public CountQueryBenchmark {
++private:
++    BSONObj generateDocument(size_t index, size_t approximateSize) override {
++        return BSON("_id" << static_cast<long long>(index) << "anchor" << 0 << "obj"
++                          << BSON("value" << static_cast<long long>(index)) << "padding"
++                          << randomLowercaseAlphaString(approximateSize));
++    }
++
++    std::vector<BSONObj> getIndexSpecs() const override {
++        return {BSON("v" << IndexConfig::kLatestIndexVersion << "key"
++                         << BSON("anchor" << 1 << "obj.$**" << 1) << "name"
++                         << "anchor_1_obj.$**_1")};
++    }
++};
++
++BENCHMARK_DEFINE_F(CompoundWildcardCountQueryBenchmark, DirectNonMultikeyCountScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    runCountScanBenchmark(state,
++                          BSON("anchor" << 0 << "obj.value" << GTE << 0),
++                          "anchor_1_obj.$**_1"sv,
++                          numDocs,
++                          false);
++}
++
++BENCHMARK_REGISTER_F(CompoundWildcardCountQueryBenchmark, DirectNonMultikeyCountScan)
++    ->Args({10'000, 64})
++    ->Args({200'000, 64});
++
++// A count whose winning plan is COUNT -> FETCH -> IXSCAN, so CountStage's child is a FETCH rather
++// than a CountScan. This is the control for counts that cannot use the COUNT_SCAN fast path: it
++// drives on the order of one work() call per document through stages a change to the direct
++// CountStage -> CountScan edge must leave untouched.
++class UnoptimizedCountQueryBenchmark : public CountQueryBenchmark {
++protected:
++    void runFetchingCountBenchmark(benchmark::State& state, BSONObj query, std::string_view hint) {
++        const auto numDocs = static_cast<int64_t>(docs().size());
++        auto command = BSON("count" << kNss.coll() << "$db" << kNss.db_forTest() << "query" << query
++                                    << "hint" << hint);
++
++        const auto reply = runCommand(command);
++        uassertStatusOK(getStatusFromCommandResult(reply));
++        invariant(reply.getField("n").safeNumberLong() == numDocs);
++
++        // Pin the un-optimized plan shape. If this ever became a COUNT_SCAN the control would
++        // silently start measuring the optimized path instead of the un-optimized one.
++        const auto explainReply = explain(command);
++        const auto winningPlan =
++            explainReply.getObjectField("queryPlanner").getObjectField("winningPlan");
++        invariant(winningPlan.getField("stage").String() == "COUNT", winningPlan.toString());
++        const auto fetchPlan = winningPlan.getObjectField("inputStage");
++        invariant(fetchPlan.getField("stage").String() == "FETCH", winningPlan.toString());
++        invariant(fetchPlan.getObjectField("inputStage").getField("stage").String() == "IXSCAN",
++                  winningPlan.toString());
++
++        const auto executionStats = explainReply.getObjectField("executionStats");
++        invariant(executionStats.getField("totalDocsExamined").safeNumberLong() == numDocs,
++                  executionStats.toString());
++
++        runCommandBenchmark(std::move(command), state);
++    }
++
++private:
++    BSONObj generateDocument(size_t index, size_t approximateSize) override {
++        return BSON("_id" << static_cast<long long>(index) << "scanKey"
++                          << static_cast<long long>(index) << "residual" << 0 << "padding"
++                          << randomLowercaseAlphaString(approximateSize));
++    }
++
++    std::vector<BSONObj> getIndexSpecs() const override {
++        return {buildIndexSpec("scanKey", false)};
++    }
++};
++
++BENCHMARK_DEFINE_F(UnoptimizedCountQueryBenchmark, FetchingCountWithoutCountScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    // "residual" is deliberately not indexed, so its predicate cannot be discharged by the index
++    // and the planner must FETCH each document, which rules out the COUNT_SCAN transform.
++    runFetchingCountBenchmark(
++        state, BSON("scanKey" << GTE << 0 << LT << numDocs << "residual" << 0), "scanKey_1"sv);
++}
++
++BENCHMARK_REGISTER_F(UnoptimizedCountQueryBenchmark, FetchingCountWithoutCountScan)
++    ->Args({10'000, 64})
++    ->Args({200'000, 64});
++
++}  // namespace
++}  // namespace mongo
+diff --git a/src/mongo/db/query/query_bm_fixture.cpp b/src/mongo/db/query/query_bm_fixture.cpp
+index 458b8da7ad..55e0c66e28 100644
+--- a/src/mongo/db/query/query_bm_fixture.cpp
++++ b/src/mongo/db/query/query_bm_fixture.cpp
+@@ -4,11 +4,32 @@
+ #include "mongo/db/query/query_bm_fixture.h"
+ 
+ #include "mongo/db/shard_role/shard_role.h"
++#include "mongo/rpc/op_msg.h"
+ #include "mongo/transport/service_entry_point.h"
+ 
+ #define MONGO_LOGV2_DEFAULT_COMPONENT ::mongo::logv2::LogComponent::kTest
+ 
+ namespace mongo {
++namespace {
++
++Message serializeCommand(BSONObj command) {
++    OpMsgRequest request;
++    request.body = std::move(command);
++    return request.serialize();
++}
++
++Message handleCommandRequest(const Message& request) {
++    Client& client = cc();
++    auto opCtx = client.makeOperationContext();
++    auto response = client.getService()
++                        ->getServiceEntryPoint()
++                        ->handleRequest(opCtx.get(), request, opCtx->fastClockSource().now())
++                        .getNoThrow();
++    iassert(response);
++    return std::move(response.getValue().response);
++}
++
++}  // namespace
+ 
+ const NamespaceString QueryBenchmarkFixture::kNss =
+     NamespaceString::createNamespaceString_forTest("test", "coll");
+@@ -33,27 +54,29 @@ void QueryBenchmarkFixture::runBenchmark(BSONObj filter,
+                                          benchmark::State& state) {
+     BSONObj command = BSON("find" << kNss.coll() << "$db" << kNss.db_forTest() << "filter" << filter
+                                   << "projection" << projection);
+-    OpMsgRequest request;
+-    request.body = command;
+-    auto msg = request.serialize();
++    runCommandBenchmark(std::move(command), state);
++}
++
++BSONObj QueryBenchmarkFixture::runCommand(BSONObj command) {
++    auto msg = serializeCommand(std::move(command));
++
++    ThreadClient threadClient{getGlobalServiceContext()->getService()};
++    const auto response = handleCommandRequest(msg);
++    return OpMsg::parse(response).body.getOwned();
++}
++
++void QueryBenchmarkFixture::runCommandBenchmark(BSONObj command, benchmark::State& state) {
++    auto msg = serializeCommand(std::move(command));
+ 
+     ThreadClient threadClient{getGlobalServiceContext()->getService()};
+     runBenchmarkWithProfiler(
+         [&]() {
+-            Client& client = cc();
+-            auto opCtx = client.makeOperationContext();
+-            auto statusWithResponse =
+-                client.getService()
+-                    ->getServiceEntryPoint()
+-                    ->handleRequest(opCtx.get(), msg, opCtx->fastClockSource().now())
+-                    .getNoThrow();
+-            iassert(statusWithResponse);
++            const auto response = handleCommandRequest(msg);
+             LOGV2_DEBUG(9278700,
+                         1,
+                         "db response",
+                         "request"_attr = msg.opMsgDebugString(),
+-                        "response"_attr =
+-                            statusWithResponse.getValue().response.opMsgDebugString());
++                        "response"_attr = response.opMsgDebugString());
+         },
+         state);
+ }
+diff --git a/src/mongo/db/query/query_bm_fixture.h b/src/mongo/db/query/query_bm_fixture.h
+index 782cc4f7b9..a37c66eee4 100644
+--- a/src/mongo/db/query/query_bm_fixture.h
++++ b/src/mongo/db/query/query_bm_fixture.h
+@@ -27,6 +27,9 @@ public:
+     void runBenchmark(BSONObj filter, BSONObj projection, benchmark::State& state);
+ 
+ protected:
++    BSONObj runCommand(BSONObj command);
++
++    void runCommandBenchmark(BSONObj command, benchmark::State& state);
+     const std::vector<BSONObj>& docs() const {
+         return _docs;
+     }
+diff --git a/src/mongo/dbtests/query_stage_count_scan.cpp b/src/mongo/dbtests/query_stage_count_scan.cpp
+index 2517740d2c..84d45054b6 100644
+--- a/src/mongo/dbtests/query_stage_count_scan.cpp
++++ b/src/mongo/dbtests/query_stage_count_scan.cpp
+@@ -702,9 +702,9 @@ public:
+         // parent's own unconditional INVALID_ID cannot mask the result.
+         {
+             WorkingSet ws;
+-            auto owned = std::make_unique<CountScan>(_expCtx.get(), coll, makeParams(), &ws);
+-            CountStage countStage(_expCtx.get(), 0, 0, &ws, owned.release());
+-            auto* child = static_cast<CountScan*>(countStage.getChildren().front().get());
++            CountStage countStage(
++                _expCtx.get(), 0, 0, &ws, new CountScan(_expCtx.get(), coll, makeParams(), &ws));
++            auto* child = countStage.getChildren().front().get();
+             WorkingSetID wsid = WorkingSet::INVALID_ID;
+ 
+             ASSERT_EQUALS(PlanStage::ADVANCED, child->work(&wsid));
+@@ -716,7 +716,9 @@ public:
+ /**
+  * Under a direct CountStage, deduplication, write-conflict yielding, save/restore, skip and limit
+  * are all unchanged: the duplicate multikey key is counted once, and the child's CommonStats match
+- * what a materializing scan reports.
++ * what a materializing scan reports. Every assertion here is derived from StageState, so this
++ * passes both with and without the materialization change. That is the point: it pins the
++ * behaviour the change must not alter.
+  */
+ class QueryStageCountScanDirectCountStageSemantics : public CountBase {
+ public:
+@@ -733,9 +735,9 @@ public:
+         params.endKey = BSON("" << 4);
+ 
+         WorkingSet ws;
+-        auto owned = std::make_unique<CountScan>(_expCtx.get(), coll, params, &ws);
+         // Skip the first counted document and limit to one, so both are exercised.
+-        CountStage countStage(_expCtx.get(), 1, 1, &ws, owned.release());
++        CountStage countStage(
++            _expCtx.get(), 1, 1, &ws, new CountScan(_expCtx.get(), coll, params, &ws));
+         WorkingSetID wsid = WorkingSet::INVALID_ID;
+ 
+         ASSERT_EQUALS(PlanStage::NEED_TIME, countStage.work(&wsid));
+@@ -768,7 +770,7 @@ public:
+         // belongs to the same document and is deduplicated into a NEED_TIME, key three is counted.
+         // One NEED_TIME against three keys examined and two advances is what shows deduplication
+         // still ran even though no WorkingSetMember was materialized.
+-        ASSERT_EQUALS(3, childStats->keysExamined);
++        ASSERT_EQUALS(3U, childStats->keysExamined);
+         ASSERT_EQUALS(2U, childCommon.advanced);
+         ASSERT_EQUALS(1U, childCommon.needTime);
+         ASSERT_EQUALS(1U, childCommon.needYield);

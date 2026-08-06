@@ -1,0 +1,160 @@
+{
+  "context": {
+    "date": "2026-08-05T02:56:18+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-nolog-disabled",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [5.50879,5.70215,10.2725],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.2156152725219727e+08,
+      "cpu_time": 1.2151763000000004e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5528828000000000e+08,
+      "instructions_per_iteration": 1.2887093740000000e+09,
+      "items_per_second": 4.1146292928853189e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.2354230880737305e+08,
+      "cpu_time": 1.2354326800000060e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5944787800000000e+08,
+      "instructions_per_iteration": 1.2887254670000000e+09,
+      "items_per_second": 4.0471650790393339e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.2557291984558105e+08,
+      "cpu_time": 1.2557377200000009e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.6371234000000000e+08,
+      "instructions_per_iteration": 1.2887159820000000e+09,
+      "items_per_second": 3.9817231897756457e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.2432718276977539e+08,
+      "cpu_time": 1.2429184400000004e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.6109672200000000e+08,
+      "instructions_per_iteration": 1.2887314520000000e+09,
+      "items_per_second": 4.0227901035887748e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.2277388572692871e+08,
+      "cpu_time": 1.2277504899999946e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5783460200000000e+08,
+      "instructions_per_iteration": 1.2887351960000000e+09,
+      "items_per_second": 4.0724887024887456e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64_mean",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 1.2355556488037109e+08,
+      "cpu_time": 1.2354031260000005e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5947596440000001e+08,
+      "instructions_per_iteration": 1.2887234942000000e+09,
+      "items_per_second": 4.0477592735555642e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64_median",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 1.2354230880737305e+08,
+      "cpu_time": 1.2354326800000060e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.5944787800000000e+08,
+      "instructions_per_iteration": 1.2887254670000000e+09,
+      "items_per_second": 4.0471650790393339e+06
+    },
+    {
+      "name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64_stddev",
+      "run_name": "CountQueryBenchmark/NonMultikeyCountScan/500000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 1.5208960605402286e+06,
+      "cpu_time": 1.5310648736146020e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1939510574756777e+06,
+      "instructions_per_iteration": 1.0723387524471920e+04,
+      "items_per_second": 5.0169016876606569e+04
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+diff --git a/src/mongo/db/matcher/expression_leaf.h b/src/mongo/db/matcher/expression_leaf.h
+index c465076365..35235ec104 100644
+--- a/src/mongo/db/matcher/expression_leaf.h
++++ b/src/mongo/db/matcher/expression_leaf.h
+@@ -754,6 +754,14 @@ public:
+         _equalities->makeBSONOwned();
+     }
+ 
++    /**
++     * Take shared ownership of 'owner' rather than copying, when our list is a view into it. See
++     * InListData::shareBSONOwnershipWith().
++     */
++    void shareBSONOwnershipWith(const BSONObj& owner) {
++        _equalities->shareBSONOwnershipWith(owner);
++    }
++
+     const std::vector<std::unique_ptr<RegexMatchExpression>>& getRegexes() const {
+         return _regexes;
+     }
+diff --git a/src/mongo/db/matcher/in_list_data.cpp b/src/mongo/db/matcher/in_list_data.cpp
+index 1bd2109601..d22ea27bd4 100644
+--- a/src/mongo/db/matcher/in_list_data.cpp
++++ b/src/mongo/db/matcher/in_list_data.cpp
+@@ -351,6 +351,40 @@ void InListData::makeBSONOwned() {
+     tassert(status);
+ }
+ 
++void InListData::shareBSONOwnershipWith(const BSONObj& owner) {
++    // Sharing is an optimization, so a list that someone else already holds is simply left alone
++    // rather than cloned out from under them.
++    if (isShared() || !_elementsInitialized || !_arr || _arr->isOwned() || !owner.isOwned()) {
++        return;
++    }
++
++    // Pinning 'owner' is only sound if 'owner' is itself a view into the buffer it owns.
++    // BSONObj::shareOwnershipWith() permits an object to own a buffer it does not point into, and
++    // every caller here satisfies the stronger property, so assert it rather than assume it.
++    dassert(owner.objdata() >= owner.sharedBuffer().get());
++
++    // Our bytes must really live inside 'owner'; otherwise we would pin the wrong buffer and leave
++    // our elements dangling. std::less is the portable spelling for comparing pointers that the
++    // compiler cannot see are related.
++    const char* const ownerBegin = owner.objdata();
++    const char* const ownerEnd = ownerBegin + owner.objsize();
++    if (std::less<const char*>{}(_arr->objdata(), ownerBegin) ||
++        std::less<const char*>{}(ownerEnd, _arr->objdata() + _arr->objsize())) {
++        return;
++    }
++
++    // Sharing swaps a copy proportional to our array for a pin proportional to 'owner', and this
++    // object can outlive the query via SBE's pinned plan cache, so decline when 'owner' is much the
++    // larger of the two.
++    if (owner.objsize() - _arr->objsize() > kMaxSharedOwnershipSlackBytes) {
++        return;
++    }
++
++    // The bytes do not move, so '_originalElements', '_sortedElements' and
++    // '_firstOfEachTypeElements' all stay valid and need no remapping.
++    _arr->shareOwnershipWith(owner);
++}
++
+ namespace {
+ // Updates each BSONElement in container 'elements' to refer to backing buffer 'newBuffer' given
+ // that each element refers to backing buffer 'previousBuffer'.
+diff --git a/src/mongo/db/matcher/in_list_data.h b/src/mongo/db/matcher/in_list_data.h
+index 80e4b660da..9648622792 100644
+--- a/src/mongo/db/matcher/in_list_data.h
++++ b/src/mongo/db/matcher/in_list_data.h
+@@ -248,6 +248,27 @@ public:
+ 
+     void makeBSONOwned();
+ 
++    /**
++     * Take shared ownership of 'owner' instead of copying, when our array is a view into it. This
++     * makes isBSONOwned() true for the cost of a refcount: the elements already point into 'owner',
++     * so unlike makeBSONOwned() there is nothing to copy and nothing to remap.
++     *
++     * 'owner' must be owned, its own bytes must live in its shared buffer, and our array must lie
++     * within it. This is best effort: if any of that does not hold, or if sharing would retain
++     * substantially more memory than copying, we decline and leave the caller on the copying path.
++     * Declining is always safe.
++     *
++     * The size condition matters because an InListData can outlive the query that produced it --
++     * SBE stores it in a pinned plan cache entry whose budget estimator does not account for it --
++     * so a small list inside a large filter must not pin the filter.
++     */
++    void shareBSONOwnershipWith(const BSONObj& owner);
++
++    // How much larger than our own array 'owner' may be before shareBSONOwnershipWith() declines.
++    // Sharing trades a copy proportional to the array for a pin proportional to the owner, so it is
++    // only worth taking when the difference is small.
++    static constexpr int kMaxSharedOwnershipSlackBytes = 1024;
++
+     MONGO_COMPILER_ALWAYS_INLINE
+     bool isShared() const {
+         return _shared.load();
+diff --git a/src/mongo/db/query/compiler/parsers/matcher/expression_parser.cpp b/src/mongo/db/query/compiler/parsers/matcher/expression_parser.cpp
+index d11ef3ea45..af06828689 100644
+--- a/src/mongo/db/query/compiler/parsers/matcher/expression_parser.cpp
++++ b/src/mongo/db/query/compiler/parsers/matcher/expression_parser.cpp
+@@ -2182,6 +2182,28 @@ Status parseSub(boost::optional<std::string_view> name,
+ 
+ }  // namespace
+ 
++namespace {
++/**
++ * Give every $in list in 'root' shared ownership of 'filter', where its elements already live.
++ *
++ * Without this, IndexBoundsBuilder has to clone the whole InMatchExpression and deep-copy its list
++ * every time it builds bounds, because BSONElement::Obj() yields an unowned view and so
++ * InListData::isBSONOwned() is never true for a list parsed out of a command. The filter is owned
++ * for the lifetime of the CanonicalQuery, so sharing it costs a refcount instead of an O(n) copy.
++ *
++ * InListData::shareBSONOwnershipWith() verifies containment and declines if it does not hold, so a
++ * list assembled from somewhere other than 'filter' is left alone.
++ */
++void shareFilterOwnershipWithInLists(MatchExpression* root, const BSONObj& filter) {
++    if (root->matchType() == MatchExpression::MATCH_IN) {
++        static_cast<InMatchExpression*>(root)->shareBSONOwnershipWith(filter);
++    }
++    for (size_t i = 0; i < root->numChildren(); ++i) {
++        shareFilterOwnershipWithInLists(root->getChild(i), filter);
++    }
++}
++}  // namespace
++
+ StatusWithMatchExpression MatchExpressionParser::parse(
+     const BSONObj& obj,
+     const boost::intrusive_ptr<ExpressionContext>& expCtx,
+@@ -2190,7 +2212,12 @@ StatusWithMatchExpression MatchExpressionParser::parse(
+     invariant(expCtx.get());
+     const DocumentParseLevel currentLevelCall = DocumentParseLevel::kPredicateTopLevel;
+     try {
+-        return ::mongo::parse(obj, expCtx, &extensionsCallback, allowedFeatures, currentLevelCall);
++        auto expr =
++            ::mongo::parse(obj, expCtx, &extensionsCallback, allowedFeatures, currentLevelCall);
++        if (expr.isOK() && obj.isOwned()) {
++            shareFilterOwnershipWithInLists(expr.getValue().get(), obj);
++        }
++        return expr;
+     } catch (const DBException& ex) {
+         return {ex.toStatus()};
+     }
+diff --git a/src/mongo/db/query/compiler/parsers/matcher/expression_parser_leaf_test.cpp b/src/mongo/db/query/compiler/parsers/matcher/expression_parser_leaf_test.cpp
+index 1c9ff0b59f..0495490882 100644
+--- a/src/mongo/db/query/compiler/parsers/matcher/expression_parser_leaf_test.cpp
++++ b/src/mongo/db/query/compiler/parsers/matcher/expression_parser_leaf_test.cpp
+@@ -1060,4 +1060,78 @@ TEST(MatchExpressionParserTest, BitTestMatchExpressionInvalidArrayValue) {
+             expCtx)
+             .getStatus());
+ }
++TEST(MatchExpressionParserLeafTest, InListSharesOwnershipOfAnOwnedFilter) {
++    boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
++
++    // A filter that arrives on the wire is owned; its $in array is a view into it, so without
++    // sharing, IndexBoundsBuilder must deep-copy the list every time it builds bounds.
++    BSONObj filter = BSON("a" << BSON("$in" << BSON_ARRAY(1 << 2 << 3))).getOwned();
++    ASSERT_TRUE(filter.isOwned());
++
++    auto result = MatchExpressionParser::parse(filter, expCtx);
++    ASSERT_OK(result.getStatus());
++    MatchExpression* root = result.getValue().get();
++    auto* in = checked_cast<InMatchExpression*>(
++        root->matchType() == MatchExpression::MATCH_IN ? root : root->getChild(0));
++    ASSERT_TRUE(in->isBSONOwned());
++    // Sharing rather than copying: the storage must be the same bytes, not a duplicate.
++    ASSERT_EQ(in->getOwnedBSONStorage().objdata(),
++              filter.firstElement().Obj().firstElement().Obj().objdata());
++}
++
++TEST(MatchExpressionParserLeafTest, InListDoesNotShareOwnershipOfAnUnownedFilter) {
++    boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
++
++    BSONObj owner = BSON("a" << BSON("$in" << BSON_ARRAY(1 << 2 << 3)));
++    BSONObj unowned(owner.objdata());
++    ASSERT_FALSE(unowned.isOwned());
++
++    auto result = MatchExpressionParser::parse(unowned, expCtx);
++    ASSERT_OK(result.getStatus());
++    MatchExpression* root = result.getValue().get();
++    auto* in = checked_cast<InMatchExpression*>(
++        root->matchType() == MatchExpression::MATCH_IN ? root : root->getChild(0));
++    ASSERT_FALSE(in->isBSONOwned());
++}
++
++TEST(MatchExpressionParserLeafTest, InListSurvivesTheFilterGoingOutOfScope) {
++    boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
++
++    // The point of sharing rather than copying is that the elements stay valid once the caller's
++    // BSONObj is gone. If the containment guard ever let the wrong buffer be pinned, this is what
++    // would trip under ASAN.
++    StatusWithMatchExpression result = [&] {
++        BSONObj filter = BSON("a" << BSON("$in" << BSON_ARRAY(1 << 2 << 3))).getOwned();
++        return MatchExpressionParser::parse(filter, expCtx);
++    }();
++    ASSERT_OK(result.getStatus());
++
++    MatchExpression* root = result.getValue().get();
++    auto* in = checked_cast<InMatchExpression*>(
++        root->matchType() == MatchExpression::MATCH_IN ? root : root->getChild(0));
++    ASSERT_TRUE(in->isBSONOwned());
++    ASSERT_EQ(in->getEqualities().size(), 3U);
++    ASSERT_EQ(in->getEqualities()[2].numberInt(), 3);
++}
++
++TEST(MatchExpressionParserLeafTest, InListDoesNotShareOwnershipOfAMuchLargerFilter) {
++    boost::intrusive_ptr<ExpressionContextForTest> expCtx(new ExpressionContextForTest());
++
++    // Sharing would pin the whole filter for as long as the list lives, and an InListData can
++    // outlive its query via SBE's pinned plan cache. A short list inside a large filter must
++    // therefore fall back to copying.
++    BSONObj filter =
++        BSON("a" << BSON("$in" << BSON_ARRAY(1 << 2 << 3)) << "b" << std::string(4096, 'x'))
++            .getOwned();
++    ASSERT_GT(filter.objsize(), InListData::kMaxSharedOwnershipSlackBytes);
++
++    auto result = MatchExpressionParser::parse(filter, expCtx);
++    ASSERT_OK(result.getStatus());
++    auto* in = checked_cast<InMatchExpression*>(result.getValue()->getChild(0));
++    ASSERT_FALSE(in->isBSONOwned());
++    // Still intact, just on the copying path.
++    ASSERT_EQ(in->getEqualities().size(), 3U);
++    ASSERT_EQ(in->getEqualities()[2].numberInt(), 3);
++}
++
+ }  // namespace mongo
+diff --git a/src/mongo/db/query/point_query_bm.cpp b/src/mongo/db/query/point_query_bm.cpp
+index a9233ea383..78f1b2c9e6 100644
+--- a/src/mongo/db/query/point_query_bm.cpp
++++ b/src/mongo/db/query/point_query_bm.cpp
+@@ -47,6 +47,19 @@ BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldPointQuery)
+     runBenchmark(BSON("uniqueField" << fieldValue), BSONObj{} /*projection*/, state);
+ }
+ 
++// An $in over the unique field, with the list length as the third argument. Index bounds are built
++// once per execution because such a query is single-solution and so is never plan-cached, which
++// makes any per-build cost that scales with the list length visible here.
++BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldInListQuery)
++(benchmark::State& state) {
++    const auto listLength = state.range(2);
++    BSONArrayBuilder bab;
++    for (int64_t i = 0; i < listLength; ++i) {
++        bab.append(i);
++    }
++    runBenchmark(BSON("uniqueField" << BSON("$in" << bab.arr())), BSONObj{} /*projection*/, state);
++}
++
+ BENCHMARK_DEFINE_F(PointQueryBenchmark, NonUniqueFieldPointQuery)
+ (benchmark::State& state) {
+     int64_t fieldValue = docs().size() / 3;
+@@ -114,6 +127,11 @@ static void configureBenchmarks(benchmark::internal::Benchmark* bm) {
+     bm->ThreadRange(1, kMaxThreads)->Args({10, 1024});
+ }
+ 
++static void configureInListBenchmarks(benchmark::internal::Benchmark* bm) {
++    // The document count is irrelevant here; the list length is the variable of interest.
++    bm->ThreadRange(1, 1)->Args({10, 1024, 10})->Args({10, 1024, 100})->Args({10, 1024, 1000});
++}
++
+ static void configureProjectionBenchmarks(benchmark::internal::Benchmark* bm) {
+     // Varying document size allows us to measure the effect of covering the projection with an
+     // index.
+@@ -122,6 +140,7 @@ static void configureProjectionBenchmarks(benchmark::internal::Benchmark* bm) {
+ 
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, IdPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldPointQuery)->Apply(configureBenchmarks);
++BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldInListQuery)->Apply(configureInListBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, NonUniqueFieldPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, ArrayFieldPointQuery)->Apply(configureBenchmarks);
+ 

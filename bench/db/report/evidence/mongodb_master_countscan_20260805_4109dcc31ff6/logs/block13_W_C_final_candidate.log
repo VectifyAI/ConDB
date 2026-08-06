@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-06T05:15:08.146+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":133693952}}
+2026-08-06T05:15:08+08:00
+Running /tmp/mongo-count-query-bm-countscan-C-final-candidate
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 1.99, 1.85, 4.50
+------------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                                Time             CPU   Iterations UserCounters...
+------------------------------------------------------------------------------------------------------------------------------------------
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64          50584555 ns     50552481 ns            1 cycles_per_iteration=106.236M instructions_per_iteration=612.718M items_per_second=3.95628M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64          54450274 ns     54415311 ns            1 cycles_per_iteration=114.352M instructions_per_iteration=612.83M items_per_second=3.67544M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64          50460100 ns     50371734 ns            1 cycles_per_iteration=105.973M instructions_per_iteration=612.734M items_per_second=3.97048M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64          52823305 ns     52801384 ns            1 cycles_per_iteration=110.935M instructions_per_iteration=612.788M items_per_second=3.78778M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64          49870968 ns     49849387 ns            1 cycles_per_iteration=104.737M instructions_per_iteration=612.727M items_per_second=4.01209M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_mean     51637840 ns     51598059 ns            5 cycles_per_iteration=108.447M instructions_per_iteration=612.759M items_per_second=3.88041M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_median   50584555 ns     50552481 ns            5 cycles_per_iteration=106.236M instructions_per_iteration=612.734M items_per_second=3.95628M/s
+CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64_stddev    1932190 ns      1939063 ns            5 cycles_per_iteration=4.05716M instructions_per_iteration=48.1792k items_per_second=143.006k/s

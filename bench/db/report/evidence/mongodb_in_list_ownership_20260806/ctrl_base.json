@@ -1,0 +1,180 @@
+{
+  "context": {
+    "date": "2026-08-06T11:55:17+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/pqbm-inlist-base",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [37.8506,64.9268,57.8423],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.4969306473998104e+04,
+      "cpu_time": 1.4969355311355315e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1436374488256843e+04,
+      "instructions_per_iteration": 1.0680534604611075e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.5112840520541900e+04,
+      "cpu_time": 1.5112893772893769e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1737801766860590e+04,
+      "instructions_per_iteration": 1.0671750592544710e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.7009246865625759e+04,
+      "cpu_time": 1.7001837104072398e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.5720315880198235e+04,
+      "instructions_per_iteration": 1.0674416418875243e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.3967753227248682e+04,
+      "cpu_time": 1.3967750053867698e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.9332982115923292e+04,
+      "instructions_per_iteration": 1.0678068110321052e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.4690920289953421e+04,
+      "cpu_time": 1.4690972419737142e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.0851731523378581e+04,
+      "instructions_per_iteration": 1.0677309976298212e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 5,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.5904281294004229e+04,
+      "cpu_time": 1.5888472527472517e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.3399899590605470e+04,
+      "instructions_per_iteration": 1.0666200495582848e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 6,
+      "threads": 1,
+      "iterations": 4641,
+      "real_time": 1.6046582406719448e+04,
+      "cpu_time": 1.6045289161818564e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.3698634346046114e+04,
+      "instructions_per_iteration": 1.0685805731523379e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1_mean",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 7,
+      "real_time": 1.5385847296870221e+04,
+      "cpu_time": 1.5382367193031056e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.2311105673038444e+04,
+      "instructions_per_iteration": 1.0676297989965214e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1_median",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 7,
+      "real_time": 1.5112840520541900e+04,
+      "cpu_time": 1.5112893772893771e+04,
+      "time_unit": "ns",
+      "cycles_per_iteration": 3.1737801766860590e+04,
+      "instructions_per_iteration": 1.0677309976298212e+05
+    },
+    {
+      "name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1_stddev",
+      "run_name": "PointQueryBenchmark/UniqueFieldPointQuery/10/1024/threads:1",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 7,
+      "real_time": 1.0068700799081982e+03,
+      "cpu_time": 1.0033821190136960e+03,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.1144836680444359e+03,
+      "instructions_per_iteration": 6.3071655266704163e+01
+    }
+  ]
+}

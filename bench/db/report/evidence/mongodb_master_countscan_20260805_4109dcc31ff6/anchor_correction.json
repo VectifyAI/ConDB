@@ -1,0 +1,48 @@
+{
+  "what_this_is": "A correction to attempt-003's pre-registered external_anchor.commit, plus a record of a process mistake made while filing that correction.",
+  "the_correction": {
+    "field": "attempt-003.preregistration.external_anchor.commit",
+    "as_written": "1c1d42872b34103ed6dd67bb93795093bb615503",
+    "as_written_holds_campaign_sha256": "a8d18b4f6d23ff2ce4099188c9b58c241fcec9b43aad48b5e19217379fa8e1c9",
+    "correct_commit": "1688ea3dca1685e9e26ae67631df7b0f7ca503bb",
+    "correct_commit_holds_campaign_sha256": "fa6f71943565436993d8ccc0eb29a194b599b71042014389332507f77d3907e3",
+    "correct_commit_committed_at": "2026-08-06T05:10:30+08:00",
+    "correct_commit_pushed_at": "2026-08-06T05:10:33+08:00",
+    "campaign_started_at": "2026-08-06T05:11:13.408017+08:00",
+    "explanation": "The preregistration was written before its own commit existed, so it recorded the then-current HEAD, which holds the attempt-002 protocol. The protocol that actually executed (campaign_sha256 fa6f7194..., analyze.py 815e94c8...) first appears in correct_commit, which was pushed 40 seconds before the first benchmark process started. The freeze genuinely preceded execution; only the citation was wrong. The preregistration line in attempt_ledger.jsonl is left unaltered, because rewriting it would defeat the append-only property the ledger exists to provide.",
+    "how_to_check": "git show 1c1d4287:bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/campaign.json | sha256sum   (gives a8d18b4f..., the attempt-002 protocol) and the same command on 1688ea3d (gives fa6f7194..., the executed protocol)."
+  },
+  "when_this_was_written": {
+    "created_at": "2026-08-06T06:09:34.055290+08:00",
+    "note": "Written about 21 minutes after the campaign finished, so it was written with the results already known. That is disclosed rather than hidden: a correction filed after the fact is weaker evidence than one filed before, and a reader should weigh it accordingly. What it asserts is checkable against the pushed commits without trusting this file."
+  },
+  "why_it_is_not_in_the_attempt_ledger": "It was first appended to attempt_ledger.jsonl as a ninth record, with record_type 'started' and status 'anchor_correction'. That was the only append not made by run_campaign.py, and it was a mistake: the frozen analyze.py accepts exactly three record types and rejects a second 'started' record for one attempt, so the append made the entire bundle fail validation before the adoption gate was ever evaluated. analyze.py is hashed into all three pre-registrations and cannot be edited, so the record was moved here and the ledger truncated back to the eight records run_campaign.py itself wrote. The removed line is reproduced verbatim below.",
+  "what_this_move_did_and_did_not_touch": {
+    "removed": "One hand-written annotation line, the last line of the file, never committed and never pushed.",
+    "not_removed": "No pre-registration, start or outcome. The three pre-registrations, the two failed attempts and the successful attempt-003 outcome are all still present.",
+    "hash_chain": "Unbroken. The removed line was the last one, so every remaining record's previous_record_sha256 still matches its predecessor.",
+    "external_check": "The last pushed ledger is in commit 1688ea3dca1685e9e26ae67631df7b0f7ca503bb and holds six records. Records seven and eight in the current file are run_campaign.py's own 'started' and 'outcome' for attempt-003, written during and after the run. Compare the pushed file against the current one to see that nothing before the removed line changed."
+  },
+  "removed_ledger_line_sha256": "4441ab44d1daaafb2a5e4a89f71f5b2c0952205a3ee61ee536c2744d8d1aa895",
+  "removed_ledger_line_sha256_note": "sha256 of the line as it stood in the file, including its trailing newline.",
+  "removed_ledger_line": {
+    "attempt_id": "attempt-003",
+    "campaign_id": "mongodb-master-countscan-three-arm-20260806-90814b83d3e5",
+    "campaign_sha256": "fa6f71943565436993d8ccc0eb29a194b599b71042014389332507f77d3907e3",
+    "correction": {
+      "as_written": "1c1d42872b34103ed6dd67bb93795093bb615503",
+      "as_written_holds_campaign_sha256": "a8d18b4f6d23ff2ce4099188c9b58c241fcec9b43aad48b5e19217379fa8e1c9",
+      "correct_commit": "1688ea3dca1685e9e26ae67631df7b0f7ca503bb",
+      "correct_commit_committed_at": "2026-08-06T05:10:30+08:00",
+      "correct_commit_holds_campaign_sha256": "fa6f71943565436993d8ccc0eb29a194b599b71042014389332507f77d3907e3",
+      "explanation": "The preregistration was written before its own commit existed, so it recorded the then-current HEAD, which holds the attempt-002 protocol. The protocol actually executed first appears in the correct_commit above, committed 43 seconds before the run started. The freeze genuinely preceded execution; only the citation was wrong. The preregistration line is left unaltered because rewriting it would defeat the append-only property this ledger exists to provide, and because the error is itself part of the record a reader should be able to check.",
+      "field": "attempt-003.preregistration.external_anchor.commit"
+    },
+    "created_at": "2026-08-06T06:09:34.055290+08:00",
+    "previous_record_sha256": "951f4d5c817abae2f9dc969558a95d46fda30819822025c28a1ea4233a670719",
+    "record_type": "started",
+    "schema_version": 2,
+    "started_at": "2026-08-06T05:11:13.408017+08:00",
+    "status": "anchor_correction"
+  }
+}

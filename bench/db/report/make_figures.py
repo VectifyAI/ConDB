@@ -58,32 +58,47 @@ def fig_concurrency():
 
 
 def fig_subtree():
-    d = load("read_large.json")["engines"]
-    p50 = [d[e]["queries"]["q_subtree"]["p50_ms"] for e in ENGINES]
-    p95 = [d[e]["queries"]["q_subtree"]["p95_ms"] for e in ENGINES]
-    x = range(len(ENGINES))
-    fig, ax = plt.subplots(figsize=(4.2, 2.55))
+    # Cross-engine subtree figures come only from the matched matrix.
+    # Each configuration uses the same logical relation, result set, sampled
+    # paths, and index capability on MongoDB and PostgreSQL.
+    data = {
+        "mongo": load("fair_sg2/fair_mid3m_mongo.json")["arms"],
+        "postgres": load("fair_sg2/fair_mid3m_postgres.json")["arms"],
+    }
+    arms = ["naive", "covered", "deployed"]
+    arm_labels = ["Naive", "Covered", "Narrow\nstructure"]
+    x = list(range(len(arms)))
     w = 0.36
-    b1 = ax.bar([i - w / 2 for i in x], p50, w, label="P50", color="#4C78A8", edgecolor="white", linewidth=0.6)
-    b2 = ax.bar([i + w / 2 for i in x], p95, w, label="P95", color="#C44E52", edgecolor="white", linewidth=0.6)
-    ax.set_yscale("log")
-    ax.set_ylim(top=max(p95) * 3)
-    ax.set_xticks(list(x))
-    ax.set_xticklabels([LABEL[e] for e in ENGINES])
-    ax.set_ylabel("Latency of get_subtree (ms, log scale)")
-    ax.grid(True, axis="y", which="major", linestyle="-", linewidth=0.4, alpha=0.35)
-    ax.set_axisbelow(True)
+    fig, axes = plt.subplots(1, 2, figsize=(6.4, 2.65))
 
-    def lab(bars, vals):
-        for bar, v in zip(bars, vals):
-            txt = f"{v:.0f}" if v >= 10 else f"{v:.1f}"
-            ax.annotate(txt, (bar.get_x() + bar.get_width() / 2, v), textcoords="offset points",
-                        xytext=(0, 2), ha="center", va="bottom", fontsize=7, color="#333333")
+    for ax, percentile in zip(axes, ("p50_ms", "p95_ms")):
+        mongo = [data["mongo"][arm][percentile] for arm in arms]
+        postgres = [data["postgres"][arm][percentile] for arm in arms]
+        bm = ax.bar([i - w / 2 for i in x], mongo, w, label="MongoDB",
+                    color=COLOR["mongo"], edgecolor="white", linewidth=0.6)
+        bp = ax.bar([i + w / 2 for i in x], postgres, w, label="PostgreSQL",
+                    color=COLOR["postgres"], edgecolor="white", linewidth=0.6)
+        ax.set_yscale("log")
+        ax.set_ylim(0.18, max(mongo + postgres) * 1.9)
+        ax.set_xticks(x)
+        ax.set_xticklabels(arm_labels)
+        ax.set_title(percentile[:3].upper())
+        ax.grid(True, axis="y", which="major", linestyle="-", linewidth=0.4, alpha=0.35)
+        ax.set_axisbelow(True)
 
-    lab(b1, p50)
-    lab(b2, p95)
-    ax.legend(frameon=False, handlelength=1.2, ncol=2, loc="upper center", borderaxespad=0.2)
-    fig.tight_layout(pad=0.4)
+        for bars, vals in ((bm, mongo), (bp, postgres)):
+            for bar, value in zip(bars, vals):
+                ax.annotate(f"{value:.2f}",
+                            (bar.get_x() + bar.get_width() / 2, value),
+                            textcoords="offset points", xytext=(0, 2),
+                            ha="center", va="bottom", fontsize=7,
+                            color="#333333")
+
+    axes[0].set_ylabel("Latency (ms, log scale)")
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, handlelength=1.2, ncol=2,
+               loc="lower center", bbox_to_anchor=(0.5, 0.0))
+    fig.tight_layout(rect=(0, 0.13, 1, 1), pad=0.55, w_pad=1.0)
     fig.savefig(OUT / "subtree.pdf", bbox_inches="tight")
     plt.close(fig)
 

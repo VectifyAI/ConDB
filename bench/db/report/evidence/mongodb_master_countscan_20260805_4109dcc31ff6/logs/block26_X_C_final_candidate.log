@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-06T05:22:33.303+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":2696931373}}
+2026-08-06T05:22:33+08:00
+Running /tmp/mongo-count-query-bm-countscan-C-final-candidate
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 2.85, 2.41, 3.73
+----------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                              Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------------------------------------------------------------------
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64         153543949 ns    153496141 ns            1 cycles_per_iteration=322.451M instructions_per_iteration=1.92049G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64         150639296 ns    150534534 ns            1 cycles_per_iteration=316.351M instructions_per_iteration=1.92051G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64         159678459 ns    159542801 ns            1 cycles_per_iteration=335.334M instructions_per_iteration=1.92035G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64         145859718 ns    145739964 ns            1 cycles_per_iteration=306.314M instructions_per_iteration=1.92036G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64         148761272 ns    148564027 ns            1 cycles_per_iteration=312.408M instructions_per_iteration=1.92028G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_mean    151696539 ns    151575493 ns            5 cycles_per_iteration=318.571M instructions_per_iteration=1.9204G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_median  150639296 ns    150534534 ns            5 cycles_per_iteration=316.351M instructions_per_iteration=1.92036G
+UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64_stddev    5266071 ns      5276666 ns            5 cycles_per_iteration=11.0591M instructions_per_iteration=98.5217k

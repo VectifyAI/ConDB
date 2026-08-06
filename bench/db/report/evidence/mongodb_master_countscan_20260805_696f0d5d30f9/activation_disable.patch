@@ -1,0 +1,16 @@
+diff --git a/src/mongo/db/exec/classic/count.cpp b/src/mongo/db/exec/classic/count.cpp
+--- a/src/mongo/db/exec/classic/count.cpp
++++ b/src/mongo/db/exec/classic/count.cpp
+@@ -21,12 +21,6 @@ CountStage::CountStage(
+     tassert(11051652, "Expecting non-negative limit parameter", _limit >= 0);
+     tassert(11051651, "Expecting child stage", child);
+     _children.emplace_back(child);
+-    if (this->child()->stageType() == STAGE_COUNT_SCAN) {
+-        auto* countScan = static_cast<CountScan*>(this->child().get());
+-        if (countScan->supportsResultlessCount()) {
+-            _resultlessCountScan = countScan;
+-        }
+-    }
+ }
+ 
+ bool CountStage::isEOF() const {

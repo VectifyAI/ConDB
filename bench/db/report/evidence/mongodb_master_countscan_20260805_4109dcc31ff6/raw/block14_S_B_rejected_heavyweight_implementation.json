@@ -1,0 +1,160 @@
+{
+  "context": {
+    "date": "2026-08-06T05:30:46+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [2.43018,2.53125,3.24512],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 7.6637744903564453e+07,
+      "cpu_time": 7.6639039000000015e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6094730800000000e+08,
+      "instructions_per_iteration": 9.7454711000000000e+08,
+      "items_per_second": 5.2192721257895716e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 8.2096576690673828e+07,
+      "cpu_time": 8.2097393999999821e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.7241173400000000e+08,
+      "instructions_per_iteration": 9.7467201500000000e+08,
+      "items_per_second": 4.8722618406133680e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 7.3646545410156250e+07,
+      "cpu_time": 7.3613935000000015e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.5466577000000000e+08,
+      "instructions_per_iteration": 9.7454657100000000e+08,
+      "items_per_second": 5.4337538130518347e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 7.9280853271484375e+07,
+      "cpu_time": 7.9273745999999255e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6649938600000000e+08,
+      "instructions_per_iteration": 9.7456711100000000e+08,
+      "items_per_second": 5.0458067163875885e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 7.6115846633911133e+07,
+      "cpu_time": 7.6089859000000536e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.5985223600000000e+08,
+      "instructions_per_iteration": 9.7455533200000000e+08,
+      "items_per_second": 5.2569423213150809e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_mean",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 7.7555513381958008e+07,
+      "cpu_time": 7.7542794599999934e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6287528680000001e+08,
+      "instructions_per_iteration": 9.7457762780000007e+08,
+      "items_per_second": 5.1656073634314891e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_median",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 7.6637744903564453e+07,
+      "cpu_time": 7.6639039000000030e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6094730800000000e+08,
+      "instructions_per_iteration": 9.7455533200000000e+08,
+      "items_per_second": 5.2192721257895716e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_stddev",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 3.2323762017318201e+06,
+      "cpu_time": 3.2443914006492291e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 6.7884096939544687e+06,
+      "instructions_per_iteration": 5.3414675137081947e+04,
+      "items_per_second": 2.1420100985060856e+05
+    }
+  ]
+}

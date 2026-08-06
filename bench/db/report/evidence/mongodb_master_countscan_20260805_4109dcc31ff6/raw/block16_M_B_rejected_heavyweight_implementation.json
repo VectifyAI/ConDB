@@ -1,0 +1,160 @@
+{
+  "context": {
+    "date": "2026-08-06T05:28:23+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "/tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [2.64844,2.58887,3.38574],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 9.7199678421020508e+07,
+      "cpu_time": 9.7201428000000194e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.0412858800000000e+08,
+      "instructions_per_iteration": 1.1020484900000000e+09,
+      "items_per_second": 4.1151658800732759e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 1.0438418388366699e+08,
+      "cpu_time": 1.0436604700000007e+08,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.1921630200000000e+08,
+      "instructions_per_iteration": 1.1026036710000000e+09,
+      "items_per_second": 3.8326640847094622e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 9.3303442001342773e+07,
+      "cpu_time": 9.3115642999999970e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.9594517600000000e+08,
+      "instructions_per_iteration": 1.1024545310000000e+09,
+      "items_per_second": 4.2957336395131815e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 3,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 9.5722913742065430e+07,
+      "cpu_time": 9.5537301999999434e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.0102661400000000e+08,
+      "instructions_per_iteration": 1.1020487560000000e+09,
+      "items_per_second": 4.1868463063778207e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 4,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 9.9535942077636719e+07,
+      "cpu_time": 9.9372806999999955e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.0903484400000000e+08,
+      "instructions_per_iteration": 1.1024681910000000e+09,
+      "items_per_second": 4.0252460615306981e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_mean",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 5,
+      "real_time": 9.8029232025146484e+07,
+      "cpu_time": 9.7918645399999946e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.0587030480000001e+08,
+      "instructions_per_iteration": 1.1023247278000000e+09,
+      "items_per_second": 4.0911311944408882e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_median",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 5,
+      "real_time": 9.7199678421020508e+07,
+      "cpu_time": 9.7201428000000209e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.0412858800000000e+08,
+      "instructions_per_iteration": 1.1024545310000000e+09,
+      "items_per_second": 4.1151658800732759e+06
+    },
+    {
+      "name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_stddev",
+      "run_name": "MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 5,
+      "real_time": 4.2129545113989133e+06,
+      "cpu_time": 4.2701757163079819e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 8.8477829042749461e+06,
+      "instructions_per_iteration": 2.5870235190272238e+05,
+      "items_per_second": 1.7517655868265996e+05
+    }
+  ]
+}

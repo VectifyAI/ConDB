@@ -1,0 +1,267 @@
+diff --git a/src/mongo/db/exec/classic/fetch.cpp b/src/mongo/db/exec/classic/fetch.cpp
+index 498ab8654e..71cd1c5be7 100644
+--- a/src/mongo/db/exec/classic/fetch.cpp
++++ b/src/mongo/db/exec/classic/fetch.cpp
+@@ -2,6 +2,8 @@
+ // SPDX-License-Identifier: SSPL-1.0
+ 
+ #include "mongo/db/exec/classic/fetch.h"
++#include "mongo/base/checked_cast.h"
++#include "mongo/db/exec/classic/index_scan.h"
+ 
+ #include "mongo/bson/bsonobj.h"
+ #include "mongo/db/exec/classic/filter.h"
+@@ -33,6 +35,14 @@ FetchStage::FetchStage(ExpressionContext* expCtx,
+       _filter((filter && !filter->isTriviallyTrue()) ? filter : nullptr),
+       _idRetrying(WorkingSet::INVALID_ID) {
+     _children.emplace_back(std::move(child));
++
++    // We clear keyData once our consistency check is done, so no stage above us can read it. Tell a
++    // direct IXSCAN child that, so it can keep the cursor's KeyString instead of decoding a BSON
++    // key that only that check would look at. IndexScan is the only stage reporting STAGE_IXSCAN,
++    // and it applies this only when it has no bounds checker, filter or key metadata of its own.
++    if (_children.back()->stageType() == STAGE_IXSCAN) {
++        checked_cast<IndexScan*>(_children.back().get())->parentWillNotReadKeys();
++    }
+ }
+ 
+ FetchStage::~FetchStage() {}
+diff --git a/src/mongo/db/exec/classic/index_scan.cpp b/src/mongo/db/exec/classic/index_scan.cpp
+index ae6159c7dc..91ea867730 100644
+--- a/src/mongo/db/exec/classic/index_scan.cpp
++++ b/src/mongo/db/exec/classic/index_scan.cpp
+@@ -106,6 +106,11 @@ boost::optional<IndexKeyEntry> IndexScan::initIndexScan() {
+                 _bounds, &_startKey, &_startKeyInclusive, &_endKey, &_endKeyInclusive)) {
+             _indexCursor->setEndPosition(_endKey, _endKeyInclusive);
+ 
++            // Only here is the bounds shape settled, so this is where the decision can be made:
++            // there is no checker on this path, and _filter and _addKeyMetadata are the sole
++            // remaining readers of the key inside this stage.
++            _skipKeyMaterialization = _parentWillNotReadKeys && !_filter && !_addKeyMetadata;
++
+             key_string::Builder builder(
+                 indexAccessMethod()->getSortedDataInterface()->getKeyStringVersion());
+             auto keyStringForSeek = IndexEntryComparison::makeKeyStringFromBSONKeyForSeek(
+@@ -114,6 +119,9 @@ boost::optional<IndexKeyEntry> IndexScan::initIndexScan() {
+                 _forward,
+                 _startKeyInclusive,
+                 builder);
++            if (_skipKeyMaterialization) {
++                return toIndexKeyEntry(_indexCursor->seekForKeyString(ru, keyStringForSeek));
++            }
+             return _indexCursor->seek(ru, keyStringForSeek);
+         } else {
+             _checker.reset(new IndexBoundsChecker(&_bounds, _keyPattern, _direction));
+@@ -130,6 +138,16 @@ boost::optional<IndexKeyEntry> IndexScan::initIndexScan() {
+     }
+ }
+ 
++boost::optional<IndexKeyEntry> IndexScan::toIndexKeyEntry(
++    boost::optional<KeyStringEntry> entry) {
++    if (!entry) {
++        _lastKeyString = boost::none;
++        return boost::none;
++    }
++    _lastKeyString = std::move(entry->keyString);
++    return IndexKeyEntry(BSONObj(), std::move(entry->loc));
++}
++
+ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
+     // Get the next kv pair from the index, if any.
+     boost::optional<IndexKeyEntry> kv;
+@@ -144,7 +162,8 @@ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
+                     kv = initIndexScan();
+                     break;
+                 case GETTING_NEXT:
+-                    kv = _indexCursor->next(ru);
++                    kv = _skipKeyMaterialization ? toIndexKeyEntry(_indexCursor->nextKeyString(ru))
++                                                 : _indexCursor->next(ru);
+                     break;
+                 case NEED_SEEK: {
+                     ++_specificStats.seeks;
+@@ -172,7 +191,7 @@ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
+ 
+     if (kv) {
+         // In debug mode, check that the cursor isn't lying to us.
+-        if (kDebugBuild && !_startKey.isEmpty()) {
++        if (kDebugBuild && !_skipKeyMaterialization && !_startKey.isEmpty()) {
+             int cmp = kv->key.woCompare(_startKey,
+                                         Ordering::make(_keyPattern),
+                                         /*compareFieldNames*/ false);
+@@ -181,7 +200,7 @@ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
+             dassert(_forward ? cmp >= 0 : cmp <= 0);
+         }
+ 
+-        if (kDebugBuild && !_endKey.isEmpty()) {
++        if (kDebugBuild && !_skipKeyMaterialization && !_endKey.isEmpty()) {
+             int cmp = kv->key.woCompare(_endKey,
+                                         Ordering::make(_keyPattern),
+                                         /*compareFieldNames*/ false);
+@@ -270,11 +289,15 @@ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
+     WorkingSetID id = _workingSet->allocate();
+     WorkingSetMember* member = _workingSet->get(id);
+     member->recordId = std::move(kv->loc);
+-    member->keyData.push_back(
+-        IndexKeyDatum(_keyPattern,
+-                      kv->key,
+-                      workingSetIndexId(),
+-                      shard_role_details::getRecoveryUnit(opCtx())->getSnapshotId()));
++    const auto snapshotId = shard_role_details::getRecoveryUnit(opCtx())->getSnapshotId();
++    if (_skipKeyMaterialization) {
++        member->keyData.push_back(
++            IndexKeyDatum(_keyPattern, std::move(*_lastKeyString), workingSetIndexId(), snapshotId));
++        _lastKeyString = boost::none;
++    } else {
++        member->keyData.push_back(
++            IndexKeyDatum(_keyPattern, kv->key, workingSetIndexId(), snapshotId));
++    }
+     _workingSet->transitionToRecordIdAndIdx(id);
+ 
+     if (_addKeyMetadata) {
+diff --git a/src/mongo/db/exec/classic/index_scan.h b/src/mongo/db/exec/classic/index_scan.h
+index 554dd188a7..35c9e8fc1f 100644
+--- a/src/mongo/db/exec/classic/index_scan.h
++++ b/src/mongo/db/exec/classic/index_scan.h
+@@ -157,6 +157,23 @@ private:
+     boost::optional<IndexKeyEntry> initIndexScan();
+ 
+     // The WorkingSet we fill with results.  Not owned by us.
++    // A parent FETCH clears keyData after its consistency check, so nothing above it can read the
++    // key. When such a parent adopts us it says so here, and if this scan also has no bounds
++    // checker, no filter and no key metadata to produce -- the only other readers of the key --
++    // then we keep the cursor's KeyString rather than decoding a BSON key nobody wants.
++    friend class FetchStage;
++    void parentWillNotReadKeys() {
++        _parentWillNotReadKeys = true;
++    }
++
++    bool _parentWillNotReadKeys = false;
++    bool _skipKeyMaterialization = false;
++
++    // Stashes the KeyString from the cursor while the surrounding doWork() logic continues to work
++    // with an IndexKeyEntry whose BSON key is empty.
++    boost::optional<key_string::Value> _lastKeyString;
++    boost::optional<IndexKeyEntry> toIndexKeyEntry(boost::optional<KeyStringEntry> entry);
++
+     WorkingSet* const _workingSet;
+ 
+     std::unique_ptr<SortedDataInterface::Cursor> _indexCursor;
+diff --git a/src/mongo/db/exec/classic/working_set.h b/src/mongo/db/exec/classic/working_set.h
+index 011adacfe9..e135e5ddd4 100644
+--- a/src/mongo/db/exec/classic/working_set.h
++++ b/src/mongo/db/exec/classic/working_set.h
+@@ -9,6 +9,7 @@
+ #include "mongo/db/exec/document_value/document.h"
+ #include "mongo/db/exec/document_value/document_metadata_fields.h"
+ #include "mongo/db/record_id.h"
++#include "mongo/db/storage/key_string/key_string.h"
+ #include "mongo/db/storage/snapshot.h"
+ #include "mongo/stdx/unordered_set.h"
+ #include "mongo/util/assert_util.h"
+@@ -50,6 +51,15 @@ struct IndexKeyDatum {
+                   SnapshotId snapshotId)
+         : indexKeyPattern(keyPattern), keyData(key), indexId(indexId), snapshotId(snapshotId) {}
+ 
++    IndexKeyDatum(const BSONObj& keyPattern,
++                  key_string::Value keyString,
++                  WorkingSetRegisteredIndexId indexId,
++                  SnapshotId snapshotId)
++        : indexKeyPattern(keyPattern),
++          keyString(std::move(keyString)),
++          indexId(indexId),
++          snapshotId(snapshotId) {}
++
+     /**
+      * getFieldDotted produces the field with the provided name based on index keyData. The return
+      * object is populated if the element is in a provided index key.  Returns none otherwise.
+@@ -76,9 +86,15 @@ struct IndexKeyDatum {
+     // This is not owned and points into the IndexDescriptor's data.
+     BSONObj indexKeyPattern;
+ 
+-    // This is the BSONObj for the key that we put into the index.  Owned by us.
++    // This is the BSONObj for the key that we put into the index.  Owned by us. Empty when the
++    // scan was told nobody would read it; 'keyString' is then set instead.
+     BSONObj keyData;
+ 
++    // The KeyString the index cursor produced, kept instead of 'keyData' when the only consumer is
++    // the parent FETCH's post-yield consistency check. That check compares KeyStrings, so keeping
++    // this avoids decoding the key to BSON and re-encoding it again.
++    boost::optional<key_string::Value> keyString;
++
+     // Associates this index key with an index that has been registered with the WorkingSet. Can be
+     // used to recover pointers to catalog objects for this index from the WorkingSet.
+     WorkingSetRegisteredIndexId indexId;
+diff --git a/src/mongo/db/exec/classic/working_set_common.cpp b/src/mongo/db/exec/classic/working_set_common.cpp
+index 45b778941a..530b160621 100644
+--- a/src/mongo/db/exec/classic/working_set_common.cpp
++++ b/src/mongo/db/exec/classic/working_set_common.cpp
+@@ -178,6 +178,16 @@ bool WorkingSetCommon::fetch(OperationContext* opCtx,
+                          multikeyMetadataKeys,
+                          multikeyPaths,
+                          member->recordId);
++            // When the scan kept the cursor's KeyString there is nothing to re-encode: getKeys()
++            // produces the same encoding, and KeyStringSet compares key bytes.
++            if (memberKey.keyString) {
++                if (!keys->count(*memberKey.keyString)) {
++                    // document would no longer be at this position in the index.
++                    return false;
++                }
++                continue;
++            }
++
+             key_string::HeapBuilder keyString(iam->getSortedDataInterface()->getKeyStringVersion(),
+                                               memberKey.keyData,
+                                               iam->getSortedDataInterface()->getOrdering(),
+diff --git a/src/mongo/db/query/point_query_bm.cpp b/src/mongo/db/query/point_query_bm.cpp
+index a9233ea383..7a5c2c2f0f 100644
+--- a/src/mongo/db/query/point_query_bm.cpp
++++ b/src/mongo/db/query/point_query_bm.cpp
+@@ -59,6 +59,26 @@ BENCHMARK_DEFINE_F(PointQueryBenchmark, ArrayFieldPointQuery)
+     runBenchmark(BSON("arrayField" << fieldValue), BSONObj{} /*projection*/, state);
+ }
+ 
++// A range over the unique field returning whole documents, i.e. IXSCAN -> FETCH over many keys.
++// This is the shape where per-key scan work dominates, as opposed to the point lookups above.
++BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldRangeScan)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    runBenchmark(BSON("uniqueField" << BSON("$gte" << 0 << "$lt" << numDocs)),
++                 BSONObj{} /*projection*/,
++                 state);
++}
++
++// The same range, but covered by the index, so the key BSON is consumed by the projection rather
++// than discarded. This is the control for a change that skips materializing unread keys.
++BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldRangeScanCovered)
++(benchmark::State& state) {
++    const auto numDocs = static_cast<int64_t>(docs().size());
++    runBenchmark(BSON("uniqueField" << BSON("$gte" << 0 << "$lt" << numDocs)),
++                 BSON("_id" << 0 << "uniqueField" << 1),
++                 state);
++}
++
+ BENCHMARK_DEFINE_F(PointQueryBenchmark, UniqueFieldPointQueryWithCoveredProjection)
+ (benchmark::State& state) {
+     int64_t fieldValue = docs().size() / 2;
+@@ -114,6 +134,11 @@ static void configureBenchmarks(benchmark::internal::Benchmark* bm) {
+     bm->ThreadRange(1, kMaxThreads)->Args({10, 1024});
+ }
+ 
++static void configureRangeScanBenchmarks(benchmark::internal::Benchmark* bm) {
++    // Enough keys that per-key scan work, rather than command overhead, dominates.
++    bm->ThreadRange(1, 1)->Args({1'000, 256})->Args({10'000, 256})->Args({100'000, 256});
++}
++
+ static void configureProjectionBenchmarks(benchmark::internal::Benchmark* bm) {
+     // Varying document size allows us to measure the effect of covering the projection with an
+     // index.
+@@ -124,6 +149,9 @@ BENCHMARK_REGISTER_F(PointQueryBenchmark, IdPointQuery)->Apply(configureBenchmar
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, NonUniqueFieldPointQuery)->Apply(configureBenchmarks);
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, ArrayFieldPointQuery)->Apply(configureBenchmarks);
++BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldRangeScan)->Apply(configureRangeScanBenchmarks);
++BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldRangeScanCovered)
++    ->Apply(configureRangeScanBenchmarks);
+ 
+ BENCHMARK_REGISTER_F(PointQueryBenchmark, UniqueFieldPointQueryWithCoveredProjection)
+     ->Apply(configureProjectionBenchmarks);

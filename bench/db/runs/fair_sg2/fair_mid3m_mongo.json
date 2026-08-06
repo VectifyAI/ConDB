@@ -1,0 +1,49 @@
+{
+  "doc": "data/mid3m.json",
+  "engine": "mongo",
+  "nodes": 3000000,
+  "paths": 200,
+  "arms": {
+    "naive": {
+      "n": 200,
+      "p50_ms": 2.391,
+      "p95_ms": 19.201,
+      "p99_ms": 172.748,
+      "mean_ms": 10.974,
+      "avg_rows": 8840.4
+    },
+    "covered": {
+      "verify": {
+        "plan": "PROJECTION_COVERED | IXSCAN",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 1.291,
+      "p95_ms": 10.692,
+      "p99_ms": 96.851,
+      "mean_ms": 6.105,
+      "avg_rows": 8840.4
+    },
+    "deployed": {
+      "verify": {
+        "plan": "PROJECTION_COVERED | IXSCAN",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 1.269,
+      "p95_ms": 10.616,
+      "p99_ms": 97.539,
+      "mean_ms": 6.097,
+      "avg_rows": 8840.4
+    }
+  },
+  "ingest_s": 28.4,
+  "index_s": 10.4,
+  "storage": {
+    "data": 1441763328,
+    "index": 159453184,
+    "total": 1601216512,
+    "uncompressed": 4550127377
+  },
+  "struct_build_s": 20.3
+}

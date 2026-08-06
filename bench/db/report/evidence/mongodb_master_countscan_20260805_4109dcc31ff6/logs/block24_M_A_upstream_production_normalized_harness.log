@@ -1,0 +1,21 @@
+{"t":{"$date":"2026-08-06T05:33:23.159+08:00"},"s":"I",  "c":"-",        "id":8991200, "ctx":"main","msg":"Shuffling initializers","attr":{"seed":230639065}}
+2026-08-06T05:33:23+08:00
+Running /tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness
+Run on (96 X 4000 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x48)
+  L1 Instruction 32 KiB (x48)
+  L2 Unified 2048 KiB (x48)
+  L3 Unified 61440 KiB (x2)
+Load Average: 2.19, 2.41, 3.09
+------------------------------------------------------------------------------------------------------------------------------------
+Benchmark                                                                          Time             CPU   Iterations UserCounters...
+------------------------------------------------------------------------------------------------------------------------------------
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64          96380234 ns     96381083 ns            1 cycles_per_iteration=202.406M instructions_per_iteration=1.12883G items_per_second=4.15019M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64         100986958 ns    100988079 ns            1 cycles_per_iteration=212.08M instructions_per_iteration=1.12932G items_per_second=3.96086M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64          97469330 ns     97359208 ns            1 cycles_per_iteration=204.693M instructions_per_iteration=1.1292G items_per_second=4.1085M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64          92812777 ns     92678924 ns            1 cycles_per_iteration=194.914M instructions_per_iteration=1.12921G items_per_second=4.31598M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64          98675728 ns     98570491 ns            1 cycles_per_iteration=207.227M instructions_per_iteration=1.12918G items_per_second=4.05801M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_mean     97265005 ns     97195557 ns            5 cycles_per_iteration=204.264M instructions_per_iteration=1.12915G items_per_second=4.11871M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_median   97469330 ns     97359208 ns            5 cycles_per_iteration=204.693M instructions_per_iteration=1.1292G items_per_second=4.1085M/s
+MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64_stddev    3020347 ns      3056296 ns            5 cycles_per_iteration=6.3426M instructions_per_iteration=184.035k items_per_second=130.967k/s

@@ -1,0 +1,338 @@
+{
+  "benchmark_filter": "CountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+  "binary_identity_postflight": {
+    "B": {
+      "build_id": "d14aea10c20ca862734eb72e930225a1e5ea263e",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-disabled",
+      "sha256": "ed2bdc05a6188a0ebb6433923391417c183e3471df78516eac3523c2f825bebc"
+    },
+    "C": {
+      "build_id": "482d4815330592895592815012509a756b70ccf8",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-enabled",
+      "sha256": "02628346e4357ab9a48d5c0dea0de68df4c0b2921ded3fb44c4f643eb5c043be"
+    }
+  },
+  "binary_identity_preflight": {
+    "B": {
+      "build_id": "d14aea10c20ca862734eb72e930225a1e5ea263e",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-disabled",
+      "sha256": "ed2bdc05a6188a0ebb6433923391417c183e3471df78516eac3523c2f825bebc"
+    },
+    "C": {
+      "build_id": "482d4815330592895592815012509a756b70ccf8",
+      "path": "/tmp/mongo-count-query-bm-696f0d5d-enabled",
+      "sha256": "02628346e4357ab9a48d5c0dea0de68df4c0b2921ded3fb44c4f643eb5c043be"
+    }
+  },
+  "campaign_sha256_postflight": "a1c495211544827370a4c64cea4d549b69250a8ff6092c66488a8a6213ce2404",
+  "campaign_sha256_preflight": "a1c495211544827370a4c64cea4d549b69250a8ff6092c66488a8a6213ce2404",
+  "cpu_affinity": 0,
+  "finished_at": "2026-08-05T17:29:14+08:00",
+  "harness_sha256_postflight": {
+    "activation_disable.patch": "305c2c258f45ad74a20f8a789a64cdbb85cb42b4e56ddf2649daf819bf9c242b",
+    "analyze.py": "c19e3b8fa0b8d1db2bac18ad660b1f25b3b70ad21a8c024f7f6dc8e1c7edc7ca",
+    "candidate.patch": "187c3c5768b66c33f43533b7903d572bc96179ae9160181e4275e00987d9348b",
+    "run_blocks.sh": "2dbc850779eb3effd1dc390b1aba66855603152a09914aaf7e432db13924ac44"
+  },
+  "harness_sha256_preflight": {
+    "activation_disable.patch": "305c2c258f45ad74a20f8a789a64cdbb85cb42b4e56ddf2649daf819bf9c242b",
+    "analyze.py": "c19e3b8fa0b8d1db2bac18ad660b1f25b3b70ad21a8c024f7f6dc8e1c7edc7ca",
+    "candidate.patch": "187c3c5768b66c33f43533b7903d572bc96179ae9160181e4275e00987d9348b",
+    "run_blocks.sh": "2dbc850779eb3effd1dc390b1aba66855603152a09914aaf7e432db13924ac44"
+  },
+  "host": {
+    "cpu_governor": "performance",
+    "kernel": "Linux 6.8.0-84-generic x86_64 GNU/Linux",
+    "name": "dmal-longcws3"
+  },
+  "output_sequence": [
+    {
+      "arm": "B",
+      "log": "logs/pair01_B_disabled_control.log",
+      "pair": 1,
+      "position": 1,
+      "raw": "raw/pair01_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair01_C_enabled_candidate.log",
+      "pair": 1,
+      "position": 2,
+      "raw": "raw/pair01_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair02_C_enabled_candidate.log",
+      "pair": 2,
+      "position": 1,
+      "raw": "raw/pair02_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair02_B_disabled_control.log",
+      "pair": 2,
+      "position": 2,
+      "raw": "raw/pair02_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair03_C_enabled_candidate.log",
+      "pair": 3,
+      "position": 1,
+      "raw": "raw/pair03_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair03_B_disabled_control.log",
+      "pair": 3,
+      "position": 2,
+      "raw": "raw/pair03_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair04_B_disabled_control.log",
+      "pair": 4,
+      "position": 1,
+      "raw": "raw/pair04_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair04_C_enabled_candidate.log",
+      "pair": 4,
+      "position": 2,
+      "raw": "raw/pair04_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair05_B_disabled_control.log",
+      "pair": 5,
+      "position": 1,
+      "raw": "raw/pair05_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair05_C_enabled_candidate.log",
+      "pair": 5,
+      "position": 2,
+      "raw": "raw/pair05_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair06_C_enabled_candidate.log",
+      "pair": 6,
+      "position": 1,
+      "raw": "raw/pair06_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair06_B_disabled_control.log",
+      "pair": 6,
+      "position": 2,
+      "raw": "raw/pair06_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair07_B_disabled_control.log",
+      "pair": 7,
+      "position": 1,
+      "raw": "raw/pair07_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair07_C_enabled_candidate.log",
+      "pair": 7,
+      "position": 2,
+      "raw": "raw/pair07_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair08_C_enabled_candidate.log",
+      "pair": 8,
+      "position": 1,
+      "raw": "raw/pair08_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair08_B_disabled_control.log",
+      "pair": 8,
+      "position": 2,
+      "raw": "raw/pair08_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair09_B_disabled_control.log",
+      "pair": 9,
+      "position": 1,
+      "raw": "raw/pair09_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair09_C_enabled_candidate.log",
+      "pair": 9,
+      "position": 2,
+      "raw": "raw/pair09_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair10_C_enabled_candidate.log",
+      "pair": 10,
+      "position": 1,
+      "raw": "raw/pair10_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair10_B_disabled_control.log",
+      "pair": 10,
+      "position": 2,
+      "raw": "raw/pair10_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair11_C_enabled_candidate.log",
+      "pair": 11,
+      "position": 1,
+      "raw": "raw/pair11_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair11_B_disabled_control.log",
+      "pair": 11,
+      "position": 2,
+      "raw": "raw/pair11_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair12_B_disabled_control.log",
+      "pair": 12,
+      "position": 1,
+      "raw": "raw/pair12_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair12_C_enabled_candidate.log",
+      "pair": 12,
+      "position": 2,
+      "raw": "raw/pair12_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair13_B_disabled_control.log",
+      "pair": 13,
+      "position": 1,
+      "raw": "raw/pair13_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair13_C_enabled_candidate.log",
+      "pair": 13,
+      "position": 2,
+      "raw": "raw/pair13_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair14_C_enabled_candidate.log",
+      "pair": 14,
+      "position": 1,
+      "raw": "raw/pair14_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair14_B_disabled_control.log",
+      "pair": 14,
+      "position": 2,
+      "raw": "raw/pair14_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair15_C_enabled_candidate.log",
+      "pair": 15,
+      "position": 1,
+      "raw": "raw/pair15_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair15_B_disabled_control.log",
+      "pair": 15,
+      "position": 2,
+      "raw": "raw/pair15_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair16_B_disabled_control.log",
+      "pair": 16,
+      "position": 1,
+      "raw": "raw/pair16_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair16_C_enabled_candidate.log",
+      "pair": 16,
+      "position": 2,
+      "raw": "raw/pair16_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair17_C_enabled_candidate.log",
+      "pair": 17,
+      "position": 1,
+      "raw": "raw/pair17_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair17_B_disabled_control.log",
+      "pair": 17,
+      "position": 2,
+      "raw": "raw/pair17_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair18_B_disabled_control.log",
+      "pair": 18,
+      "position": 1,
+      "raw": "raw/pair18_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair18_C_enabled_candidate.log",
+      "pair": 18,
+      "position": 2,
+      "raw": "raw/pair18_C_enabled_candidate.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair19_C_enabled_candidate.log",
+      "pair": 19,
+      "position": 1,
+      "raw": "raw/pair19_C_enabled_candidate.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair19_B_disabled_control.log",
+      "pair": 19,
+      "position": 2,
+      "raw": "raw/pair19_B_disabled_control.json"
+    },
+    {
+      "arm": "B",
+      "log": "logs/pair20_B_disabled_control.log",
+      "pair": 20,
+      "position": 1,
+      "raw": "raw/pair20_B_disabled_control.json"
+    },
+    {
+      "arm": "C",
+      "log": "logs/pair20_C_enabled_candidate.log",
+      "pair": 20,
+      "position": 2,
+      "raw": "raw/pair20_C_enabled_candidate.json"
+    }
+  ],
+  "schema_version": 1,
+  "started_at": "2026-08-05T17:23:44+08:00",
+  "status": "complete",
+  "taskset_command": [
+    "taskset",
+    "-c",
+    "0"
+  ]
+}

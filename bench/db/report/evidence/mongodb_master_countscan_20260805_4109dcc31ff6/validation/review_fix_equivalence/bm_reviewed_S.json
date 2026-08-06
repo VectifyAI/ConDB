@@ -1,0 +1,130 @@
+{
+  "context": {
+    "date": "2026-08-06T08:01:25+08:00",
+    "host_name": "dmal-longcws3",
+    "executable": "./bazel-bin/src/mongo/db/query/count_query_bm",
+    "num_cpus": 96,
+    "mhz_per_cpu": 4000,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 62914560,
+        "num_sharing": 48
+      }
+    ],
+    "load_avg": [51.292,55.2622,32.2622],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 8.0437898635864258e+07,
+      "cpu_time": 8.0438615000000045e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6893683400000000e+08,
+      "instructions_per_iteration": 9.7898069300000000e+08,
+      "items_per_second": 4.9727360422602966e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 1,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 8.1182956695556641e+07,
+      "cpu_time": 8.1160861999999940e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.7049414200000000e+08,
+      "instructions_per_iteration": 9.7897924200000000e+08,
+      "items_per_second": 4.9284838793358337e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "iteration",
+      "repetitions": 0,
+      "repetition_index": 2,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 7.8725576400756836e+07,
+      "cpu_time": 7.8682022999999821e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6533392400000000e+08,
+      "instructions_per_iteration": 9.7896881700000000e+08,
+      "items_per_second": 5.0837533752786312e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_mean",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "mean",
+      "iterations": 3,
+      "real_time": 8.0115477244059235e+07,
+      "cpu_time": 8.0093833333333269e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6825496666666666e+08,
+      "instructions_per_iteration": 9.7897625066666663e+08,
+      "items_per_second": 4.9949910989582539e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_median",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "median",
+      "iterations": 3,
+      "real_time": 8.0437898635864258e+07,
+      "cpu_time": 8.0438615000000045e+07,
+      "time_unit": "ns",
+      "cycles_per_iteration": 1.6893683400000000e+08,
+      "instructions_per_iteration": 9.7897924200000000e+08,
+      "items_per_second": 4.9727360422602966e+06
+    },
+    {
+      "name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64_stddev",
+      "run_name": "ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64",
+      "run_type": "aggregate",
+      "repetitions": 0,
+      "threads": 1,
+      "aggregate_name": "stddev",
+      "iterations": 3,
+      "real_time": 1.2600183108743764e+06,
+      "cpu_time": 1.2748790119980497e+06,
+      "time_unit": "ns",
+      "cycles_per_iteration": 2.6468225756725743e+06,
+      "instructions_per_iteration": 6.4785035309089708e+03,
+      "items_per_second": 7.9991372997647864e+04
+    }
+  ]
+}

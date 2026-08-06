@@ -1,0 +1,48 @@
+{
+  "doc": "data/mid3m.json",
+  "engine": "postgres",
+  "nodes": 3000000,
+  "paths": 200,
+  "arms": {
+    "naive": {
+      "n": 200,
+      "p50_ms": 0.648,
+      "p95_ms": 6.817,
+      "p99_ms": 61.207,
+      "mean_ms": 3.869,
+      "avg_rows": 8840.4
+    },
+    "covered": {
+      "verify": {
+        "plan": "Index Only Scan using ix_cover on nodes  (cost=0.56..8.57 rows=1 width=7) |   Index Cond: ((path >= 'x/'::text) AND (path < 'x0'::text))",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 0.297,
+      "p95_ms": 2.732,
+      "p99_ms": 25.99,
+      "mean_ms": 1.621,
+      "avg_rows": 8840.4
+    },
+    "deployed": {
+      "verify": {
+        "plan": "Index Only Scan using ix_struct_cover on fair_struct  (cost=0.56..8.57 rows=1 width=7) |   Index Cond: ((path >= 'x/'::text) AND (path < 'x0'::text))",
+        "covered": true
+      },
+      "n": 200,
+      "p50_ms": 0.273,
+      "p95_ms": 2.61,
+      "p99_ms": 24.022,
+      "mean_ms": 1.514,
+      "avg_rows": 8840.4
+    }
+  },
+  "ingest_s": 34.7,
+  "index_s": 16.6,
+  "storage": {
+    "data": 4892966912,
+    "index": 346202112,
+    "total": 5239169024
+  },
+  "struct_build_s": 4.3
+}

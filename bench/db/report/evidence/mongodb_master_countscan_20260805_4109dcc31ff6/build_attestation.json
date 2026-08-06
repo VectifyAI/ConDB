@@ -1,0 +1,746 @@
+{
+  "build_command": [
+    "bazel",
+    "build",
+    "--config=opt",
+    "//src/mongo/db/query:count_query_bm"
+  ],
+  "build_order": [
+    "C1",
+    "A",
+    "B",
+    "C2"
+  ],
+  "builds": {
+    "A": {
+      "arm": "A",
+      "attested_output_path": "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+      "bazel_process_summary": "INFO: 905 processes: 3 internal, 901 linux-sandbox, 1 local. | INFO: Build completed successfully, 905 total actions",
+      "bazelrc_digests": {
+        "after": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        },
+        "before": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        }
+      },
+      "build_command": [
+        "bazel",
+        "build",
+        "--config=opt",
+        "//src/mongo/db/query:count_query_bm"
+      ],
+      "build_environment": {
+        "BAZELISK_HOME": "",
+        "BAZEL_FLAGS": "",
+        "CC": "",
+        "CXX": ""
+      },
+      "build_id": "bf9775938e7262eb6ffe7ed5e8a77b735d8f3c17",
+      "build_key": "A",
+      "campaign_binary_path": "/tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness",
+      "compiler_version": "GCC: (GNU) 14.2.0; Linker: MongoDB LLD 19.1.7; MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)",
+      "effective_command": "frozen=bazel build --config=opt //src/mongo/db/query:count_query_bm :: canonicalized(--config=opt)=--config=opt --config=local --//bazel/config:build_atlas=false",
+      "finished_at": "2026-08-06T04:16:35.797798+08:00",
+      "log": "build_logs/build_A.log",
+      "log_sha256": "17af8652c9a6c8e0ca27ec0e2e463a49428d13169971514053852b09ccfe5ff2",
+      "output_sha256": "c2857234a276717b235ff6fdefa042c8e1a506f7e78c54fc152d9b1a30314062",
+      "smoke": {
+        "commands": [
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+            "--benchmark_filter=^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_S.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+            "--benchmark_filter=^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_M.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+            "--benchmark_filter=^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_W.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+            "--benchmark_filter=^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$",
+            "--benchmark_min_time=0.05",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_P.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-A",
+            "--benchmark_filter=^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_A_X.json",
+            "--benchmark_out_format=json"
+          ]
+        ],
+        "iterations_at_campaign_size": {
+          "M": 1,
+          "P": 2964,
+          "S": 1,
+          "W": 1,
+          "X": 1
+        },
+        "log": "build_logs/smoke_A.log",
+        "log_sha256": "2fcc592be8cb08767b3e39cbfc1e81691fe4aa69d9e47ad20ec9c71afb353b06",
+        "passed": true,
+        "returncode": 0,
+        "workloads": [
+          "M",
+          "P",
+          "S",
+          "W",
+          "X"
+        ]
+      },
+      "source_manifest": "arm_A_source_manifest.json",
+      "source_manifest_sha256": "ca36df892736f2925093531f84e004e6aaa8825799c0f7e0fa66428cb8df69e8",
+      "started_at": "2026-08-06T04:11:05.051759+08:00",
+      "verified_files": {
+        "buildscripts/resmokeconfig/suites/benchmarks_query.yml": {
+          "git_blob": "0aa7433db8e59c5b9a258d131993a1bcbc0db9e3",
+          "sha256": "0128126d1186541c699dc14bd1adc84aaf9155a10f66fdbce0b21cc04dfe3dca"
+        },
+        "src/mongo/db/exec/classic/count.cpp": {
+          "git_blob": "9f4c97f374315f912eda92767ef38b750abc8b92",
+          "sha256": "2339d7514df226b57f8369e6bd806c037c6b0aac041a6bfa7c287b8c1539cd03"
+        },
+        "src/mongo/db/exec/classic/count.h": {
+          "git_blob": "e74f83b830b5be94bda5250f4f700c801e32b3bf",
+          "sha256": "d913f14f00b3221bdd830c0a2549355ff8569cbd6fda923854016394f36d0753"
+        },
+        "src/mongo/db/exec/classic/count_scan.cpp": {
+          "git_blob": "768d1d2066bcab98c6957dba0ce1c28ad057c0c3",
+          "sha256": "2813c7073a97dca120111df6061bcf2de8d4d1dd668b0b0278de8686df31e330"
+        },
+        "src/mongo/db/exec/classic/count_scan.h": {
+          "git_blob": "262473b32d38cce412ab29dc6b0f6c6d79cd1273",
+          "sha256": "3e73cf54c2963ee72d801be8c6d483e2b6cf268640a0057f3029df0004341919"
+        },
+        "src/mongo/db/exec/classic/plan_stage.h": {
+          "git_blob": "083e605f7f46a393443ac3b3200eb66dc18bc7f0",
+          "sha256": "a27bc6a70c4154ccf70f8f873f630a43a84c947ecabe584a9ef609d686fc1f98"
+        },
+        "src/mongo/db/exec/classic/working_set.h": {
+          "git_blob": "011adacfe93c532104f2e5d02e08b750fcf614c3",
+          "sha256": "6db966bdd9d7b855baa315c065ade9be1011d3c8c80879bf9f3a6eb8c6a34d32"
+        },
+        "src/mongo/db/query/BUILD.bazel": {
+          "git_blob": "bbc0ea37c3478f7767b0157944b0d148e4f7a907",
+          "sha256": "2b80934970f5771819648f0ed1cea00fff4ce50041172d74ae0dd1a8ac149be5"
+        },
+        "src/mongo/db/query/count_query_bm.cpp": {
+          "git_blob": "223e28efbc6b474cf4c32bc7328f7578b4569edc",
+          "sha256": "1b3640b4e12d5eb02d9548f1728593e8b5646790054ece6ce4e69e3d954c17c7"
+        },
+        "src/mongo/db/query/query_bm_fixture.cpp": {
+          "git_blob": "55e0c66e2825c62972d1a60be4cce759ca55be7c",
+          "sha256": "3cef7a4d338ce73e5dccb185afd97b7f699da30c66e7808e9e7e27875e160542"
+        },
+        "src/mongo/db/query/query_bm_fixture.h": {
+          "git_blob": "a37c66eee4446692be9ad5cd825e9fc40d7ef1b3",
+          "sha256": "3ad8c57d5b8503e9e4f8bc3d950df8e19564027e7e4787d3416abadf37faa077"
+        }
+      },
+      "worktree_path": "/tmp/mongo-countscan-attested-20260806"
+    },
+    "B": {
+      "arm": "B",
+      "attested_output_path": "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+      "bazel_process_summary": "INFO: 1001 processes: 3 internal, 997 linux-sandbox, 1 local. | INFO: Build completed successfully, 1001 total actions",
+      "bazelrc_digests": {
+        "after": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        },
+        "before": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        }
+      },
+      "build_command": [
+        "bazel",
+        "build",
+        "--config=opt",
+        "//src/mongo/db/query:count_query_bm"
+      ],
+      "build_environment": {
+        "BAZELISK_HOME": "",
+        "BAZEL_FLAGS": "",
+        "CC": "",
+        "CXX": ""
+      },
+      "build_id": "085a4d56d150febfcb6c8ab156112d886e36045f",
+      "build_key": "B",
+      "campaign_binary_path": "/tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation",
+      "compiler_version": "GCC: (GNU) 14.2.0; Linker: MongoDB LLD 19.1.7; MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)",
+      "effective_command": "frozen=bazel build --config=opt //src/mongo/db/query:count_query_bm :: canonicalized(--config=opt)=--config=opt --config=local --//bazel/config:build_atlas=false",
+      "finished_at": "2026-08-06T04:22:02.016479+08:00",
+      "log": "build_logs/build_B.log",
+      "log_sha256": "9f63d6ce1835d4cd034688198ff9e97a8560363d8a4e532679cc78ad38ed0f2c",
+      "output_sha256": "de4b3be6856ba5118909cff81966420a3dab53f7ffae82ba897f85fcbbd001d4",
+      "smoke": {
+        "commands": [
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+            "--benchmark_filter=^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_B_S.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+            "--benchmark_filter=^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_B_M.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+            "--benchmark_filter=^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_B_W.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+            "--benchmark_filter=^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$",
+            "--benchmark_min_time=0.05",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_B_P.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-B",
+            "--benchmark_filter=^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_B_X.json",
+            "--benchmark_out_format=json"
+          ]
+        ],
+        "iterations_at_campaign_size": {
+          "M": 1,
+          "P": 3069,
+          "S": 1,
+          "W": 1,
+          "X": 1
+        },
+        "log": "build_logs/smoke_B.log",
+        "log_sha256": "0e62a3b8326eb4e51475016b31590e3dfe35cdb4975e9227bd7663ac2f3d06da",
+        "passed": true,
+        "returncode": 0,
+        "workloads": [
+          "M",
+          "P",
+          "S",
+          "W",
+          "X"
+        ]
+      },
+      "source_manifest": "arm_B_source_manifest.json",
+      "source_manifest_sha256": "6bebe04046657d3c71386513c6bdd852df24587489b10a1a5db1e7429ae6f88e",
+      "started_at": "2026-08-06T04:16:45.960778+08:00",
+      "verified_files": {
+        "buildscripts/resmokeconfig/suites/benchmarks_query.yml": {
+          "git_blob": "0aa7433db8e59c5b9a258d131993a1bcbc0db9e3",
+          "sha256": "0128126d1186541c699dc14bd1adc84aaf9155a10f66fdbce0b21cc04dfe3dca"
+        },
+        "src/mongo/db/exec/classic/count.cpp": {
+          "git_blob": "6cc8d99e0c433d0fa1fe297159d970008e10020f",
+          "sha256": "69314fea5cf320f6991815b6d267caf36be5d9a6c1e0fb23ba3c7979886f856b"
+        },
+        "src/mongo/db/exec/classic/count.h": {
+          "git_blob": "0f638ba2b822a9d0a642de5d3d95e569a5dfdfe7",
+          "sha256": "5bcdab41c883dcfc7867fbbd9ea72ce7e22cc195b4f9175956acd70b7c46cf4d"
+        },
+        "src/mongo/db/exec/classic/count_scan.cpp": {
+          "git_blob": "0cb3b921e84754d7f7cb125934696319f80d660c",
+          "sha256": "8d67990571257dc83309790ffc834857f6b74789dd2924901c4c157e0142406f"
+        },
+        "src/mongo/db/exec/classic/count_scan.h": {
+          "git_blob": "b958a1210eefa8f9eccfbf8a6b14387cf20be5ca",
+          "sha256": "42c9b1d4bd567c7027134ca088033500c3d1bb7cd0c0bbb2a4151204a2db3083"
+        },
+        "src/mongo/db/exec/classic/plan_stage.h": {
+          "git_blob": "9649aac1d351227d60f61482d0ab5152f9e86c6c",
+          "sha256": "56279ec995654afa239e2d754d5e3a50d534004c9e2650426dab4984bb3b178b"
+        },
+        "src/mongo/db/exec/classic/working_set.h": {
+          "git_blob": "a7488fa87416c966ce4e56f1226026fb7755d353",
+          "sha256": "995d0ded78fcd0eb4a23c59da080c3dc96b88fcedecc6495f540a304c1002713"
+        },
+        "src/mongo/db/query/BUILD.bazel": {
+          "git_blob": "bbc0ea37c3478f7767b0157944b0d148e4f7a907",
+          "sha256": "2b80934970f5771819648f0ed1cea00fff4ce50041172d74ae0dd1a8ac149be5"
+        },
+        "src/mongo/db/query/count_query_bm.cpp": {
+          "git_blob": "223e28efbc6b474cf4c32bc7328f7578b4569edc",
+          "sha256": "1b3640b4e12d5eb02d9548f1728593e8b5646790054ece6ce4e69e3d954c17c7"
+        },
+        "src/mongo/db/query/query_bm_fixture.cpp": {
+          "git_blob": "55e0c66e2825c62972d1a60be4cce759ca55be7c",
+          "sha256": "3cef7a4d338ce73e5dccb185afd97b7f699da30c66e7808e9e7e27875e160542"
+        },
+        "src/mongo/db/query/query_bm_fixture.h": {
+          "git_blob": "a37c66eee4446692be9ad5cd825e9fc40d7ef1b3",
+          "sha256": "3ad8c57d5b8503e9e4f8bc3d950df8e19564027e7e4787d3416abadf37faa077"
+        }
+      },
+      "worktree_path": "/tmp/mongo-countscan-attested-20260806"
+    },
+    "C1": {
+      "arm": "C",
+      "attested_output_path": "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+      "bazel_process_summary": "INFO: 1 process: 1 internal. | INFO: Build completed successfully, 1 total action",
+      "bazelrc_digests": {
+        "after": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        },
+        "before": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        }
+      },
+      "build_command": [
+        "bazel",
+        "build",
+        "--config=opt",
+        "//src/mongo/db/query:count_query_bm"
+      ],
+      "build_environment": {
+        "BAZELISK_HOME": "",
+        "BAZEL_FLAGS": "",
+        "CC": "",
+        "CXX": ""
+      },
+      "build_id": "25e5b10c3a0085aa7a593760d0947c48176d4e52",
+      "build_key": "C1",
+      "campaign_binary_path": null,
+      "compiler_version": "GCC: (GNU) 14.2.0; Linker: MongoDB LLD 19.1.7; MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)",
+      "effective_command": "frozen=bazel build --config=opt //src/mongo/db/query:count_query_bm :: canonicalized(--config=opt)=--config=opt --config=local --//bazel/config:build_atlas=false",
+      "finished_at": "2026-08-06T04:10:52.878201+08:00",
+      "log": "build_logs/build_C1.log",
+      "log_sha256": "617db1eb5ff5bdb9b33ddee14cc73ef4c3a8588015e41ca75fedd42a30c23c52",
+      "output_sha256": "80a9193b4464ac9f4a48b10578b2b17bb48ce38ab73e76a4cb475feb05d6d7bc",
+      "smoke": {
+        "commands": [
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+            "--benchmark_filter=^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C1_S.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+            "--benchmark_filter=^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C1_M.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+            "--benchmark_filter=^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C1_W.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+            "--benchmark_filter=^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$",
+            "--benchmark_min_time=0.05",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C1_P.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C1",
+            "--benchmark_filter=^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C1_X.json",
+            "--benchmark_out_format=json"
+          ]
+        ],
+        "iterations_at_campaign_size": {
+          "M": 1,
+          "P": 2882,
+          "S": 1,
+          "W": 1,
+          "X": 1
+        },
+        "log": "build_logs/smoke_C1.log",
+        "log_sha256": "6a21d0c0393b29a85ce4014ec6c21180103817c1075b2bee5a7c988dc52d5c1d",
+        "passed": true,
+        "returncode": 0,
+        "workloads": [
+          "M",
+          "P",
+          "S",
+          "W",
+          "X"
+        ]
+      },
+      "source_manifest": "arm_C_source_manifest.json",
+      "source_manifest_sha256": "94728002dde37664edf710d5177292ce36d7592d5381f809cd42015d3d09f924",
+      "started_at": "2026-08-06T04:10:32.831737+08:00",
+      "verified_files": {
+        "buildscripts/resmokeconfig/suites/benchmarks_query.yml": {
+          "git_blob": "0aa7433db8e59c5b9a258d131993a1bcbc0db9e3",
+          "sha256": "0128126d1186541c699dc14bd1adc84aaf9155a10f66fdbce0b21cc04dfe3dca"
+        },
+        "src/mongo/db/exec/classic/count.cpp": {
+          "git_blob": "109f7d553f429de6f8a13f68925f483293a8f8bd",
+          "sha256": "93ed68da179a677414424299538df30d1107a78f5dfb97ac5f92e554786c3ee6"
+        },
+        "src/mongo/db/exec/classic/count.h": {
+          "git_blob": "e74f83b830b5be94bda5250f4f700c801e32b3bf",
+          "sha256": "d913f14f00b3221bdd830c0a2549355ff8569cbd6fda923854016394f36d0753"
+        },
+        "src/mongo/db/exec/classic/count_scan.cpp": {
+          "git_blob": "87f37933a92a18720ac2e8144fc7d5200ad2f9d4",
+          "sha256": "9e2b9ca9d5aa383f0a7d74044fda4246e9f0e5d68b8abd7cade3ef12c52422f2"
+        },
+        "src/mongo/db/exec/classic/count_scan.h": {
+          "git_blob": "29b4a8db7bd7ccef98ef6fb59f6d18fe76781e76",
+          "sha256": "6c6d3486599c8a282955af4148945fc4109902bc4838298d530eaa39ac001691"
+        },
+        "src/mongo/db/exec/classic/plan_stage.h": {
+          "git_blob": "6dba84ffd2dceb1c4ed4ccb5130bd751d76db7de",
+          "sha256": "60786a1a1f4757980bb2f6d9b6da78dc1572c1ae1133a444933b2188bd7638c7"
+        },
+        "src/mongo/db/exec/classic/working_set.h": {
+          "git_blob": "011adacfe93c532104f2e5d02e08b750fcf614c3",
+          "sha256": "6db966bdd9d7b855baa315c065ade9be1011d3c8c80879bf9f3a6eb8c6a34d32"
+        },
+        "src/mongo/db/query/BUILD.bazel": {
+          "git_blob": "bbc0ea37c3478f7767b0157944b0d148e4f7a907",
+          "sha256": "2b80934970f5771819648f0ed1cea00fff4ce50041172d74ae0dd1a8ac149be5"
+        },
+        "src/mongo/db/query/count_query_bm.cpp": {
+          "git_blob": "223e28efbc6b474cf4c32bc7328f7578b4569edc",
+          "sha256": "1b3640b4e12d5eb02d9548f1728593e8b5646790054ece6ce4e69e3d954c17c7"
+        },
+        "src/mongo/db/query/query_bm_fixture.cpp": {
+          "git_blob": "55e0c66e2825c62972d1a60be4cce759ca55be7c",
+          "sha256": "3cef7a4d338ce73e5dccb185afd97b7f699da30c66e7808e9e7e27875e160542"
+        },
+        "src/mongo/db/query/query_bm_fixture.h": {
+          "git_blob": "a37c66eee4446692be9ad5cd825e9fc40d7ef1b3",
+          "sha256": "3ad8c57d5b8503e9e4f8bc3d950df8e19564027e7e4787d3416abadf37faa077"
+        }
+      },
+      "worktree_path": "/tmp/mongo-countscan-attested-20260806"
+    },
+    "C2": {
+      "arm": "C",
+      "attested_output_path": "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+      "bazel_process_summary": "INFO: 1001 processes: 3 internal, 997 linux-sandbox, 1 local. | INFO: Build completed successfully, 1001 total actions",
+      "bazelrc_digests": {
+        "after": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        },
+        "before": {
+          ".bazelrc": "681b9149147470979c42f6cd9aed26604f0bed6dbb4985bb67a883ebc23e50b4",
+          ".bazelrc.bazelisk": "454a62c4b7c6f34264ce6ddb8d9174a8d2adcc5650dfb3a6d4f4d8e6e072499d",
+          ".bazelrc.fuzztest": "11cc655f37b040eb85b9f96a5c01bef944fcc8e94d0aacabeee301656288e7c1",
+          ".bazelrc.local.example": "ac4dcf0529d8da9372f1d03d64a830bfb965745a09d64efb0e898a3176f4b3f0",
+          ".bazelrc.sync": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          ".bazelrc.target_mongo_version": "fe9f7af7d4b251f582aa4243f0405cb4eab7114721e82aaa6207c657235157b2",
+          ".bazelrc.wrapper_hook": "2d2d17f47ff096e5764569fa32dcd1c6ba0150da0bd534894190c9a911f601b5"
+        }
+      },
+      "build_command": [
+        "bazel",
+        "build",
+        "--config=opt",
+        "//src/mongo/db/query:count_query_bm"
+      ],
+      "build_environment": {
+        "BAZELISK_HOME": "",
+        "BAZEL_FLAGS": "",
+        "CC": "",
+        "CXX": ""
+      },
+      "build_id": "25e5b10c3a0085aa7a593760d0947c48176d4e52",
+      "build_key": "C2",
+      "campaign_binary_path": "/tmp/mongo-count-query-bm-countscan-C-final-candidate",
+      "compiler_version": "GCC: (GNU) 14.2.0; Linker: MongoDB LLD 19.1.7; MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)",
+      "effective_command": "frozen=bazel build --config=opt //src/mongo/db/query:count_query_bm :: canonicalized(--config=opt)=--config=opt --config=local --//bazel/config:build_atlas=false",
+      "finished_at": "2026-08-06T04:27:28.101247+08:00",
+      "log": "build_logs/build_C2.log",
+      "log_sha256": "688c40296a8d1b012624f583038426ca2ec1a9ad17dc00cf9a3a127aa76b0986",
+      "output_sha256": "80a9193b4464ac9f4a48b10578b2b17bb48ce38ab73e76a4cb475feb05d6d7bc",
+      "smoke": {
+        "commands": [
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+            "--benchmark_filter=^ScalarCountQueryBenchmark/DirectNonDeduplicatingCountScan/400000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C2_S.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+            "--benchmark_filter=^MultikeyCountQueryBenchmark/DirectDeduplicatingCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C2_M.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+            "--benchmark_filter=^CompoundWildcardCountQueryBenchmark/DirectNonMultikeyCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C2_W.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+            "--benchmark_filter=^ClassicPointControlQueryBenchmark/HintedUniqueFieldPointQuery/10000/64$",
+            "--benchmark_min_time=0.05",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C2_P.json",
+            "--benchmark_out_format=json"
+          ],
+          [
+            "taskset",
+            "-c",
+            "2",
+            "/tmp/mongo-count-query-bm-4109dcc-attested-C2",
+            "--benchmark_filter=^UnoptimizedCountQueryBenchmark/FetchingCountWithoutCountScan/200000/64$",
+            "--benchmark_min_time=0.01",
+            "--benchmark_repetitions=1",
+            "--benchmark_out=/home/junyao/code/pageindex/ConDB/bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6/build_logs/smoke_C2_X.json",
+            "--benchmark_out_format=json"
+          ]
+        ],
+        "iterations_at_campaign_size": {
+          "M": 1,
+          "P": 3126,
+          "S": 1,
+          "W": 1,
+          "X": 1
+        },
+        "log": "build_logs/smoke_C2.log",
+        "log_sha256": "afdd08d4334dadf30c791c2a46e4e945eb408de511ebdd17fd760213f0cd23a3",
+        "passed": true,
+        "returncode": 0,
+        "workloads": [
+          "M",
+          "P",
+          "S",
+          "W",
+          "X"
+        ]
+      },
+      "source_manifest": "arm_C_source_manifest.json",
+      "source_manifest_sha256": "94728002dde37664edf710d5177292ce36d7592d5381f809cd42015d3d09f924",
+      "started_at": "2026-08-06T04:22:11.940941+08:00",
+      "verified_files": {
+        "buildscripts/resmokeconfig/suites/benchmarks_query.yml": {
+          "git_blob": "0aa7433db8e59c5b9a258d131993a1bcbc0db9e3",
+          "sha256": "0128126d1186541c699dc14bd1adc84aaf9155a10f66fdbce0b21cc04dfe3dca"
+        },
+        "src/mongo/db/exec/classic/count.cpp": {
+          "git_blob": "109f7d553f429de6f8a13f68925f483293a8f8bd",
+          "sha256": "93ed68da179a677414424299538df30d1107a78f5dfb97ac5f92e554786c3ee6"
+        },
+        "src/mongo/db/exec/classic/count.h": {
+          "git_blob": "e74f83b830b5be94bda5250f4f700c801e32b3bf",
+          "sha256": "d913f14f00b3221bdd830c0a2549355ff8569cbd6fda923854016394f36d0753"
+        },
+        "src/mongo/db/exec/classic/count_scan.cpp": {
+          "git_blob": "87f37933a92a18720ac2e8144fc7d5200ad2f9d4",
+          "sha256": "9e2b9ca9d5aa383f0a7d74044fda4246e9f0e5d68b8abd7cade3ef12c52422f2"
+        },
+        "src/mongo/db/exec/classic/count_scan.h": {
+          "git_blob": "29b4a8db7bd7ccef98ef6fb59f6d18fe76781e76",
+          "sha256": "6c6d3486599c8a282955af4148945fc4109902bc4838298d530eaa39ac001691"
+        },
+        "src/mongo/db/exec/classic/plan_stage.h": {
+          "git_blob": "6dba84ffd2dceb1c4ed4ccb5130bd751d76db7de",
+          "sha256": "60786a1a1f4757980bb2f6d9b6da78dc1572c1ae1133a444933b2188bd7638c7"
+        },
+        "src/mongo/db/exec/classic/working_set.h": {
+          "git_blob": "011adacfe93c532104f2e5d02e08b750fcf614c3",
+          "sha256": "6db966bdd9d7b855baa315c065ade9be1011d3c8c80879bf9f3a6eb8c6a34d32"
+        },
+        "src/mongo/db/query/BUILD.bazel": {
+          "git_blob": "bbc0ea37c3478f7767b0157944b0d148e4f7a907",
+          "sha256": "2b80934970f5771819648f0ed1cea00fff4ce50041172d74ae0dd1a8ac149be5"
+        },
+        "src/mongo/db/query/count_query_bm.cpp": {
+          "git_blob": "223e28efbc6b474cf4c32bc7328f7578b4569edc",
+          "sha256": "1b3640b4e12d5eb02d9548f1728593e8b5646790054ece6ce4e69e3d954c17c7"
+        },
+        "src/mongo/db/query/query_bm_fixture.cpp": {
+          "git_blob": "55e0c66e2825c62972d1a60be4cce759ca55be7c",
+          "sha256": "3cef7a4d338ce73e5dccb185afd97b7f699da30c66e7808e9e7e27875e160542"
+        },
+        "src/mongo/db/query/query_bm_fixture.h": {
+          "git_blob": "a37c66eee4446692be9ad5cd825e9fc40d7ef1b3",
+          "sha256": "3ad8c57d5b8503e9e4f8bc3d950df8e19564027e7e4787d3416abadf37faa077"
+        }
+      },
+      "worktree_path": "/tmp/mongo-countscan-attested-20260806"
+    }
+  },
+  "campaign_binaries": {
+    "A": "/tmp/mongo-count-query-bm-countscan-A-upstream-production-normalized-harness",
+    "B": "/tmp/mongo-count-query-bm-countscan-B-rejected-heavyweight-implementation",
+    "C": "/tmp/mongo-count-query-bm-countscan-C-final-candidate"
+  },
+  "campaign_id": "mongodb-master-countscan-three-arm-20260806-90814b83d3e5",
+  "common_harness_source_commit": "4109dcc31ff6df595c6b2e5caf3fbce077c488ba",
+  "created_at": "2026-08-06T04:27:40.573131+08:00",
+  "reconstruction_base_commit": "0561c098b99ac5e929005e70a2e37d7a97a82423",
+  "reproducibility_check": {
+    "build_id_equal": true,
+    "c1_bazel_process_summary": "INFO: 1 process: 1 internal. | INFO: Build completed successfully, 1 total action",
+    "c1_build_id": "25e5b10c3a0085aa7a593760d0947c48176d4e52",
+    "c1_output_sha256": "80a9193b4464ac9f4a48b10578b2b17bb48ce38ab73e76a4cb475feb05d6d7bc",
+    "c2_bazel_process_summary": "INFO: 1001 processes: 3 internal, 997 linux-sandbox, 1 local. | INFO: Build completed successfully, 1001 total actions",
+    "c2_build_id": "25e5b10c3a0085aa7a593760d0947c48176d4e52",
+    "c2_output_sha256": "80a9193b4464ac9f4a48b10578b2b17bb48ce38ab73e76a4cb475feb05d6d7bc",
+    "interpretation": "C1 and C2 share one worktree and one bazel output base, as the protocol requires, so C2 is substantially served from the bazel action cache. Their equality evidences that building arms A and B left the shared build state undisturbed. It is not a hermetic from-scratch rebuild and must not be cited as bit-for-bit build reproducibility.",
+    "output_sha256_equal": true,
+    "scope": "same_worktree_and_output_base_state_stability_not_hermetic_rebuild"
+  },
+  "schema_version": 1,
+  "source_repository": "/home/junyao/code/mongo",
+  "toolchain": {
+    "bazel_release": "release 7.5.0-mongo_90b8a7b661",
+    "bazel_version": "bazel 7.5.0-mongo_90b8a7b661",
+    "bazel_wrapper_sha256": {
+      "bazel/workspace_status.py": "91de7a0b35542dd9e2a7dfb15bde3fcaba51b47de80da3c09e15babf158cce45",
+      "bazel/wrapper_hook/wrapper_hook.py": "bfe44445b889e3c5808d71efc1aa0182c8eea1a327af94f85cb00885171ff686",
+      "tools/bazel": "f1f36bc6b898fda23a5290eee8aeb9842173a787225ecccf6279c7e32003e568"
+    },
+    "compiler_version": "GCC: (GNU) 14.2.0; Linker: MongoDB LLD 19.1.7; MongoDB clang version 19.1.7 (https://github.com/10gen/toolchain-builder)",
+    "hostname": "dmal-longcws3",
+    "kernel": "6.8.0-84-generic",
+    "libc": "ldd (Ubuntu GLIBC 2.35-0ubuntu3.11) 2.35",
+    "machine": "x86_64"
+  },
+  "worktree_path": "/tmp/mongo-countscan-attested-20260806"
+}

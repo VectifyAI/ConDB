@@ -2,10 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from jinja2 import Template
 
+from contextdb.core.storage import TreeDB
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 from contextdb.retriever.base import RetrievalResult
@@ -36,7 +37,7 @@ class BeamRetriever(BaseRetriever):
     def __init__(self, storage, llm, mode: str = "document"):
         super().__init__(storage, llm)
         self.mode = mode
-        self._entity_cache: dict[str, dict[str, Any]] = {}
+        self._entity_cache: dict[str, Optional[dict[str, Any]]] = {}
         self._node_cache: dict[str, Any] = {}
         self._children_cache: dict[str, list[Any]] = {}
         self._attrs_cache: dict[str, dict[str, Any]] = {}
@@ -71,7 +72,25 @@ class BeamRetriever(BaseRetriever):
 
         for turn in range(max_turns):
             candidate_set = []
-            frontier_children: dict[str, list[Any]] = {}
+            frontier_node_ids = [frontier_node["node_id"] for frontier_node in frontier]
+            frontier_children = self._get_children_many(tree_id, frontier_node_ids)
+
+            if self.mode != "filesystem":
+                candidate_node_ids = []
+                for frontier_node_id in frontier_node_ids:
+                    children = frontier_children[frontier_node_id]
+                    for child in children:
+                        if child.entity_id:
+                            candidate_node_ids.append(child.node_id)
+                        else:
+                            self._entity_cache.setdefault(child.node_id, None)
+                    if not children:
+                        frontier_node = self._node_cache.get(frontier_node_id)
+                        if frontier_node is not None and not frontier_node.entity_id:
+                            self._entity_cache.setdefault(frontier_node_id, None)
+                        else:
+                            candidate_node_ids.append(frontier_node_id)
+                self._prime_entities(tree_id, candidate_node_ids)
 
             # Expand frontier nodes into the candidate set shown to the LLM.
             log.debug("turn %d: expanding %d frontier nodes", turn, len(frontier))
@@ -79,8 +98,7 @@ class BeamRetriever(BaseRetriever):
                 # Get parent node's summary for context carrying
                 parent_summary = frontier_node.get("parent_summary", "")
                 frontier_node_id = frontier_node["node_id"]
-                children = self._get_children(tree_id, frontier_node_id)
-                frontier_children[frontier_node_id] = children
+                children = frontier_children[frontier_node_id]
                 if not children:
                     # Leaf node: mark is_leaf=True to exclude from next frontier.
                     candidate_set.append(self._candidate_from_node(
@@ -145,26 +163,28 @@ class BeamRetriever(BaseRetriever):
                 if c:
                     log.debug("  #%d [%s] %s", i + 1, nid[:8], c["title"])
 
-            # Add file-like ranked ids until the final result limit is reached.
             remaining_result_slots = max(0, result_limit - len(top_candidate_ids))
-            if self.mode == "filesystem":
-                ranked_file_ids = [
-                    node_id
-                    for node_id in ranked_ids
-                    if not candidate_map.get(node_id, {}).get("is_dir", False)
-                ]
-                top_ids_this_turn = ranked_file_ids[:remaining_result_slots]
-            else:
-                top_ids_this_turn = ranked_ids[:remaining_result_slots]
-            for node_id in top_ids_this_turn:
+            for node_id in ranked_ids:
+                if remaining_result_slots == 0:
+                    break
+                candidate = candidate_map[node_id]
+                terminal = (
+                    not candidate.get("is_dir", False)
+                    if self.mode == "filesystem"
+                    else candidate.get("is_leaf", False)
+                )
+                if not terminal and not (done and self.mode != "filesystem"):
+                    continue
                 if node_id not in top_candidate_ids:
                     top_candidate_ids.append(node_id)
+                    remaining_result_slots -= 1
 
             if len(top_candidate_ids) >= result_limit:
                 next_frontier = []
                 done = True
+            elif done:
+                next_frontier = []
             else:
-                # Keep the next frontier set (directories / expandable nodes only).
                 next_frontier = []
                 seen = set()
                 for node_id in ranked_ids:
@@ -173,9 +193,6 @@ class BeamRetriever(BaseRetriever):
                     seen.add(node_id)
                     cand = candidate_map[node_id]
                     if cand.get("is_leaf") or (self.mode == "filesystem" and not cand.get("is_dir", False)):
-                        # Leaf/file nodes go to top candidates, not next frontier.
-                        if self.mode != "filesystem" and node_id not in top_candidate_ids:
-                            top_candidate_ids.append(node_id)
                         continue
                     next_frontier.append({
                         "node_id": cand["node_id"],
@@ -226,12 +243,14 @@ class BeamRetriever(BaseRetriever):
         # Final results
         contents = []
         top_candidate_ids = top_candidate_ids[:result_limit]
+        final_entities = self._fetch_entities(tree_id, top_candidate_ids)
 
         log.debug("=== retrieval complete: %d top candidates ===", len(top_candidate_ids))
         for node_id in top_candidate_ids:
-            entity = self.storage.get_entity(tree_id, node_id)
-            if entity:
-                payload = json.loads(entity.payload_json)
+            entity = final_entities.get(node_id)
+            payload = json.loads(entity.payload_json) if entity else None
+            self._entity_cache[node_id] = payload
+            if payload is not None:
                 contents.append({"node_id": node_id, "content": payload})
                 title = payload.get("title", "")
                 text = (payload.get("text") or payload.get("summary") or "")[:100]
@@ -277,9 +296,19 @@ class BeamRetriever(BaseRetriever):
         return list(candidates)
 
     def _candidate_from_child(
-        self, tree_id: str, child, parent_titles: list[str], parent_summary: str = "", is_leaf: bool = False
+        self,
+        tree_id: str,
+        child,
+        parent_titles: list[str],
+        parent_summary: str = "",
+        is_leaf: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Build a candidate dict from a child node (for the LLM prompt)."""
+        self._node_cache.setdefault(child.node_id, child)
+        if not child.entity_id:
+            self._entity_cache.setdefault(child.node_id, None)
+        if is_leaf is None:
+            is_leaf = getattr(child, "node_type", None) == TreeDB.LEAF
         attrs = self._node_attrs(child)
         title = attrs.get("title") or ""
         summary = attrs.get("summary") or ""
@@ -341,13 +370,29 @@ class BeamRetriever(BaseRetriever):
 
     def _node_text(self, tree_id: str, node_id: str) -> str:
         """Fetch text/content from entity payload if present (cached)."""
-        if node_id in self._entity_cache:
-            payload = self._entity_cache[node_id]
-        else:
-            entity = self.storage.get_entity(tree_id, node_id)
-            payload = json.loads(entity.payload_json) if entity else {}
-            self._entity_cache[node_id] = payload
+        self._prime_entities(tree_id, [node_id])
+        payload = self._entity_cache[node_id] or {}
         return payload.get("text") or payload.get("content") or ""
+
+    def _prime_entities(self, tree_id: str, node_ids: list[str]) -> None:
+        missing_ids = list(dict.fromkeys(node_id for node_id in node_ids if node_id not in self._entity_cache))
+        if not missing_ids:
+            return
+
+        entities = self._fetch_entities(tree_id, missing_ids)
+        for node_id in missing_ids:
+            entity = entities.get(node_id)
+            self._entity_cache[node_id] = json.loads(entity.payload_json) if entity else None
+
+    def _fetch_entities(self, tree_id: str, node_ids: list[str]) -> dict[str, Any]:
+        unique_ids = list(dict.fromkeys(node_ids))
+        if not unique_ids:
+            return {}
+
+        get_entities = getattr(self.storage, "get_entities", None)
+        if len(unique_ids) > 1 and callable(get_entities):
+            return get_entities(tree_id, unique_ids)
+        return {node_id: self.storage.get_entity(tree_id, node_id) for node_id in unique_ids}
 
     def _get_node(self, tree_id: str, node_id: str):
         if node_id in self._node_cache:
@@ -363,6 +408,24 @@ class BeamRetriever(BaseRetriever):
         children = self.storage.get_children(tree_id, node_id)
         self._children_cache[node_id] = children
         return list(children)
+
+    def _get_children_many(self, tree_id: str, node_ids: list[str]) -> dict[str, list[Any]]:
+        missing_ids = list(dict.fromkeys(node_id for node_id in node_ids if node_id not in self._children_cache))
+        if missing_ids:
+            get_children_many = getattr(self.storage, "get_children_many", None)
+            if len(missing_ids) > 1 and callable(get_children_many):
+                children_by_parent = get_children_many(tree_id, missing_ids)
+            else:
+                children_by_parent = {
+                    node_id: self.storage.get_children(tree_id, node_id)
+                    for node_id in missing_ids
+                }
+            for node_id in missing_ids:
+                children = list(children_by_parent.get(node_id, []))
+                self._children_cache[node_id] = children
+                for child in children:
+                    self._node_cache.setdefault(child.node_id, child)
+        return {node_id: list(self._children_cache[node_id]) for node_id in dict.fromkeys(node_ids)}
 
     def _clear_lookup_cache(self) -> None:
         self._entity_cache.clear()

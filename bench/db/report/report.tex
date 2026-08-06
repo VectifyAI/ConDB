@@ -1,42 +1,63 @@
-\documentclass[11pt]{article}
+\documentclass[10pt]{article}
 
-\usepackage[margin=1in]{geometry}
+\usepackage[margin=0.68in]{geometry}
 \usepackage[T1]{fontenc}
-% Libertine text/math when available.
-\IfFileExists{libertine.sty}{%
-  \usepackage{libertine}%
-  \IfFileExists{newtxmath.sty}{\usepackage[libertine]{newtxmath}}{}%
-}{}
-% Light monospace for inline code.
-\IfFileExists{inconsolata.sty}{\usepackage[scaled=0.95]{inconsolata}}{%
-  \IfFileExists{zi4.sty}{\usepackage[varqu,scaled=0.95]{zi4}}{}}
+\usepackage{microtype}
+\usepackage{titlesec}
 \usepackage{booktabs}
-\usepackage{graphicx}
-\usepackage{amsmath}
 \usepackage{array}
 \usepackage[table]{xcolor}
+\usepackage{float}
+\usepackage{needspace}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 \usepackage[hidelinks]{hyperref}
-\usepackage{caption}
+\usepackage{subcaption}
+
+\hypersetup{
+  pdftitle={Large-Scale JSON Tree Retrieval: A Single-Host Storage Microbenchmark},
+  pdfauthor={Junyao Dong}
+}
 
 \captionsetup{font=small,labelfont=bf,skip=4pt}
+\captionsetup[subfigure]{font=small,labelfont=bf,justification=centering}
 \definecolor{hdrgray}{gray}{0.92}
 \definecolor{keyrow}{RGB}{226,239,246}
+\definecolor{rootrow}{RGB}{249,230,193}
+\definecolor{badrow}{RGB}{248,230,230}
+\definecolor{optblue}{RGB}{37,99,157}
+\definecolor{optorange}{RGB}{217,119,6}
+\definecolor{optgreen}{RGB}{22,135,94}
+\definecolor{optred}{RGB}{190,55,55}
 \newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\best}[1]{\textbf{#1}}
 \newcommand{\hdr}{\rowcolor{hdrgray}}
 \newcommand{\key}{\rowcolor{keyrow}}
+\titleformat{\section}
+  {\rmfamily\bfseries\fontsize{10.95pt}{13.14pt}\selectfont}
+  {\thesection}{1em}{\MakeUppercase}
+\titleformat{\subsection}
+  {\rmfamily\bfseries\fontsize{10.95pt}{13.14pt}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}[runin]
+  {\sffamily\itshape\normalsize}{\thesubsubsection}{1em}{}[.]
+\titlespacing*{\section}{0pt}{8.25pt plus 2pt minus 0.2pt}{2.75pt}
+\titlespacing*{\subsection}{0pt}{8.25pt plus 2pt minus 0.2pt}{2.75pt}
+\titlespacing*{\subsubsection}{0pt}{5.5pt plus 2pt minus 0.2pt}{3.5pt}
 \setlength{\emergencystretch}{3em}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
 
-\newenvironment{ctab}{\par\medskip\centering\small
-  \setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.12}}{\par\medskip}
+\newenvironment{ctab}{\par\smallskip\centering\small
+  \setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.12}}{\par\smallskip}
 
-% Full-width abstract aligned with the body margins.
 \renewenvironment{abstract}{%
   \par\medskip\noindent{\bfseries\abstractname.}\enspace\ignorespaces
 }{\par\medskip}
 
-\title{\textbf{MongoDB for PageIndex Retrieval:\\ Preliminary Benchmark,
-Diagnosis, and Deployment Optimization Plan}}
+\title{\sffamily\bfseries Large-Scale JSON Tree Retrieval:\\
+A Single-Host Storage Microbenchmark}
 \author{Junyao Dong}
 \date{}
 
@@ -44,597 +65,1378 @@ Diagnosis, and Deployment Optimization Plan}}
 \maketitle
 
 \begin{abstract}
-PageIndex stores documents as large hierarchical JSON trees that an agent
-navigates from the root to relevant nodes. This report first presents a
-preliminary benchmark of the exact storage calls issued by ConDB's retrievers on
-MongoDB, PostgreSQL/JSONB, DuckDB, and SQLite, at scales up to ten million nodes.
-MongoDB is competitive on navigation reads, content fetch, writes, concurrency,
-and storage footprint; the only material weakness is \code{get\_subtree}, a
-materialized-path range scan over tens of thousands of nodes. The initial
-multi-engine run recorded a 2.5\,s MongoDB P95 for that operation, but a
-controlled re-measurement with the collection resident in cache gives a stable
-P95 of roughly 0.4\,s, about $3{\times}$ PostgreSQL rather than the
-${\sim}20{\times}$ implied by the first tail. The diagnosis is MongoDB's
-document-at-a-time read model: a non-covering subtree scan performs one
-\code{FETCH} per matched node. A resident-cache A/B test shows the consequence:
-splitting \code{text} out of the node document does not change latency when both
-schemas already fit in cache, while a lean covering index gives a modest
-${\sim}1.4{\times}$ improvement by removing \code{FETCH}. The deployment plan is
-therefore ordered by production constraints, not by the resident-cache A/B:
-split \code{text} first to protect cache residency, keep sharding and compound
-indexes led by \code{tree\_id}, add lean covering indexes where useful, and
-denormalize hot subtree views only if \code{get\_subtree} remains a bottleneck.
+Large JSON tree stores need fast node lookup, child expansion, subtree
+retrieval, and entity fetch. We benchmark their storage-level equivalents on
+one ten-million-node synthetic tree with warm caches and a local client.
+MongoDB's short reads have higher fixed request and query setup than
+PostgreSQL, while subtree retrieval also pays more per-key cursor work and
+covered-row handoff. Against sequential individual
+queries, coalescing three already-known inputs reduces MongoDB
+group-completion P50 by 2.66$\times$, 2.27$\times$, and 2.62$\times$ for node,
+child, and entity reads; at 64 inputs the corresponding ratios are
+24.1$\times$, 6.81$\times$, and 25.1$\times$. With at most 16 client workers,
+a threaded control still leaves coalescing 1.56--2.28$\times$ faster at three
+inputs across two grouping seeds. Cursor batch size has no
+projection-independent optimum: a one-million-row request gives a modest
+ID-only improvement but not a covered-Metadata improvement. A frozen 256-row
+DFS bucket layout improves large-subtree P50/P95 by
+1.57$\times$/1.72$\times$ on the full root-ID-disjoint split; after removing
+all ancestor-correlated roots, the ratios remain
+1.56$\times$/1.67$\times$. Small subtrees regress. A candidate direction is
+to coalesce naturally grouped short reads and investigate routing only large
+subtrees through buckets, but the MongoDB interventions remain storage-harness
+experiments rather than integrated ConDB paths. In a separate MongoDB
+master-snapshot source experiment, letting a direct
+\code{CountStage}$\rightarrow$\code{CountScan} pair skip an unread working-set
+member reduces benchmark-thread user-space retired instructions against a pinned
+upstream base carrying the same benchmark harness by 4.600\%, 2.055\% and
+3.680\% on scalar, multikey and compound-wildcard indexed counts, favourably in
+all 30 blocks --- about 117 instructions per counted document. It fires wherever
+\code{CountStage}'s child is a bare \code{CountScan}, which the planner
+guarantees for every classic \code{COUNT\_SCAN} plan; counts that plan to
+\code{FETCH} or a collection scan are untouched. Every plan measured is forced
+by an index hint. That campaign's
+pre-registered adoption gate nevertheless did not pass, because both of its
+control workloads fell outside their bands; no CPU-time or wall-time result is
+claimed from it, and it is not a 7.0.34, ConDB, or production result. The SQLite-backed Beam path now
+coalesces its per-turn child and
+entity reads. With the public defaults (\code{beam\_size=3},
+\code{select\_k=1}), a file-backed control returns one leaf and its content,
+reduces batchable reads from 37 to five and all SQLite \code{SELECT}s from 39
+to seven, and improves P50 by 1.177--1.192$\times$. At 16 clients, median
+throughput improves from 237.3 to 272.2 queries/s, although absolute throughput
+falls as client count rises. Additional trees and mutable-tree support remain
+to be tested.
 \end{abstract}
 
-\section{Introduction}
+\section{Operations and layouts}\label{sec:scope}
 
-ConDB indexes a document as a PageIndex tree: a hierarchy of nodes carrying a
-title, a summary, page indices, and (at the leaves) text. Retrieval is a
-top-down traversal: the retriever starts at the root, lists a node's children to
-decide where to descend, pulls a subtree for the language model to read, and
-fetches the content of the nodes it selects. This report is organized as an
-experiment-to-plan document. Section~\ref{sec:prelim} presents the preliminary
-benchmark, the MongoDB bottleneck diagnosis, and the resident-cache optimization
-A/B. Section~\ref{sec:opt} converts those measurements into a deployment
-optimization plan.
+We benchmark fully materialized reads on a large tree. MongoDB and PostgreSQL
+are compared under Materialized Path; PostgreSQL and SQLite are also measured
+under Order/Size. Inputs, ordering, returned fields, and logical results are
+identical. Entity fetch is layout-independent because the two hierarchy
+layouts in each SQL engine call the same shared Text query.
 
-We deliberately benchmark only the operations ConDB actually issues. Generic
-database operations that the retrieval path never performs (ancestor-to-root
-walks, page-range filters, naive substring scans) are excluded, because their
-results would not inform the optimization.
-
-\section{Workload and methodology}
-
-\paragraph{Operations.} The retrievers
-(\code{beam\_retriever.py}, \code{block\_retriever.py}) reach storage through
-four calls (Table~\ref{tab:ops}). Everything measured below is one of
-these, plus the storage footprint, the write path (incremental index and
-reasoning-trace edits), and concurrency.
-
-\begin{table}[h]
-\caption{The storage operations ConDB retrieval issues.}
-\label{tab:ops}
+\begin{table}[ht]
+\caption{The four storage operations measured in every configuration.}
+\label{tab:operations}
 \begin{ctab}
 \begin{tabular}{@{}lll@{}}
 \toprule
-\hdr Operation & Storage call & Used for \\
+\hdr Operation & Returned data & Retrieval role \\
 \midrule
-Point lookup    & \code{get\_node(tree\_id, node\_id)} & Navigate to / read one node \\
-Expand children & \code{get\_children(tree\_id, node\_id)} & List children, pick where to descend \\
-\key Get subtree     & \code{get\_subtree(tree\_id, node\_id, depth)} & Render the tree view, pull a block \\
-Fetch content   & \code{get\_entity(tree\_id, node\_id)} & Read selected nodes' content \\
+\code{get\_node}     & One node's Structure and Metadata & Read or navigate to one node \\
+\code{get\_children} & Ordered direct-child Metadata & Choose the next branch \\
+\code{get\_subtree}  & Ordered descendant Metadata & Render a tree view or retrieval block \\
+\code{get\_entity}   & One selected node's Text & Read final content \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-\paragraph{Data.} Synthetic PageIndex trees in the canonical format, validated
-against ConDB's \code{DocumentTreeAdapter}, at two scales
-(Table~\ref{tab:data}). Content is random words; what the benchmark exercises
-is the tree shape and the per-node payload sizes.
+We compare two established hierarchy representations. Materialized Path stores
+each node's root-to-node path as a string.\footnote{\href{https://www.mongodb.com/docs/v8.0/tutorial/model-tree-structures-with-materialized-paths/}{MongoDB,
+``Model Tree Structures with Materialized Paths.''}} Order/Size labeling
+assigns each node a preorder rank and subtree size.\footnote{Q. Li and B. Moon,
+``Indexing and Querying XML Data for Regular Path Expressions,'' VLDB 2001.}
+Our implementation stores the equivalent exclusive bound
+\code{end = pre + size}; a node $v$ is a descendant of $u$ when
+$\mathrm{pre}(u) < \mathrm{pre}(v) < \mathrm{end}(u)$. Both representations keep
+Structure and Metadata together. MongoDB and PostgreSQL use dedicated Text
+stores; the two SQLite layouts share the original source table for entity
+fetch.
 
-\begin{table}[h]
-\caption{Datasets.}
-\label{tab:data}
-\begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Dataset & Nodes & JSON size & Depth & Fan-out \\
-\midrule
-Medium & 70{,}843 & 85\,MB & 5 & 6--12 \\
-Large  & 10{,}000{,}000 & 14.06\,GB & 8 & 6--14 \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\paragraph{Engines and setup.} MongoDB~7.0 (Community Edition) and
-PostgreSQL~16 (JSONB document column) run as servers in Docker
-over localhost; DuckDB and SQLite are embedded. All engines run on the same
-96-core Linux host with 1\,TB of RAM. Every engine stores one record
-per node with identical logical fields and the indexes each query needs. The
-tree is flattened to one row per node; \code{get\_subtree} uses a materialized
-path with a byte-order range predicate, identical across engines (PostgreSQL's
-\code{path} column uses \code{COLLATE "C"} so its range matches the others'
-binary comparison). The subtree query returns node ids; adding the title and
-summary the tree view also renders would cost the relational engines more but not
-MongoDB, whose non-covering \code{FETCH} already reads the whole document, so
-adding fields to the projection costs it nothing---making this choice conservative
-toward MongoDB. Each read is measured over 500 sampled
-nodes (200 subtree roots, drawn at depth ${\le}3$), fixed by seed and identical
-across engines; every query was checked to return the same row count on all
-four engines. Each concurrency level runs its client processes for five
-seconds. The host has ample memory, so every engine's data is cache-resident
-and reads are not disk-bound.
-
-\paragraph{Fairness caveats.} SQLite and DuckDB run in-process, so a query is a
-function call; MongoDB and PostgreSQL pay per-call client--server overhead (a
-localhost round trip plus protocol handling) that the embedded engines never
-incur. The fair single-call comparison is therefore MongoDB versus
-PostgreSQL; absolute microseconds across the embedded/server line are not
-comparable, and the concurrency section (independent processes, no GIL) shows
-real server throughput. MongoDB's \code{storageSize} is post-compression
-(WiredTiger snappy); the others are uncompressed on-disk files, so MongoDB's
-uncompressed logical size is reported separately, and the random-word content
-likely compresses better than real prose, flattering the compressed figure.
-All measurements are single-host. The operations through concurrency use one
-tree per database; multi-tenancy, batched reads, and deletion are measured
-separately below on 25 co-resident trees.
-
-\section{Preliminary experiments and diagnosis}\label{sec:prelim}
-
-\subsection{Baseline benchmark}\label{sec:baseline}
-
-\subsubsection{Storage and ingest}
-
-\begin{table}[h]
-\caption{Storage and ingest (large dataset). On-disk totals include the indexes.
-MongoDB holds 15.21\,GB of logical BSON in 5.27\,GB of data on disk
-(WiredTiger snappy).}
-\label{tab:storage}
-\begin{ctab}
-\begin{tabular}{@{}lrrrrr@{}}
-\toprule
-\hdr Engine & On-disk & Index & Uncompr. & Ingest (n/s) & Build \\
-\midrule
-DuckDB              & \best{5.02\,GB} & 0       & --        & \best{348{,}831} & \best{10\,s} \\
-MongoDB             & 5.81\,GB        & 536\,MB & 15.21\,GB & 41{,}387         & 69\,s \\
-PostgreSQL (JSONB)  & 17.71\,GB       & 1.19\,GB & --       & 62{,}816         & 52\,s \\
-SQLite              & 19.51\,GB       & 980\,MB & --        & 52{,}880         & 38\,s \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-DuckDB and MongoDB are the most compact (Table~\ref{tab:storage}), DuckDB
-through columnar encoding and MongoDB through compression; even uncompressed,
-MongoDB's 15.21\,GB of BSON is no larger than the relational engines' raw
-tables. PostgreSQL and SQLite are several times larger on disk.
-
-\subsubsection{Retrieval operations}
-
-The navigation reads (point lookup, children, content fetch) are sub-millisecond
-on every engine but DuckDB, which is not built for OLTP point reads. MongoDB runs
-roughly $3{\times}$ behind PostgreSQL per call on these reads
-(Table~\ref{tab:read}), part of it per-call client overhead, but at well under a
-millisecond everywhere the gap carries no practical cost; the optimization space
-is not here. Only \code{get\_subtree}
-costs at scale: a large subtree returns tens of thousands of documents. The
-initial run (Table~\ref{tab:read}) put MongoDB's P95 in the seconds while the
-others stayed under ${\sim}150$\,ms, but that figure did not hold up under
-scrutiny---a controlled re-measurement (Section~\ref{sec:remeasure}) finds a stable
-${\sim}0.4$\,s. The materialized-path range also beats a recursive
-\code{parent\_id} traversal, so ConDB should keep it.
-
-\begin{table}[h]
-\caption{Retrieval read latency (ms, lower is better). Best per row in bold. The
-large \code{get\_subtree} P95 (2478) is from the original multi-engine run; a
-controlled re-measurement finds ${\sim}0.4$\,s (Section~\ref{sec:remeasure}).}
-\label{tab:read}
-\begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-\hdr Operation & MongoDB & PostgreSQL & DuckDB & SQLite \\
-\midrule
-\multicolumn{5}{@{}l}{\emph{Medium, P50}}\\
-Point lookup (\code{get\_node})        & 0.238 & 0.081 & 2.705 & \best{0.008} \\
-Expand children (\code{get\_children}) & 0.251 & 0.090 & 0.856 & \best{0.017} \\
-\key Get subtree (\code{get\_subtree})      & 0.498 & 0.210 & 2.700 & \best{0.091} \\
-Fetch content (\code{get\_entity})     & 0.228 & 0.071 & 2.750 & \best{0.007} \\
-\midrule
-\multicolumn{5}{@{}l}{\emph{Large, P50 / P95}}\\
-Point lookup        & 0.270 / 0.32 & 0.087 / 0.09 & 5.59 / 8.97 & \best{0.012 / 0.014} \\
-Expand children     & 0.282 / 0.32 & 0.099 / 0.14 & 4.28 / 5.05 & \best{0.023 / 0.032} \\
-\key Get subtree (${\sim}36$k rows) & 30.9 / 2478 & 10.7 / 123 & \best{9.9 / 47} & 11.8 / 135 \\
-Fetch content       & 0.249 / 0.32 & 0.081 / 0.09 & 5.21 / 8.35 & \best{0.012 / 0.013} \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\begin{figure}[h]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.6\linewidth]{figures/subtree.pdf}
-\caption{\code{get\_subtree} latency on the large dataset (log scale). The medians are
-within a small factor. MongoDB's P95 outlier at 2.5\,s is from this multi-engine
-run; in isolation and under concurrent load it is ${\sim}0.4$\,s
-(Section~\ref{sec:remeasure}).}
-\label{fig:subtree}
+\begin{subfigure}[t]{0.28\linewidth}
+\centering
+\vspace{0pt}
+\begin{tikzpicture}[
+  node distance=6mm and 8mm,
+  treenode/.style={circle,draw,minimum size=5.5mm,inner sep=0pt,font=\ttfamily},
+  edge/.style={draw,semithick}
+]
+\node[treenode] (a) {A};
+\node[treenode,fill=rootrow,below left=of a] (b) {B};
+\node[treenode,below right=of a] (c) {C};
+\node[treenode,fill=keyrow,below left=of b] (d) {D};
+\node[treenode,fill=keyrow,below right=of b] (e) {E};
+\path[edge] (a) edge (b) (a) edge (c) (b) edge (d) (b) edge (e);
+\end{tikzpicture}
+\caption{Logical tree}
+\label{fig:logical-tree}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\linewidth}
+\centering
+\vspace{0pt}
+\footnotesize
+\begin{tabular}{@{}ll@{}}
+\toprule
+node & path \\
+\midrule
+\code{A} & \code{/A} \\
+\rowcolor{rootrow}\code{B} & \code{/A/B} \\
+\rowcolor{keyrow}\code{D} & \code{/A/B/D} \\
+\rowcolor{keyrow}\code{E} & \code{/A/B/E} \\
+\code{C} & \code{/A/C} \\
+\bottomrule
+\multicolumn{2}{l}{\code{/A/B/ <= path < /A/B0}}
+\end{tabular}
+\caption{Materialized path}
+\label{fig:materialized-path}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.32\linewidth}
+\centering
+\vspace{0pt}
+\footnotesize
+\begin{tabular}{@{}lrr@{}}
+\toprule
+node & pre & end \\
+\midrule
+\code{A} & 1 & 6 \\
+\rowcolor{rootrow}\code{B} & 2 & 5 \\
+\rowcolor{keyrow}\code{D} & 3 & 4 \\
+\rowcolor{keyrow}\code{E} & 4 & 5 \\
+\code{C} & 5 & 6 \\
+\bottomrule
+\multicolumn{3}{l}{\code{2 < pre < 5}}
+\end{tabular}
+\caption{Order/Size labeling}
+\label{fig:order-size}
+\end{subfigure}
+\caption{The same logical tree and its two hierarchy encodings for
+\code{get\_subtree(B)}. Orange marks the query root; blue marks the returned
+descendants. In both layouts the descendants occupy one contiguous index
+range. Common node fields and entity storage are omitted.}
+\label{fig:two-layouts}
 \end{figure}
 
-\subsubsection{Write path}
-
-On the write path (Table~\ref{tab:write}), PostgreSQL posts the lower update
-latency of the two servers, but each \code{jsonb\_set} versions the row and leaves
-a dead tuple for a later \code{VACUUM}. WiredTiger is MVCC too, yet it reclaims
-obsolete document versions automatically, so an update-heavy workload carries no
-growing bloat; its measured on-disk delta is small but noisy, since WiredTiger
-reports storage in checkpoint-sized chunks. DuckDB is unsuitable for OLTP writes.
-
-\begin{table}[h]
-\caption{Write path (medium): 5{,}000 field updates, 2{,}000 incremental
-inserts. ``Bloat'' is on-disk growth from the updates.}
-\label{tab:write}
+\begin{table}[ht]
+\caption{Five measured engine/layout configurations.}
+\label{tab:layouts}
 \begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lll@{}}
 \toprule
-\hdr Engine & Upd.\ P50 & Upd.\ ops/s & Insert ops/s & Bloat \\
+\hdr Engine & Materialized Path & Order/Size \\
 \midrule
-\key MongoDB            & 0.242 & 4{,}050 & 5{,}586 & \best{0\,MB} \\
-PostgreSQL (JSONB) & 0.123 & 7{,}856 & 8{,}732 & 7\,MB \\
-DuckDB             & 2.966 & 332     & 450     & 7\,MB \\
-SQLite             & \best{0.017} & \best{40{,}442} & \best{21{,}815} & \best{0\,MB} \\
+MongoDB    & Nodes + Text collections; path string & Not tested \\
+PostgreSQL & Nodes + Text tables; path string      & Nodes + Text tables; \code{pre,end} \\
+SQLite     & Path nodes + shared source table       & Order/Size nodes + shared source table \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-\subsubsection{Concurrency}
+\section{Method}\label{sec:method}
 
-Single-call latency understates the server engines. Driving point lookups from a
-growing pool of independent OS processes (no GIL bottleneck), both server engines
-gain throughput with added clients, and the gap to the embedded engines narrows
-far below what the single-call numbers suggest (Figure~\ref{fig:conc}). MongoDB
-rises steadily across the whole range; PostgreSQL peaks near 16 clients; SQLite is
-fastest in absolute terms but peaks earliest, within the first few clients, then
-degrades as the processes contend on its single file. Repeated runs move the
-peak positions and heights somewhat; the shapes hold.
+\subsection{Experimental setup}
 
-\begin{figure}[h]
+All runs use a dual-socket Intel Xeon Gold 6418H host with 48 physical cores,
+96 hardware threads, and 1\,TiB RAM. Except for the separate source experiment
+in Section~\ref{sec:master-countscan}, all ConDB storage-harness and root-cause
+measurements use MongoDB~7.0.34; that experiment uses master snapshot
+\code{5d3b36cf3871} and neither reruns nor replaces the 7.0.34 measurements.
+PostgreSQL~16.14 runs as a localhost service; the base SQLite storage
+experiments use SQLite~3.50.4 in process. The cross-engine implementation controls in
+Section~\ref{sec:opt-production} were
+run separately with system Python~3.10.12 and SQLite~3.37.2; their raw files
+record the exact environment. Database and operating-system caches are not
+flushed.
+
+The base layout and root-cause timings are sequential and single-client. The
+short-read section adds one 16-worker-capped group-completion control, and
+Section~\ref{sec:opt-production} separately measures throughput at one, four,
+and 16 clients. Mixed reads/writes, longer-duration load, and configurations
+above 16 clients are not evaluated.
+
+The benchmark uses point and parent indexes for node and child reads,
+Materialized Path or Order/Size indexes for subtree reads, and a point index
+for Text. The PostgreSQL and SQLite subtree indexes cover the returned
+Metadata. MongoDB's subtree index also carries \code{node\_id}, title, and
+summary, so its range scan does not require document fetch.
+
+Each configuration is warmed up, measured in cyclically interleaved order for
+three repeats, and summarized from the per-input median. SQLite is an
+in-process reference and is not used for server-to-server ratios.
+Optimization experiments state their own repeat counts and also summarize
+per-input medians. Base layout comparisons do not report confidence intervals,
+so sub-millisecond differences there are descriptive. The cursor experiment
+reports descriptive root-bootstrap intervals for paired medians; they do not
+model hierarchy/branch clustering. Unless stated otherwise, P95 is therefore a
+workload percentile across inputs after per-input repetition, not an
+open-loop service-latency tail over repeated arrivals of one request.
+
+\subsection{Dataset and workload}
+
+The benchmark uses the same synthetic ten-million-node tree in all five
+configurations. It has templated random content, fanout 6--14, and maximum depth
+eight.
+\code{get\_node} and \code{get\_entity} use the first 500 leaf IDs ordered by
+\code{node\_id}; \code{get\_children} and \code{get\_subtree} use the same 200
+deterministic roots. The point and entity results characterize these fixed
+inputs; text sizes are not stratified. The subtree arm exercises the expensive
+descendant-range core: it excludes the root, has no depth limit, returns
+\code{(node\_id,title,summary)}, and averages 36{,}456.7 rows.
+This storage microbenchmark is not the public ConDB API, which includes the root
+and applies a caller-supplied depth limit. All four measured operations are
+storage-level experimental equivalents. The MongoDB layouts and DFS buckets
+are not implemented in the current SQLite-backed public API. Short-read
+coalescing for child and entity reads is implemented inside the Beam retrieval
+path, but the public navigation methods remain scalar. Method names, projected
+record shapes, and path/node ordering also differ from the public facade, which exposes
+\code{get\_content} and slot-ordered children.
+
+Each configuration contains one sealed logical tree; multi-tree execution is
+outside this experiment. Every result is fully materialized. All 21{,}000 timed
+results match in row count and SHA-256 fingerprint.
+
+\subsection{Root-cause controls}
+
+For \code{get\_node} and \code{get\_entity}, hit/miss pairs show how much work
+remains when no row is returned. PostgreSQL runs without statement preparation
+for the main comparison; prepared execution is included as a sensitivity
+check. The entity test also varies Text from zero to 256\,KiB. The benchmark's
+default MongoDB query is left unhinted and uses \code{IDHACK}.
+
+For \code{get\_children}, a synthetic tree varies fanout from zero to 128.
+Covered ID, covered Metadata, and noncovered plans expose fixed setup, covered
+row processing, and the document-access path.
+
+Each short read is then repeated as one hot query shape while CPU cycles are
+sampled from the running MongoDB binary. Its \code{gitVersion} matches the
+\code{GitOrigin-RevId} in the official \code{r7.0.34} source tag. The sampled
+functions identify execution paths; their inclusive call-graph shares are not
+additive. A command-boundary control separately measures the Python driver
+wrapper.
+
+For \code{get\_subtree}, a scalar count removes BSON row output and client
+materialization. Long-range CPU counters measure instructions and cycles per
+key. PostgreSQL \code{EXPLAIN} verifies the plan but is not used as a latency
+measurement.
+
+\Needspace{0.43\textheight}
+\section{Latency of all four operations}\label{sec:all-ops}
+
+MongoDB and PostgreSQL form the server-to-server comparison. SQLite runs in
+process and is shown only as an embedded layout reference; its absolute latency
+is not ranked against the two server engines.
+
+\begin{table}[H]
+\caption{P50/P95 latency in milliseconds. Each cell is computed from per-input
+medians over three interleaved repeats. The MongoDB and PostgreSQL Path columns
+form the server-to-server comparison; the remaining SQL columns show
+within-engine layout effects. Lower is better.}
+\label{tab:all-ops}
+\begin{ctab}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\hdr & \multicolumn{1}{c}{MongoDB} &
+  \multicolumn{2}{c}{PostgreSQL} & \multicolumn{2}{c}{SQLite} \\
+\cmidrule(lr){2-2}\cmidrule(lr){3-4}\cmidrule(l){5-6}
+\hdr Operation & Path & Path & Order/Size & Path & Order/Size \\
+\midrule
+\code{get\_node}
+  & 0.196 / 0.220 & 0.092 / 0.107 & 0.082 / 0.093
+  & 0.012 / 0.016 & 0.008 / 0.010 \\
+\code{get\_children}
+  & 0.252 / 0.292 & 0.100 / 0.113 & 0.099 / 0.117
+  & 0.046 / 0.062 & 0.067 / 0.092 \\
+\key\code{get\_subtree}
+  & 18.1 / 208.1 & 13.6 / 164.9 & 12.5 / 156.8
+  & 9.94 / 124.3 & 9.84 / 124.9 \\
+\code{get\_entity}
+  & 0.142 / 0.166 & 0.074 / 0.082 & 0.070 / 0.077
+  & 0.008 / 0.010 & 0.005 / 0.006 \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+At P50, the MongoDB--PostgreSQL gaps are 0.104\,ms for node lookup,
+0.152\,ms for child expansion, 4.5\,ms for subtree retrieval, and 0.068\,ms for
+entity fetch. The subtree gap reaches 43.2\,ms at P95. The short-read gaps are
+small in absolute time; subtree retrieval is the only operation where scan and
+row-emission cost materially changes latency.
+
+Hierarchy representation matters primarily for subtree retrieval. PostgreSQL
+Order/Size reduces subtree P50 from 13.6 to 12.5\,ms; SQLite changes by only
+0.10\,ms. Node and child differences are at most 0.021\,ms and are descriptive
+at this scale. The two entity columns in each SQL engine repeat one shared Text
+query, so their tiny differences are timing noise, not a hierarchy-layout
+effect. The integer-bound subtree result is consistent with lower key-processing
+cost, but the independently built layouts do not isolate that factor alone.
+
+\section{MongoDB excess latency}\label{sec:overhead}
+
+The controls in Table~\ref{tab:overhead-map} distinguish fixed request setup
+from row-dependent scan and materialization work.
+
+\begin{table}[H]
+\caption{Root-cause controls for the four operations. Child slopes compare
+MongoDB with unprepared PostgreSQL in $\mu$s per returned child. The covered and
+noncovered child arms also differ in filter, projection, and index shape, so
+their contrast localizes an execution bundle rather than a pure fetch cost.}
+\label{tab:overhead-map}
+\begin{ctab}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}
+  >{\raggedright\arraybackslash}p{0.13\linewidth}
+  >{\raggedright\arraybackslash}p{0.39\linewidth}
+  >{\raggedright\arraybackslash}p{0.40\linewidth}@{}}
+\toprule
+\hdr Operation & Quantitative control & What the control establishes \\
+\midrule
+\code{get\_node} &
+  MongoDB hit minus miss: 12.5\,$\mu$s P50; command boundary:
+  176.5 of 249.8\,$\mu$s inside the command &
+  Row fetch is a small increment; most observed wall time lies within the
+  command path. \\
+\code{get\_children} &
+  Covered intercept/slope: 263/1.64 vs.\ 117/0.97; noncovered:
+  264/2.16 vs.\ 109/0.99 &
+  MongoDB shows both a larger fixed component and a steeper returned-row
+  component; the noncovered bundle is steeper again. \\
+\code{get\_subtree} &
+  Scalar count: 7.44 vs.\ 4.34\,ms; 597 vs.\ 259 cycles/key &
+  The gap survives removal of BSON row output and tracks higher per-key scan
+  work. \\
+\code{get\_entity} &
+  0 vs.\ 1\,KiB text: 0.228 vs.\ 0.224\,ms in MongoDB;
+  0.096 vs.\ 0.097\,ms in PostgreSQL &
+  At the benchmark's 1\,KiB payload, text transfer is below run-scale
+  variation; fixed lookup work dominates. \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+\subsection{Node lookup}
+
+For \code{get\_node}, the hit--miss increment is only 12.5\,$\mu$s, while
+176.5 of 249.8\,$\mu$s lies inside the MongoDB command. Source-localization
+samples show \code{find} parsing, canonicalization, collection acquisition,
+\code{QueryPlanner::plan}, and stage-tree construction. Document fetch is a
+small part of this point lookup; fixed command and planning work dominates.
+
+\subsection{Child expansion}
+
+Both engines use a parent index followed by base-record lookup for
+\code{get\_children}. MongoDB has a higher fitted intercept and a steeper
+covered-row slope; the noncovered arm is steeper again. Samples show
+\code{IndexScan}, KeyString decoding, projection, and response append for
+covered rows. The noncovered path additionally includes \code{FetchStage},
+\code{WorkingSetCommon::fetch}, and record-store seek. Because the covered and
+noncovered arms also use different filters and indexes, their difference is an
+access-path cost rather than a pure fetch measurement.
+
+\subsection{Subtree retrieval}\label{sec:subtree-overhead}
+
+For \code{get\_subtree}, MongoDB's overhead has two components: per-key cursor
+and executor work during the range scan, and per-row handoff during covered
+result production.
+
+\begin{table}[H]
+\caption{Subtree scan cost. Mean latency uses 200 ranges on the ten-million-node
+tree. CPU counters use a fixed 500{,}000-key long-string range.}
+\label{tab:bottleneck}
+\begin{ctab}
+\setlength{\tabcolsep}{9pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\hdr Metric & MongoDB & PostgreSQL & Ratio \\
+\midrule
+Mean scalar-count latency (ms) & 7.44 & 4.34 & 1.71$\times$ \\
+Instructions per key           & 2{,}438 & 1{,}121 & 2.17$\times$ \\
+CPU cycles per key             & 597 & 259 & 2.30$\times$ \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+Samples place the work in WiredTiger cursor advance and key extraction, the
+storage adapter, and classic executor handoff, with
+\code{\_\_wt\_\allowbreak btcur\_\allowbreak next} the largest single hotspot.
+That profile describes this scalar count specifically and must not be read as
+characterizing subtree retrieval in general: a scalar count runs
+\code{COUNT\_SCAN}, which requests index keys without materializing them, so it
+performs no per-row BSON work. On the document-returning covered path the
+profile inverts. Aggregating the same samples by symbol for a covered child
+scan, key decoding, BSON construction and the \code{Document} wrapper together
+account for roughly three times the cycles attributed to WiredTiger, because
+each returned row is decoded into one BSON object, copied into a second, wrapped
+as a \code{Document}, unwrapped, and copied once more into the reply. The
+per-key finding above therefore motivates the count experiment in
+Section~\ref{sec:master-countscan}, not the subtree path.
+
+\subsection{Entity fetch}
+
+For \code{get\_entity}, samples localize the fixed lookup cost to the
+\code{IDHACK} command path, including
+request parsing, canonicalization, collection acquisition, executor
+initialization, \code{IDHackStage}, and projection construction. The payload
+control shows no measurable P50 change at 1\,KiB. At 256\,KiB, latency rises
+to 0.391\,ms in MongoDB and 0.619\,ms in PostgreSQL. Fixed lookup work
+dominates only at the 1\,KiB size used by the main workload.
+
+The short-read arms pin an explicit index hint on both the baseline and the
+candidate. That keeps the comparison like-for-like, which is what the coalescing
+result depends on, but it also means the baseline is not the fastest path the
+server offers: a hint suppresses the point-query fast paths, costing about
+19\,\textmu s (roughly 9\%) per lookup against an unhinted \code{IDHACK} on
+7.0.34. On a current master snapshot the same hint would suppress the newer
+\code{EXPRESS} fast path as well. The coalescing ratios reported here are
+therefore ratios between two hinted arms; the absolute baseline latency would be
+modestly lower without the hint, and a deployment that can express its lookup as
+a single-field or \code{\_id} equality without a hint already receives part of
+this benefit from the server.
+
+\section{Separate MongoDB master-snapshot source experiment}
+\label{sec:master-countscan}
+
+The per-key root-cause result above motivated one narrow source change on the
+pinned MongoDB master snapshot \code{0561c098b99a}. A classic \code{CountStage}
+reads only its child's stage state and immediately frees any working-set member
+it receives, so when its direct child is a \code{CountScan} that member is built
+and torn down for nothing on every key the scan advances on. The candidate lets
+such a child skip producing it.
+
+\subsection{What the change is, and what it is not}
+
+The candidate is
+\href{https://github.com/carsontung666/mongo/commit/90814b83d3e55f099c1244266d86700b5f633972}{\code{90814b83d3e5}}
+on \code{carsontung666/mongo}. It adds one boolean to \code{CountScan}, one
+branch in \code{doWork()}, a private setter that only a direct \code{CountStage}
+parent can reach, and the \code{stageType()} check in \code{CountStage}'s
+constructor that is the setter's only call site. The setter is private because
+\code{WorkingSet::get()} is checked only in debug builds, so a public mutator
+that switched the output contract would be an out-of-bounds read in release
+builds awaiting its second caller. Deduplication, memory accounting and its
+limit, write-conflict and yield handling, and save/restore all run before the
+skipped step, and \code{CommonStats} and \code{CountScanStats} are unchanged.
+
+The optimization applies when \code{CountStage}'s child is a bare
+\code{CountScan}. That is not the narrow case it first appears to be:
+\code{QueryPlanner::plan} returns a count scan as the single solution as soon as
+one candidate is available, so a \code{COUNT\_SCAN} plan is never multi-planned
+and never plan-cached, and the opt-in covers the whole classic
+\code{COUNT\_SCAN} fast path. What it does not cover is counts that plan to
+\code{COUNT}$\rightarrow$\code{FETCH}$\rightarrow$\code{IXSCAN} or to a
+collection scan, where the child is a different stage.
+
+An earlier implementation of the same idea, \code{4109dcc31ff6}, was rejected in
+independent review: it added a template to \code{PlanStage}, the base class of
+every classic stage, for one caller; a test-only \code{friend} in a production
+header; a second entry point on \code{CountScan}; and an unrelated
+devirtualization. It is retained here as a measured arm, because the question
+of what that additional machinery bought is answerable rather than arguable.
+
+\subsection{Three-arm protocol}
+
+Three arms are reconstructed from the same base commit in one worktree and
+overlaid with a byte-identical benchmark harness, so that exactly six production
+files may differ:
+
+\begin{table}[H]
+\caption{Arms. Arm~A is not an unmodified upstream binary: it carries the same
+harness as the others, including an evidence-only point-query control that is
+not part of the pull request.}
+\label{tab:countscan-arms}
+\begin{ctab}
+\setlength{\tabcolsep}{7pt}
+\begin{tabular}{@{}llp{0.52\linewidth}@{}}
+\toprule
+\hdr Arm & Source & Role \\
+\midrule
+A & \code{0561c098b99a} & pinned upstream base \\
+B & \code{4109dcc31ff6} & the rejected heavyweight implementation \\
+C & \code{90814b83d3e5} & the minimal candidate \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+Five workloads run per block: three indexed-count endpoints (scalar, multikey,
+and a non-multikey compound wildcard index), a hinted unique-field point query
+as a negative control, and a count whose plan is
+\code{COUNT}$\rightarrow$\code{FETCH}$\rightarrow$\code{IXSCAN}. The last is the
+only workload where a regression could hide. The optimization cannot fire on it
+or on the point query, but only the fetching count drives on the order of one
+stage iteration per document through stages the change does not touch, which is
+what the rejected arm's base-class refactor would perturb.
+
+The campaign is 30 blocks $\times$ 5 workloads $\times$ 3 arms $=$ 450 fresh
+processes, each contributing five technical repetitions that are averaged within
+the process. Blocks are stratified over the six arm-order permutations crossed
+with five workload rotations, every combination appearing exactly once, and
+execute in a seeded permuted order so that no stratum sits at a fixed period in
+time. Every process is pinned to one CPU under the performance governor, with
+the governor re-checked before each process and the exact busy fraction of that
+CPU and its SMT sibling recorded across each process.
+
+Adoption reads one interval family: a stratified log-ratio Welch-t interval over
+the 30 block ratios, Bonferroni-adjusted across the three count endpoints. A
+percentile bootstrap is retained only as a sensitivity output and is
+structurally excluded from every gate. Retired instructions are primary, CPU
+time secondary, wall time auxiliary.
+
+C versus B is registered as a \emph{noninferiority} comparison and is reported
+as a complexity trade-off rather than as an adoption gate. B does everything C
+does and more, so it is expected to be marginally faster, and requiring C to
+beat it would be a test designed to fail; the question is whether the difference
+is worth the maintenance cost. CPU time is gated on C/A only: at this block
+count it resolves to roughly $\pm1.5\%$ as pre-registered, and 1.0--1.3\% in
+the event, which cannot separate two
+implementations expected to differ by about one percent, so the C/B CPU interval
+is left ungated rather than tested against a bound the instrument cannot reach.
+In the event the point-query control showed that CPU time carries a
+binary-level offset on this host, so no CPU-time result is claimed at all; see
+below.
+
+\subsection{Results}
+
+\textbf{The pre-registered adoption gate did not pass.} Both control workloads
+fell outside their pre-registered bands, for three distinct reasons: one band was
+mis-specified, one binary-level difference is real but cannot be caused by the
+change, and one arm genuinely does intrude on a path the optimization never
+touches --- the rejected implementation, not the candidate --- which means the
+C/B leg of that control could never have passed as specified.
+
+The count-endpoint instruction results below are nevertheless reported. The
+protocol registers no rule for what may be published when a control fails, so
+that decision is itself post-hoc, and the reasons for it are given here so a
+reader can weigh them: these are the pre-registered primary metric, the widest of
+their three adjusted intervals spans better than one part in $10^4$, they are
+favourable in every one of the 30 blocks, and neither control failure touches
+them.
+
+\begin{table}[H]
+\caption{Candidate versus pinned upstream base, retired benchmark-thread
+instructions. Bonferroni-adjusted 98.333\% two-sided intervals over 30 block
+ratios. Every block favours the candidate on every endpoint.}
+\label{tab:countscan-ca}
+\begin{ctab}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\hdr Endpoint & Ratio & Reduction & Adjusted CI & Blocks \\
+\midrule
+Scalar, 400{,}000 docs / 400{,}000 keys    & 0.954005 & 4.600\% & [4.598\%, 4.601\%] & 30/30 \\
+Multikey, 200{,}000 docs / 400{,}000 keys  & 0.979446 & 2.055\% & [2.051\%, 2.060\%] & 30/30 \\
+Wildcard, 200{,}000 docs / 200{,}000 keys  & 0.963198 & 3.680\% & [3.678\%, 3.683\%] & 30/30 \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+Expressed as work removed rather than as a ratio, the saving is \textbf{118.0,
+116.1 and 117.1 retired instructions per counted document}. The multikey
+workload is the one that discriminates: it advances over 400{,}000 index keys
+while counting 200{,}000 documents, and its saving lands at 116.1 instructions
+per \emph{counted document} rather than per key. On the other two endpoints keys
+and documents coincide, so they cannot separate the two normalisations and are
+consistency checks rather than independent evidence. That single discriminating
+result is what avoiding one working-set allocation, member initialisation and
+free per counted document predicts, and it lets a reader compute the effect at
+any scan size instead of transplanting a percentage.
+
+\subsubsection{Why the gate did not pass}
+
+The point-query control is unchanged in instructions, as required
+(0.9997, 95\% CI [0.99884, 1.00055]), but its CPU-time interval was not wholly
+inside its band: against a $[0.97, 1.03]$ band the interval is
+$[0.967321, 0.987021]$, so the point estimate of 0.977 sits inside and the lower
+bound falls below. The offset is roughly 2.3\%, appears in all six arm-order
+strata, survives minimum-based aggregation, and decomposes onto the arms
+(22920, 22767 and 22396~ns for A, B and C) rather than onto execution position
+(22721, 22657 and 22706~ns for first, second and third within a block). The
+change cannot execute on that plan, so this is a property of the binaries and
+not of the optimization --- most likely code layout, though this campaign counts
+only instructions and elapsed time and so cannot separate clock from work.
+
+The consequence is that \textbf{no CPU-time or wall-time claim is made anywhere
+in this experiment}, including for the count endpoints. This is a decision to
+discard a result the protocol permitted, not a result the protocol denied: the
+pre-registered CPU non-regression gate \emph{passed} for C/A on all three
+endpoints and marked a CPU speed-up claim eligible, with point estimates of
+0.956, 0.962 and 0.935. Those would have read as a 4--6\% CPU reduction. The
+same instrument reports 0.977 on the point query and 0.991 on the
+\code{FETCH}-based count, two plans on which the candidate's instruction count
+is unchanged, so a few percent of apparent CPU improvement is available to this
+binary on code the change never executes. The count-endpoint CPU numbers cannot
+be separated from that, and are therefore not claimed.
+
+The un-optimized control failed for two distinct reasons. Its band was
+$\pm$0.2\%, applied to a between-process ratio whose per-block standard
+deviation turned out to be 1.57\%; at that dispersion a 95\% interval reaches a
+0.2\% half-width at roughly 240 blocks, so as specified it was never attainable
+at 30. The protocol records a written justification for the 1\% noninferiority
+margin but none for either control band, so the band is best described as
+having been set by analogy with repetition-level reproducibility rather than
+from any recorded analysis of between-process dispersion.
+
+The dispersion itself is not diffuse noise but a per-process two-state latch:
+each of the 90 processes lies wholly in one of two states 2.32\% apart, 56 in
+the lower and 34 in the upper, and no process straddles them at repetition
+level. Within a state \emph{and} within an arm the process-to-process
+coefficient of variation is at most 0.0025\%; pooling arms within a state leaves a 0.26\%
+spread, which is the rejected arm's offset. Conditioning on the state, the
+candidate is indistinguishable from the base on this workload (0.999990 over the
+10 blocks where both landed in the lower state, 1.000000 over the 7 in the
+upper; standard deviations $2.8\times10^{-5}$ and $2.2\times10^{-5}$), which
+answers the control's question even though its gate could not be evaluated as
+written.
+
+That conditioning is \textbf{post-hoc}. It is not in \code{analyze.py}, which
+was hashed into the pre-registration and knows nothing about states, and it
+conditions on a variable measured after treatment whose incidence differs by arm
+(13/30 upper-state blocks for A, 7/30 for B, 14/30 for C). It is reproducible:
+\path{analyze_controls_posthoc.py} in the bundle states the threshold rule --- cut
+at the single widest relative gap in the sorted process means, which is 2.11\%
+against a next-widest gap of 0.25\% --- and prints every conditioned figure
+quoted here alongside its pre-registered marginal counterpart.
+
+\subsubsection{What the rejected implementation bought}
+
+The rejected heavyweight implementation retires fewer instructions than the
+candidate on all three count endpoints, unfavourably in every one of the 30
+blocks, with Bonferroni-adjusted upper bounds of 1.00453, 1.00330 and 1.00329
+against the pre-registered 1.01 noninferiority margin. Its extra saving is 11.0,
+9.0 and 10.0 instructions per \emph{stage iteration} --- flat, where the
+candidate's saving is per counted document --- out of the 116.1 to 134.1 that
+either implementation removes. That normalisation is the same test applied above
+to the candidate, and here it points the other way, which fits the mechanism:
+what B still does that C does not is replace the two virtual calls per iteration
+between \code{CountStage} and \code{CountScan} with typed ones.
+
+That advantage does not survive contact with the un-optimized control. On the
+count whose plan cannot use \code{COUNT\_SCAN}, the rejected implementation
+retires \textbf{24 more instructions per fetched document} than either the
+candidate or the base, in both states (B/A is 1.002558 over 14 concordant blocks
+in the lower state and 1.002499 over 4 in the upper; B/C is 1.002564 over 11 and
+1.002521 over 2), while the candidate is indistinguishable from the base there.
+This is consistent with the cost of routing every classic stage's \code{work()}
+through a new base-class helper, at roughly 8 instructions across the three
+\code{work()} calls per document. That is the largest of the B-only changes that
+execute on this plan --- arm B also adds a null-pointer branch to
+\code{CountStage::doWork()} and \code{isEOF()} --- but no arm isolates any of
+them, so the attribution is an inference and not a measurement. Note also that
+the pre-registered marginal estimator reports 0.9979
+for this comparison and so inverts its sign: the rejected arm landed in the
+high-instruction state 7 times in 30 against the base's 13, and the mean over
+blocks absorbs the difference. The conditioned figure is reported alongside the
+pre-registered one rather than in place of it.
+
+\subsection{Validation and limits}
+
+The optimized build passes for \code{mongod}, \code{mongos}, \code{mongo} and
+\code{dbtest}; the query benchmarks were built separately, from the campaign's
+own worktree. Both count dbtest suites pass in
+optimized and runtime-\code{dassert} builds. Forced-classic resmoke passes all
+60 result entries it produces: 42 over eight core files, 12 over two aggregation
+files, 3 over one no-passthrough file and 3 over one sharding file. Twelve of the
+60 are the jstests themselves; the rest are their per-test \code{RunQueryStats}
+and \code{ValidateCollections} hooks and fixture setup and teardown. The core set
+includes \code{profile\_count.js}, which checks indexed-count \code{keysExamined}
+and the \code{COUNT\_SCAN} plan summary directly.
+
+The strongest non-intrusion evidence is a field-by-field comparison of
+\code{explain(\allowbreak"executionStats")} against a separately built binary of
+the base commit: over 542 leaf fields there are 4 differences and none is
+substantive, all four being the same optimization-time counter, three of whose
+four instances also differ between two runs of the identical binary. The comparison includes the count-like aggregation
+shape, which executes a bare \code{CountScan} with no \code{CountStage} and
+therefore dereferences the returned identifier unconditionally; it returns 200
+materialized results on both binaries, so the opt-in does not leak to that path.
+
+These validation runs are retained in the bundle under \path{validation/}, with
+the resmoke reports and logs, the dbtest logs, all three explain captures, the diffs
+and a hashed provenance record. They were performed on \code{ac20554f}, not on
+arm~C: the two commits differ by exactly one line, a \code{clang-format} include
+reorder in \code{count.cpp}, and the validation was not re-run after it. No
+statement, declaration or build setting differs between them.
+
+The result is limited to warmed, single-threaded, in-process counts on one host,
+and to plans forced by an index hint to the shape under test. It does not
+establish improvement for MongoDB~7.0.34, for SBE, for unhinted counts subject
+to multi-planning or the plan cache, for cold caches, for concurrent or mixed
+load, for remote clients, for the ConDB endpoint, or for production latency. CPU
+time here is benchmark-thread time, not whole-server or whole-process CPU.
+Retired instructions are not latency, and the reduction is stated as such. The
+two builds of arm~C bracket the builds of arms A and B in one worktree and one
+build output base; the first was a build-cache hit and the second re-executed
+1001 actions and reproduced the same binary, so what this evidences is that
+building the other two arms in between left the build state undisturbed. Both
+preceded the campaign, and it is not a from-scratch reproducibility proof.
+
+Upstream submission remains blocked on matters that cannot be satisfied here: a
+real MongoDB ticket, the contributor-agreement and code-owner path, and an
+Evergreen run. The fork pull request is therefore a draft and is not represented
+as ready to merge. The complete protocol, source patches, per-arm manifests,
+build attestation, attempt ledger, raw JSON, logs and analysis are frozen under
+\path{bench/db/report/evidence/mongodb_master_countscan_20260805_4109dcc31ff6}.
+
+Three disclosures about that bundle. First, the protocol was committed and pushed
+40 seconds before the first benchmark process, but it was not written blind: the
+attested build smokes had already run all five workloads at campaign size on all
+three arms, so the per-arm instruction levels --- and with them the endpoint
+ratios --- were visible before the protocol was frozen, and recomputing those
+ratios from the smoke files reproduces the campaign result to within
+$4\times10^{-4}$. The attempt ledger discloses this in each of its three
+pre-registrations, but the frozen \code{campaign.json} does not: its
+noninferiority-margin rationale states that no measurement of the present arms
+had been taken, which is false. The protocol is left unaltered and the error is
+recorded here. What the 30-block campaign establishes is the intervals, the
+block-level consistency and the controls, not the discovery.
+
+Second, the pre-registration cites the wrong anchor commit: it was written before
+its own commit existed and so recorded the then-current \code{1c1d4287}, which
+holds the previous attempt's protocol. The executed protocol first appears in
+\code{1688ea3d}. The freeze did precede execution; only the citation was wrong.
+Both the correction and the record of how it was filed are in
+\path{anchor_correction.json}.
+
+Third, the campaign measured \code{90814b83d3e5}. A later blank review of the
+change, conducted as a MongoDB reviewer would read it, produced fixes ---
+including an assertion that closes a second, previously unremarked
+\code{CountStage} construction site in
+\code{ClassicPlannerInterface::makeExecutor()} --- and the commit now under
+review is \code{90781b36b2}. None of those fixes executes inside the per-key
+path, and the reviewed binary was re-smoked at campaign size. That smoke is one
+process per endpoint against a 30-process mean, not a repeat of the campaign:
+its instruction counts differ from arm~C's means by less than the range arm~C's
+own 30 processes span, which on the multikey endpoint is about 2.3 of arm~C's
+per-process standard deviations, or $+0.54$ instructions per counted document
+against an effect of 116. The complete diff, the smoke
+output and that comparison are in
+\path{validation/review_fix_equivalence/}. The intervals in
+Table~\ref{tab:countscan-ca} remain pinned to the measured commit.
+
+\section{Optimization experiments}\label{sec:optimization}
+
+The 7.0.34 storage-harness profiles suggest two different interventions. Short
+reads can share fixed command setup by coalescing already-known inputs. Subtree
+reads may need a larger storage record rather than a different network transfer
+chunk. We test both ideas in that storage harness. Here, \emph{validated} means output-equivalent
+within that harness; it does not mean integrated into ConDB's public API. None
+of the MongoDB interventions in this section is currently a production path.
+
+The primary short-read sweep disables PyMongo command monitoring and uses 80
+random input groups, five cyclically interleaved repeats, and two grouping
+seeds. Its 19{,}200 timed baseline--candidate pairs pass exact
+output-equivalence checks; repeated groups and IDs are not independent samples.
+A separate monitored run records command counts and produces nearly the same
+wall-time curve. Thus the reported wall time does not include one listener
+callback per database command. Table~\ref{tab:optimizations} gives
+representative endpoints. A separate three-arm control at
+$B\in\{1,3,8,64\}$ uses 40 groups, three repeats, two grouping seeds, and at
+most 16 workers to compare sequential individual queries, concurrently
+submitted individual queries, and one \code{\$in} query; even its 64-input arm
+never exceeds 16 client threads.
+
+\begin{table}[H]
+\caption{MongoDB 7.0.34 storage-harness intervention endpoints. Short-read latency is wall time for
+one group of 64 already-known inputs under a sequential individual-query
+baseline. Subtree rows use separate paired cohorts and projections. The last
+column is the ratio of baseline to candidate latency at the marginal P50 and
+P95; it is not a percentile of per-input speedups. Compare only within a row.}
+\label{tab:optimizations}
+\begin{ctab}
+\setlength{\tabcolsep}{7pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\hdr Operation / intervention & Baseline P50 / P95 (ms) & Candidate P50 / P95 (ms) & Ratio at P50 / P95 \\
+\midrule
+\code{get\_node}, $B=64$     & 15.104 / 15.448 & 0.628 / 0.652 & 24.06 / 23.68$\times$ \\
+\code{get\_children}, $B=64$ & 19.279 / 19.972 & 2.831 / 2.949 & 6.81 / 6.77$\times$ \\
+\code{get\_subtree}, ID-only 1M cursor request
+  & 10.671 / 118.552 & 10.155 / 115.188 & 1.05 / 1.03$\times$ \\
+\code{get\_subtree}, 256-row bucket
+  & 23.011 / 248.597 & 14.665 / 144.292 & 1.57 / 1.72$\times$ \\
+\code{get\_entity}, $B=64$   & 13.382 / 13.639 & 0.533 / 0.559 & 25.10 / 24.41$\times$ \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.6\linewidth]{figures/concurrency.pdf}
-\caption{Point-lookup throughput versus concurrent client processes (medium).}
-\label{fig:conc}
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.82\linewidth,
+  height=5.1cm,
+  xmode=log,
+  log basis x=2,
+  xmin=1,
+  xmax=64,
+  ymin=0,
+  ymax=27,
+  xtick={1,2,3,4,8,16,32,64},
+  xticklabels={1,2,3,4,8,16,32,64},
+  xlabel={Independent inputs combined into one request ($B$)},
+  ylabel={Baseline P50 / batched P50},
+  grid=major,
+  grid style={draw=gray!22},
+  tick label style={font=\small},
+  label style={font=\small},
+  legend style={
+    draw=none,
+    fill=none,
+    at={(0.5,1.02)},
+    anchor=south,
+    legend columns=3,
+    font=\small
+  }
+]
+\addplot[optblue,thick,mark=*] coordinates {
+  (1,0.986) (2,1.864) (3,2.661) (4,3.409) (8,6.070)
+  (16,10.412) (32,16.532) (64,24.058)
+};
+\addlegendentry{Node lookup}
+\addplot[optorange,thick,mark=square*] coordinates {
+  (1,0.979) (2,1.708) (3,2.265) (4,2.720) (8,3.925)
+  (16,5.105) (32,6.068) (64,6.810)
+};
+\addlegendentry{Child expansion}
+\addplot[optgreen,thick,mark=triangle*] coordinates {
+  (1,0.992) (2,1.820) (3,2.616) (4,3.425) (8,6.209)
+  (16,10.613) (32,17.077) (64,25.102)
+};
+\addlegendentry{Entity fetch}
+\addplot[optblue,dashed,mark=o,mark options={fill=white},forget plot]
+  coordinates {
+    (1,0.998) (2,1.867) (3,2.652) (4,3.431) (8,6.048)
+    (16,10.538) (32,16.488) (64,23.923)
+  };
+\addplot[optorange,dashed,mark=square,mark options={fill=white},forget plot]
+  coordinates {
+    (1,0.974) (2,1.712) (3,2.261) (4,2.677) (8,3.864)
+    (16,5.050) (32,5.983) (64,6.803)
+  };
+\addplot[optgreen,dashed,mark=triangle,mark options={fill=white},forget plot]
+  coordinates {
+    (1,0.992) (2,1.846) (3,2.669) (4,3.443) (8,6.279)
+    (16,10.784) (32,17.136) (64,24.811)
+  };
+\addplot[gray,densely dotted,forget plot] coordinates {(1,1) (64,1)};
+\end{axis}
+\end{tikzpicture}
+\caption{Wall-only batch-size sweep for the three short reads (80 groups,
+five repeats). The ratio compares $B$ sequential equality queries with one
+output-equivalent \code{\$in} query. Solid and dashed lines use two input
+grouping seeds in adjacent runs. The monotone trend, including the realistic
+$B=3$ point, matches the expected effect of sharing fixed command setup.
+These are group-completion times, not concurrent-load throughput.}
+\label{fig:short-batch-sweep}
 \end{figure}
 
-\subsubsection{Multi-tenancy, batched reads, and deletion}
+\subsection{Node lookup}\label{sec:opt-node}
 
-Mapping the retriever's calls to storage surfaces three operations the sections
-above leave out: a per-query tenant filter when many trees share one store, the
-batched id-list read the navigation step issues, and whole-tree deletion. We
-measure them on the medium tree replicated into 25 co-resident trees
-(1{,}771{,}075 rows in one store), with every read filtered by \code{tree\_id}
-and served by a compound index led by \code{tree\_id}.
+\subsubsection{Optimization method}
 
-\paragraph{Multi-tenant selectivity.} With 25 trees in one collection, a
-\code{tree\_id}-led index holds each read close to its single-tree latency
-(Table~\ref{tab:mt}): the cost tracks index depth, not the number of co-resident
-trees. MongoDB rises about $1.5{\times}$ on point lookup and $2.6{\times}$ on
-subtree over the single-tree medium figures (Table~\ref{tab:read}) for a
-$25{\times}$ larger store, with no scan blow-up, and the MongoDB--PostgreSQL
-ordering is unchanged.
+For each $B\in\{1,2,3,4,8,16,32,64\}$, the baseline issues $B$ equality
+\code{find} commands sequentially for a group of node IDs that is already
+known. The candidate sends the same IDs in one \code{\$in} query, retains the
+\code{tree\_id,node\_id} index and projection, builds a map keyed by
+\code{node\_id}, and restores caller input order. Thus index choice, returned
+records, and caller-visible order are held constant; the controlled change is
+$B$ commands versus one multi-key command. The three-arm control submits those
+same $B$ equality commands concurrently through the shared thread pool,
+preserving their query shape and output contract.
 
-\begin{table}[h]
-\caption{Per-query reads with 25 trees co-resident in one store, each filtered
-by \code{tree\_id} (P50, ms).}
-\label{tab:mt}
+\subsubsection{Experimental results}
+
+Node coalescing scales smoothly with group size. $B=1$ is unchanged,
+$B=3$ improves P50 from 0.729 to 0.274\,ms
+(2.66$\times$), and the ratio grows to 24.1$\times$ at $B=64$. The second
+grouping seed stays within 0.4\% at $B=3$ and 0.6\% at
+$B=64$. In the separate telemetry run, command count falls from $B$ to one and
+the wall-time curve remains close to the listener-free result. The gain comes
+from sharing command and query setup, not from a faster point lookup. With the
+16-worker cap, \code{\$in} remains 2.05$\times$/1.79$\times$ faster than
+concurrently submitted individual queries at $B=3$ across the two seeds, and
+17.9$\times$/18.3$\times$ faster at $B=64$.
+
+This helps only when the caller already has a group of independent IDs. It
+does not speed up a single lookup, and the benchmark does not include time
+spent forming a group. Its end-to-end value will depend on real group sizes and
+API-level load tests.
+
+\subsection{Child expansion}\label{sec:opt-children}
+
+\subsubsection{Optimization method}
+
+The baseline performs one indexed, ordered scan sequentially for each parent
+ID. The candidate uses one \code{parent\_id:\{\$in:\ldots\}} query, sorts by
+\code{parent\_id,path,node\_id}, groups rows by parent, and emits each parent's
+children in the original path/node order. Both arms project the same child
+Metadata and use the same parent/path index. The candidate additionally pays
+for cross-parent ordering and client regrouping. Its threaded control submits
+the same per-parent scans concurrently through the shared pool without changing
+their individual query shape.
+
+\subsubsection{Experimental results}
+
+Returned-row work limits child coalescing. At $B=3$, P50 improves
+2.27$\times$, but by $B=64$ the ratio is 6.81$\times$, far below the
+24.1$\times$ point-read result. An average 64-parent group still returns about 643
+child documents, so removing 63 command setups leaves scanning, document
+production, cross-parent ordering, regrouping, and output materialization.
+The curve begins to flatten after $B=16$ as those per-child costs take over.
+Against individual queries submitted
+through the 16-worker-capped pool, the two seeds retain
+1.81$\times$/1.56$\times$ at $B=3$ and
+4.96$\times$/5.07$\times$ at $B=64$. Bounded concurrency reduces neither the
+benefit of coalescing nor the returned-row ceiling.
+
+Coalescing remains useful when several parent IDs are already available, but it
+will not reach point-read-scale gains. Further improvement must reduce
+per-child fetch or output work.
+
+\subsection{Subtree retrieval}\label{sec:opt-subtree}
+
+\subsubsection{Optimization methods}
+
+\textit{Cursor batching.} The first intervention changes only
+\code{Cursor.batch\_size} for the same descendant-range query, index,
+projection, sort, and complete materialization. Both ID-only and
+covered-Metadata arms use the same 100 row-count-stratified ranges and five
+cyclically interleaved repeats; every variant and repeat stores an
+ordered-output digest. Primary wall-time runs register no command listener.
+A separate telemetry run records reply counts and durations. Requested sizes
+are 101, 1K, 10K, and 1M, but actual replies remain bounded by MongoDB message
+limits. The two projections test whether any cursor result survives a larger
+returned-record shape rather than treating ID-only behavior as universal.
+Root-bootstrap intervals resample ranges and are descriptive; they do not
+correct for shared hierarchy branches.
+
+\textit{DFS buckets.} The structural intervention packs consecutive
+DFS/path-order rows into parallel column arrays. A query performs the normal
+root lookup, two covered boundary probes, one contiguous bucket-sequence scan,
+and a range check on every decoded row; logically, only the two boundary
+buckets can contain out-of-range rows. This is a workload-specific use of
+MongoDB's Bucket Pattern.\footnote{\href{https://www.mongodb.com/docs/manual/data-modeling/design-patterns/group-data/bucket-pattern/}{MongoDB,
+``Group Data with the Bucket Pattern.''}} Five candidate sizes
+(128, 256, 512, 2{,}048, and 8{,}192 rows) run together on 75 selection roots.
+The 256-row candidate has the lowest absolute selection P95; the winner is
+frozen before a separate runner measures 100 previously unqueried root IDs for
+seven paired repeats. Selection and holdout have no repeated root IDs, but they
+come from the same depth-1--3 large-subtree population on one tree and are not
+branch/range-disjoint: 19 selection--holdout ancestor relations affect 16
+holdout roots. We report both the full frozen holdout and a conservative
+post-hoc sensitivity that removes every holdout root involved in any
+selection/holdout or within-holdout ancestor relation.
+
+\Needspace{0.55\textheight}
+\subsubsection{Experimental results}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth,
+  height=4.8cm,
+  xmode=log,
+  xmin=70,
+  xmax=1500000,
+  xtick={101,1000,10000,1000000},
+  xticklabels={101,1K,10K,1M},
+  ymin=0.3,
+  ymax=1.12,
+  ylabel={Paired median speedup},
+  xlabel={Requested cursor batch},
+  grid=major,
+  grid style={draw=gray!22},
+  tick label style={font=\scriptsize},
+  label style={font=\small},
+  legend style={
+    draw=none,
+    fill=none,
+    at={(0.5,1.02)},
+    anchor=south,
+    legend columns=2,
+    font=\scriptsize
+  }
+]
+\addplot[optblue,thick,mark=*] coordinates {
+  (101,0.3695) (1000,0.8571) (10000,1.0165) (1000000,1.0495)
+};
+\addlegendentry{ID-only}
+\addplot[optorange,thick,mark=square*] coordinates {
+  (101,0.4805) (1000,0.8891) (10000,0.9858) (1000000,1.0047)
+};
+\addlegendentry{Metadata}
+\addplot[gray,densely dotted,forget plot]
+  coordinates {(70,1) (1500000,1)};
+\draw[optblue,thick] (axis cs:101,0.3670) -- (axis cs:101,0.3724);
+\draw[optblue,thick] (axis cs:1000,0.8490) -- (axis cs:1000,0.8638);
+\draw[optblue,thick] (axis cs:10000,1.0004) -- (axis cs:10000,1.0330);
+\draw[optblue,thick] (axis cs:1000000,1.0383) -- (axis cs:1000000,1.0560);
+\draw[optorange,thick] (axis cs:101,0.4783) -- (axis cs:101,0.4853);
+\draw[optorange,thick] (axis cs:1000,0.8847) -- (axis cs:1000,0.8938);
+\draw[optorange,thick] (axis cs:10000,0.9703) -- (axis cs:10000,1.0009);
+\draw[optorange,thick] (axis cs:1000000,0.9975) -- (axis cs:1000000,1.0096);
+\node[font=\scriptsize,text=gray!70!black,anchor=north east]
+  at (axis cs:1000000,0.94) {below 1 = slower};
+\end{axis}
+\end{tikzpicture}
+\caption{Cursor-batch paired effects}
+\label{fig:cursor-batch-sweep}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\linewidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth,
+  height=4.8cm,
+  symbolic x coords={128,256,512,2K,8K},
+  xtick=data,
+  ymin=0,
+  ymax=160,
+  xlabel={Candidate rows per bucket},
+  ylabel={Selection P95 (ms)},
+  grid=major,
+  grid style={draw=gray!22},
+  tick label style={font=\scriptsize},
+  label style={font=\small}
+]
+\addplot[optblue,thick,mark=*] coordinates {
+  (128,137.400) (256,130.912) (512,137.549)
+  (2K,139.007) (8K,142.224)
+};
+\addplot[optred,only marks,mark=*,mark size=3pt] coordinates {(256,130.912)};
+\node[font=\scriptsize,text=optred,anchor=north west]
+  at (axis cs:256,130.912) {selected};
+\end{axis}
+\end{tikzpicture}
+\caption{Bucket-size selection}
+\label{fig:bucket-size-selection}
+\end{subfigure}
+\caption{The two subtree parameter sweeps. (a) Points are medians of per-range
+paired speedups and vertical bars are 95\% root-bootstrap intervals. Small
+cursor batches are consistently worse. The modest ID-only effect at 10K/1M
+does not transfer to covered Metadata. (b) The 256-row bucket has the lowest
+selection P95 in this run, but the five candidates span only 8.6\%; selection
+alone does not establish a generally optimal size.}
+\label{fig:subtree-sweeps}
+\end{figure}
+
+Small cursor batches hurt both projections. At 101 and 1K rows, paired median
+speedups are 0.369 and 0.857 for ID-only output and 0.481 and 0.889 for covered
+Metadata. Telemetry shows why: the driver default uses a median of 2 commands,
+including 1 \code{getMore}, while 1K uses 12 commands and 101 uses 117.
+
+Larger requests help only the narrow ID-only case. Its paired median reaches
+1.017 at 10K and 1.049 at 1M; the 1M interval is $[1.038,1.056]$, with
+marginal P50/P95 ratios of 1.05$\times$/1.03$\times$. Covered Metadata stays
+at 0.986 and 1.005, with intervals $[0.970,1.001]$ and $[0.998,1.010]$.
+We therefore keep the driver default for the covered subtree path. Remote RTT,
+streaming, or early termination may have a different tradeoff.
+
+The bucket sweep changes the storage record itself. The selection curve is
+shallow: 256 rows has the lowest P95, but all five sizes lie within 8.6\%.
+An earlier run selected 2{,}048 rows and produced nearly the same holdout
+P50/P95 ratios (1.57$\times$/1.73$\times$ versus
+1.57$\times$/1.72$\times$). The bucketed layout matters more than the exact
+bucket size in this range.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.62\linewidth,
+  height=6.0cm,
+  xmode=log,
+  ymode=log,
+  xmin=5,
+  xmax=700,
+  ymin=5,
+  ymax=700,
+  xtick={10,30,100,300},
+  ytick={10,30,100,300},
+  xticklabels={10,30,100,300},
+  yticklabels={10,30,100,300},
+  xlabel={Baseline per-root median (ms)},
+  ylabel={256-row bucket per-root median (ms)},
+  grid=both,
+  grid style={draw=gray!18},
+  tick label style={font=\small},
+  label style={font=\small}
+]
+\addplot[gray,dashed,domain=5:700,samples=2] {x};
+\addplot[
+  only marks,
+  mark=*,
+  mark size=1.8pt,
+  optblue,
+  fill=optblue,
+  fill opacity=0.65,
+  draw opacity=0.8
+] coordinates {
+  (19.165,13.577) (26.611,17.118) (13.065,9.210) (22.529,13.890)
+  (14.554,9.798) (17.399,11.946) (25.057,15.315) (16.638,10.299)
+  (17.881,11.872) (32.067,19.932) (203.169,123.427) (22.931,15.057)
+  (29.244,17.141) (23.274,15.364) (20.370,12.990) (21.268,13.648)
+  (20.447,12.006) (248.597,145.447) (15.078,9.783) (20.538,13.505)
+  (27.667,16.121) (25.230,15.293) (561.167,319.126) (27.117,15.599)
+  (234.031,123.592) (356.887,194.291) (15.380,9.688) (15.099,10.546)
+  (24.740,17.697) (29.175,17.750) (22.192,13.595) (19.394,12.900)
+  (25.725,15.546) (13.142,9.542) (28.049,17.223) (26.260,16.576)
+  (255.132,144.292) (15.331,9.922) (26.042,15.901) (13.517,8.568)
+  (24.455,14.788) (15.472,10.157) (15.642,10.242) (295.429,167.362)
+  (24.049,16.288) (28.887,17.231) (31.753,18.515) (21.677,13.606)
+  (14.404,9.382) (17.725,12.460) (23.743,15.140) (31.520,18.891)
+  (19.462,12.012) (200.268,118.107) (14.924,9.750) (20.522,12.751)
+  (17.979,11.674) (16.599,11.757) (347.414,183.514) (30.360,17.749)
+  (22.136,13.721) (15.486,10.134) (110.530,71.948) (32.909,20.695)
+  (29.774,17.199) (18.442,10.900) (16.199,11.023) (22.166,13.976)
+  (22.855,16.435) (137.455,81.775) (18.823,12.023) (11.259,7.835)
+  (18.566,12.036) (23.011,14.307) (23.080,14.637) (17.919,11.765)
+  (17.980,12.127) (13.600,9.277) (25.165,17.823) (24.136,14.575)
+  (21.072,13.246) (26.735,16.578) (23.674,13.877) (217.115,122.089)
+  (18.960,11.882) (24.155,15.519) (30.025,18.011) (20.786,15.276)
+  (31.601,19.551) (19.403,12.764) (11.368,8.111) (9.853,6.606)
+  (31.931,21.475) (148.121,83.294) (12.428,8.084) (25.932,14.946)
+  (26.762,16.476) (22.598,14.665) (26.508,15.778) (27.956,17.262)
+};
+\end{axis}
+\end{tikzpicture}
+\caption{Paired DFS-bucket result for 100 previously unqueried, root-ID-disjoint
+inputs from the same large/shallow-subtree cohort. Coordinates are
+seven-repeat medians. The split is not branch/range-disjoint, so points are not
+100 independent storage regions. All points fall below the equal-latency
+diagonal; logarithmic axes retain the cohort tail.}
+\label{fig:bucket-holdout-paired}
+\end{figure}
+
+All 100 holdout roots improve. Marginal P50/P95 speedups are
+1.57$\times$/1.72$\times$, and 697 of 700 paired repeats are faster.
+
+\Needspace{7\baselineskip}
+The split is root-ID-disjoint but not branch-disjoint. Removing every holdout
+root involved in a selection/holdout or within-holdout ancestor relation leaves
+67 mutually range-disjoint roots. All 67 improve, with marginal P50/P95
+speedups of 1.56$\times$/1.67$\times$.
+
+Fetch P95 falls from 172.5 to 71.2\,ms because each BSON document carries many
+consecutive logical rows. The saving comes from fewer storage-engine record
+handoffs; boundary lookup, edge overfetch, array decoding, and client
+reconstruction remain.
+
+\textit{Cost and validation.} Rebuilding the 256-row layout produces
+39{,}063 buckets in 77.0\,s. A full pass rescans all 10M source rows, decodes
+the buckets, and reproduces the source digest with zero mismatches. The
+collection and its indexes occupy 1.450\,GB, and the largest BSON document is
+121.3\,KiB. This adds 20.4\% to the retained source collection and its five
+indexes; against the 1.672\,GB source collection alone, the increase is
+86.7\%. A hybrid route retains the existing structures, so the former
+denominator matches that design.
+
+Buckets are a poor fit for small subtrees. Across 250 previously unused roots
+returning 265 rows on average, P50 rises from 1.044 to 2.171\,ms and only 30
+roots improve, although P95 falls from 3.769 to 3.348\,ms. A serving path should
+not adopt size-based routing from these measurements alone: this study does not
+measure how subtree size is known before the read, the routing threshold and
+overhead, or false-route cost. Those controls are required before keeping small
+reads on the existing index and sending large reads to buckets. Mutable trees
+also need an update, rebuild, and atomic-publication design.
+
+\subsection{Entity fetch}\label{sec:opt-entity}
+
+\subsubsection{Optimization method}
+
+For each batch size, the baseline issues sequential equality lookups on the
+Text collection's \code{\_id}; the candidate sends one
+\code{\_id:\{\$in:\ldots\}} query. Both arms explicitly use the same
+\code{\_id} index, return the same \code{(\_id,text)} fields, and restore caller
+input order with an in-memory ID map. The threaded control concurrently submits
+the same individual \code{\_id} lookups through the shared pool.
+
+\subsubsection{Experimental results}
+
+Entity fetch follows the same curve as node lookup. A one-item batch is
+unchanged, $B=3$ improves P50 from 0.698 to 0.267\,ms
+(2.62$\times$), and $B=64$ reaches 25.1$\times$; the second grouping seed
+stays within 2.0\% at both points. Repeating the pattern in both the Nodes and
+Text collections points to shared command setup rather than a
+collection-specific effect. In the 16-worker-capped threaded control, the two seeds retain
+2.28$\times$/2.12$\times$ at $B=3$ and
+20.2$\times$/19.1$\times$ at $B=64$.
+
+The main workload uses roughly 1\,KiB texts. Larger entities encounter
+response-size and cursor-chunking costs, as the 256\,KiB control in
+Section~\ref{sec:overhead} shows. Multi-entity fetch is useful for naturally
+co-requested small texts.
+
+\subsection{Cross-engine implementation control (SQLite only)}\label{sec:opt-production}
+
+\subsubsection{Optimization method}
+
+This control tests whether the short-read direction survives in existing ConDB
+code; it is not a MongoDB implementation or a validation of MongoDB end-to-end
+latency. The SQLite storage layer now provides multi-parent-child and multi-entity
+reads. Inputs are deduplicated, missing entries remain explicit, every query is
+scoped by \code{tree\_id}, and requests are split into 500-ID chunks. Child
+rows are regrouped by parent without changing slot order. Beam uses a batch
+method only when at least two uncached IDs are present; a one-ID read keeps the
+existing equality query. Nodes with a null \code{entity\_id} do not issue an
+entity lookup. Storage implementations without the optional methods continue
+through the scalar path. Final contents bypass the cross-call entity cache, so
+batching does not weaken the previous fresh-read behavior.
+
+The same change fixes a result-selection bug exposed by the first control.
+Previously, a ranked internal node was inserted into the final result even
+when the ranker returned \code{done=false}; with the default
+\code{select\_k=1}, retrieval stopped before the next frontier. An internal
+node now advances to the next turn when \code{done=false}. A leaf or file is a
+final result, while an internal document node is final only when the ranker
+returns \code{done=true}, meaning that its content is already specific enough.
+
+The latency control uses file-backed \code{TreeDB} copies and the real
+\code{BeamRetriever}. It keeps the public defaults
+\code{beam\_size=3}, \code{select\_k=1}, and the tree-depth turn limit.
+The tree has eight first-level sections and eight leaves per section; every
+section and leaf has a 1\,KiB entity. A fixed ranker retains three sections on
+turn one with \code{done=false}, then selects one leaf on turn two. Both arms
+return exactly one leaf and one content object. The scalar arm hides the two
+batch methods; the candidate arm exposes them. SQL tracing is used only for an
+untimed count. Five rounds contain 250 paired repetitions per arm after 30
+warmups, with arm order alternating within each round.
+
+\subsubsection{Experimental results}
+
+\begin{table}[H]
+\caption{File-backed Beam control with the public \code{beam\_size} and
+\code{select\_k} defaults. Times cover the complete deterministic two-turn
+retrieval. The ratio is scalar latency divided by batched latency.}
+\label{tab:sqlite-beam-batching}
 \begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}crrr@{}}
 \toprule
-\hdr Operation & MongoDB & PostgreSQL & DuckDB & SQLite \\
+\hdr Round & Scalar P50 / P95 (ms) & Batched P50 / P95 (ms) & Ratio P50 / P95 \\
 \midrule
-Point lookup    & 0.345 & 0.124 & 3.772 & \best{0.008} \\
-Expand children & 0.372 & 0.147 & 3.073 & \best{0.014} \\
-Get subtree     & 1.273 & 0.312 & 4.605 & \best{0.069} \\
+1 & 0.735 / 0.865 & 0.618 / 0.728 & 1.189 / 1.188$\times$ \\
+2 & 0.732 / 0.861 & 0.615 / 0.726 & 1.191 / 1.186$\times$ \\
+3 & 0.735 / 0.859 & 0.625 / 0.727 & 1.177 / 1.181$\times$ \\
+4 & 0.726 / 0.807 & 0.610 / 0.697 & 1.191 / 1.157$\times$ \\
+5 & 0.725 / 0.857 & 0.608 / 0.718 & 1.192 / 1.194$\times$ \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-\paragraph{Batched reads.} The navigation step returns a list of candidate node
-ids, so the retriever fetches several nodes at once. One batched read
-(\code{\$in} on MongoDB, \code{IN} on the relational engines) beats the
-point-lookup loop it replaces on every engine, and the margin grows with batch
-size because each iteration of the loop on a server engine is a round trip. At
-200 ids MongoDB is 4.6\,ms batched against 273\,ms looped, a $60{\times}$ gap;
-PostgreSQL is 1.4\,ms against 29\,ms (Table~\ref{tab:in}). MongoDB gains the most
-because batching amortizes the per-call client overhead that costs it on single
-reads; in-process SQLite, with no round trip, gains about $2{\times}$. The
-retriever should resolve a candidate set with one batched read, not a loop.
+The scalar arm performs one root-child read, eight first-turn entity reads,
+three frontier-child reads, 24 second-turn entity reads, and one final entity
+read. These 37 batchable reads become five. The shared root-ID and maximum-depth
+lookups bring the full counts to 39 and seven \code{SELECT}s. P50 improves by
+1.177--1.192$\times$ across the five rounds, a 15.1--16.1\% latency reduction;
+P95 improves by 1.157--1.194$\times$, a 13.5--16.3\% reduction. The smaller
+wall-time gain is expected:
+prompt rendering, candidate construction, JSON decoding, and result
+materialization are unchanged.
 
-\begin{table}[h]
-\caption{Batched id-list read at 10, 50, and 200 ids against the 200-id
-point-lookup loop it replaces (P50, ms per batch).}
-\label{tab:in}
+A second control opens one SQLite connection per client and runs 100 queries
+per client at one, four, and 16 clients. Three rounds alternate arm order. The
+16-client limit is enforced before a database is opened or a worker is
+created. Table~\ref{tab:sqlite-beam-load} reports the median arm result across
+the three rounds.
+
+\begin{table}[H]
+\caption{File-backed load control. Throughput and P50 latency are medians
+across three rounds. Ratios are the medians of the three within-round paired
+ratios: batched/scalar for throughput and scalar/batched for latency.}
+\label{tab:sqlite-beam-load}
 \begin{ctab}
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}crrrr@{}}
 \toprule
-\hdr Engine & \multicolumn{3}{c}{Batched ($n$ ids)} & Loop \\
- & 10 & 50 & 200 & 200 \\
+\hdr Clients & Scalar / batched q/s & Throughput ratio &
+Scalar / batched P50 (ms) & Latency ratio \\
 \midrule
-MongoDB            & 0.46 & 1.56 & 4.56 & 273 \\
-PostgreSQL (JSONB) & 0.27 & 0.78 & 1.40 & 29 \\
-DuckDB             & 19.6 & 22.2 & 39.1 & 790 \\
-SQLite             & \best{0.03} & \best{0.13} & \best{0.50} & \best{0.97} \\
+1  & 1224.7 / 1501.4 & 1.207$\times$ & 0.788 / 0.629 & 1.213$\times$ \\
+4  & 443.3 / 551.3   & 1.239$\times$ & 9.108 / 7.234 & 1.257$\times$ \\
+16 & 237.3 / 272.2   & 1.157$\times$ & 67.168 / 58.590 & 1.156$\times$ \\
 \bottomrule
 \end{tabular}
 \end{ctab}
 \end{table}
 
-\paragraph{Deletion.} Removing a tree (one tenant, 70{,}843 of 1{,}771{,}075
-rows) is a lifecycle operation, not part of retrieval. The delete is fast on
-every engine, under four seconds, but none returns disk space on the delete
-alone (Table~\ref{tab:del}). SQLite (\code{VACUUM}) and PostgreSQL
-(\code{VACUUM FULL}) reclaim the removed tree's footprint through a full,
-locking rewrite that takes 10 to 17\,s; MongoDB \code{compact} and DuckDB do not
-measurably shrink the file for a single-tenant deletion, which is WiredTiger's
-documented behavior of not returning space to the operating system on delete.
-For MongoDB this mirrors the write path: WiredTiger carries no vacuum debt under
-updates, and in exchange a one-off bulk delete does not auto-shrink. WiredTiger
-reports \code{storageSize} in checkpoint-sized chunks, so changes below tens of
-megabytes are reporting granularity, not reclaimed space.
+Every paired round favors batching. At 16 clients, the medians of the paired
+throughput and P50 ratios are 1.157$\times$ and 1.156$\times$. The separately
+aggregated arm medians correspond to 14.7\% higher throughput and 12.8\% lower
+P50 latency. Median arm P95 falls from 75.128 to 65.743\,ms; the median paired
+P95 ratio is 1.147$\times$. Neither arm scales with client count: contention and
+Python-side work drive throughput down and latency up. Coalescing reduces that
+cost but does not make the current SQLite path a high-concurrency design.
 
-\begin{table}[h]
-\caption{Whole-tree delete and space reclamation (delete one of 25 trees).}
-\label{tab:del}
-\begin{ctab}
-\begin{tabular}{@{}lrlrl@{}}
-\toprule
-\hdr Engine & Delete (rows/s) & Reclaim & Reclaim time & On-disk (before\,$\to$\,after) \\
-\midrule
-PostgreSQL (JSONB) & 157{,}578 & \code{VACUUM FULL} & 17.3\,s & 2.77\,$\to$\,2.66\,GB \\
-SQLite             & 141{,}842 & \code{VACUUM}      & 10.6\,s & 2.56\,$\to$\,2.46\,GB \\
-MongoDB            & 60{,}680  & \code{compact}     & 0.1\,s  & 911\,MB, no shrink \\
-DuckDB             & 20{,}171  & checkpoint         & --      & 790\,MB, no shrink \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
+The raw results are stored in:
+\begin{center}
+\small
+\path{bench/db/sqlite_beam_batching_20260729.json}\\
+\path{bench/db/sqlite_beam_batching_load_20260729.json}
+\end{center}
+Each records its command line, Git head, output fingerprint, and source-file
+hashes. The public scalar navigation methods, other tree shapes, and mutable
+trees remain outside this control.
 
-None of the three changes the benchmark conclusion: a \code{tree\_id}-led index
-keeps tenant selectivity stable, batched reads remove the point-lookup loop cost,
-and deletion behavior affects lifecycle maintenance rather than retrieval.
-
-\subsection{MongoDB \code{get\_subtree} diagnosis}\label{sec:diagnosis}
-
-\subsubsection{Root cause}
-
-The cause is structural, not a configuration mistake. MongoDB's unit of read is
-the whole document. A secondary index (here on \code{path}) is a separate
-B-tree holding only the indexed field and a record id; to return any other
-field, the engine must \emph{fetch} the full BSON document and apply the
-projection to it. A point lookup is one such fetch; a large subtree is tens of
-thousands, the biggest in the workload far more. The data is cache-resident
-(and pages in the WiredTiger cache are stored uncompressed), so the cost is
-neither disk I/O nor decompression: the time goes to per-document work. Because
-the \code{path} index is non-covering, each matched record id triggers a
-\code{FETCH} of the whole BSON document---\code{text} payload and all, even though
-the query needs only a node id---and tens of thousands of those fetches batch
-through the cursor. Multiplied by subtree size, that per-document overhead is the
-cost of the operation. The other operations touch few documents, so they stay fast.
-
-The cost therefore scales with the number of nodes in the subtree: the largest
-subtrees, near the root, are the slowest. How large that tail actually is---and
-whether the original run's multi-second figure is a steady-state property or an
-artifact of that run's contention---is the subject of the next section.
-
-The row and columnar engines do less work per node. A row store visits each
-matching row but materializes only the requested column; the wide \code{text}
-sits unread in the row (PostgreSQL does not even decompress the JSONB datum,
-since \code{node\_id} is a separate column). A column store reads only the
-requested column in vectorized batches. Both could go further still with a
-covering index that answers the range from the index alone (Section~\ref{sec:opt}).
-All of these do far less per-row work than a per-document fetch.
-
-This is the trade-off of the document model. It is unfavorable for a
-projection-heavy range scan over many nodes, but favorable for operations that
-read or update a whole node: point reads, children reads, content fetches, field
-updates, tenant-local sharding, and compressed storage. The PageIndex workload
-matches that model on every measured operation except the large-subtree scan.
-
-\subsubsection{Controlled tail re-measurement}\label{sec:remeasure}
-
-The original \code{get\_subtree} figure (P95 2478\,ms) was recorded while the other
-three engines, the write benchmark, and the concurrency sweep ran on the same host.
-To separate the query's own cost from that contention, we re-measured it on the
-ten-million-node tree under controlled conditions: one measuring client, the
-collection freshly loaded and fully resident, the same 200 seeded subtree paths.
-
-Re-measured in isolation, P95 is ${\sim}0.30$--$0.42$\,s (P50 ${\sim}30$--$40$\,ms),
-stable across repeated runs---an order of magnitude below the first run. Driving the
-same query while 16, 32, then 64 concurrent processes hammer point lookups at the
-same \code{mongod} barely moves it (Table~\ref{tab:remeasure}): P95 rises from $331$
-to $376$\,ms across the sweep, $1.1{\times}$, never approaching seconds. Throughout,
-the WiredTiger cache holds the whole collection (${\sim}17$\,GB resident in a
-$540$\,GB cache) and reports zero application-thread evictions---so the tail is
-neither eviction nor, as it turns out, ordinary read contention.
-
-\begin{table}[h]
-\caption{\code{get\_subtree} re-measured on the 10M tree, one measuring client,
-while $N$ background processes drive concurrent point lookups (id-only projection,
-ms).}
-\label{tab:remeasure}
-\begin{ctab}
-\begin{tabular}{@{}rrrrr@{}}
-\toprule
-\hdr Concurrent load $N$ & P50 & P95 & P99 & WT evictions \\
-\midrule
-0  & 31.4 & 331 & 476 & 0 \\
-16 & 39.4 & 357 & 555 & 0 \\
-32 & 44.1 & 415 & 534 & 0 \\
-64 & 39.0 & 376 & 627 & 0 \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-The corrected picture is milder than the first run implied. Steady-state,
-\code{get\_subtree} on the large tree is ${\sim}0.4$\,s at P95 and ${\sim}30$--$40$\,ms
-at the median---roughly $3{\times}$ PostgreSQL at \emph{both} (its $123$\,ms tail and
-$11$\,ms median), not the ${\sim}20{\times}$ the original P95 alone suggested. The
-2478\,ms was a property of the loaded machine during the first run---most likely
-whole-system resource contention, or a cold-cache first touch before the collection
-was warm---not of the query in steady state. The mechanism from the previous section
-still holds (each matched node is a separate \code{FETCH}, so cost grows with subtree
-size), but its steady-state magnitude is sub-second.
-
-\subsection{Resident-cache optimization A/B}\label{sec:resident-ab}
-
-The diagnosis above separates two regimes. The first is the resident-cache
-experiment: which schema/index variants change \code{get\_subtree} when the whole
-collection already fits in cache? The second is production deployment: which
-schema choices are required when the working set no longer fits RAM? This section
-answers only the resident-cache question. Each variant below stays on MongoDB
-Community Edition and was measured on the ten-million-node tree
-(Table~\ref{tab:opt}).
-
-\begin{table}[h]
-\caption{\code{get\_subtree} variants measured on the 10M tree (one client; view returns
-\code{node\_id}+\code{title}+\code{summary}, id returns \code{node\_id} only; ms).}
-\label{tab:opt}
-\begin{ctab}
-\begin{tabular}{@{}p{5.2cm}rrl@{}}
-\toprule
-\hdr Variant & P50 & P95 & Result \\
-\midrule
-\key Baseline, view (\code{text} inline) & 39.6 & 419 & reference \\
-Subset Pattern (split \code{text}), view & 39.2 & 419 & \best{no change} \\
-Lean covering \code{\{path,node\_id\}}, id & 19.3 & 191 & ${\sim}1.4{\times}$, covered \\
-Fat covering \code{+title,summary}, view & 33.5 & 350 & ${\sim}1.2{\times}$; 4.66\,GB index \\
-Lean covering ${+}$ batched \code{\$in}, view & 137 & 1314 & ${\sim}3{\times}$ slower \\
-\bottomrule
-\end{tabular}
-\end{ctab}
-\end{table}
-
-\noindent Table~\ref{tab:opt} is therefore a \emph{resident-cache} optimization
-ranking, not a full deployment ranking. In a large deployment with many trees or
-tenants, the constraint can reverse: the working set may exceed RAM, and then the
-dominant constraint is which bytes remain cache-resident. Under that condition,
-splitting \code{text} out of the hot node collection is the first schema
-requirement, followed by \code{tree\_id}-led indexes/sharding so each query stays
-tenant-local, and then by lean covering indexes or denormalized subtree views. The
-experiment below does not quantify that cache-constrained benefit; it only shows
-that the benefit cannot appear when both schemas already fit in cache.
-
-\subsubsection{Measured resident-cache variants}
-
-\paragraph{Subset Pattern: no latency change while resident.} Moving the large
-\code{text} field into a separate collection shrinks the scanned documents, but in
-this resident-cache experiment it does not reduce latency. It shrinks the
-collection by ${\sim}75\%$ ($4.97\to1.25$\,GB) yet leaves \code{get\_subtree} P95
-unchanged ($419\to419$\,ms). The reason is the cache:
-at $540$\,GB it holds the whole collection many times over
-(Section~\ref{sec:remeasure}), so document \emph{size} never gates the
-scan---document \emph{count} does. Each of the ${\sim}36$k matched nodes is a
-separate \code{FETCH}, and shrinking each one does not reduce their number. The
-Subset Pattern's premise---a working set too large for RAM---does not hold on this
-host. For production scale, this is exactly the boundary condition to watch: if
-inline \code{text} pushes the structure/title/summary working set out of cache, the
-split becomes a cache-residency requirement even though it did not move this
-resident-cache latency number.
-
-\paragraph{Covering index: modest improvement by removing \code{FETCH}.} Covered
-execution is the only measured resident-cache variant that reduces latency. A
-lean \code{\{path,node\_id\}} index serves the id-only subtree query index-only
-(\code{explain} confirms
-\code{PROJECTION\_COVERED}, \code{totalDocsExamined:\,0}) for ${\sim}1.4{\times}$. But
-the tree view also needs \code{title} and \code{summary}: extending the index to
-cover them works (${\sim}1.2{\times}$) yet inflates it to $4.66$\,GB---as large as the
-collection's own data---because \code{summary} is a multi-kilobyte key. Resolving
-the view with a covered id scan plus a batched
-\code{\$in} is worse, not better (${\sim}3{\times}$ slower): a ${\sim}36$k-id
-\code{\$in} overflows the 16\,MB command limit (forcing ${\sim}36$ chunked round
-trips) and re-fetches the same documents anyway. Keep the anchored
-materialized-path range as the predicate---an unanchored regex cannot form a range
-and must scan the whole index---and treat cache sizing and \code{zstd} as
-irrelevant here: the data is already resident, so neither touches the per-fetch cost.
-
-\paragraph{Structural denormalization: larger but unmeasured.} Nested
-Sets or a tree-order \code{\_id} on a clustered collection turns the subtree into one
-range query or a sequential read; a pre-computed subtree document turns it into a
-point read. All are viable precisely because the tree is write-once (their cost is
-paid once at ingest), and all remove fetches wholesale rather than shrinking them.
-They were not measured in this pass. With the baseline already at ${\sim}0.4$\,s,
-the remaining decision is whether the added schema complexity is justified for a
-sub-second, infrequent operation. (\code{\$graphLookup} is not a candidate---it re-traverses
-\code{parent\_id}, still materializes documents, and in 7.0 is capped at 100\,MB and
-ignores \code{allowDiskUse}.)
-
-\subsubsection{Out-of-scope levers for this bottleneck}
-
-\paragraph{MongoDB version upgrade.} Upgrading the engine
-does not fix this without a schema change. Against this operation---a
-projection-heavy range scan over ordinary documents---the 8.0--8.3 line offers
-nothing: the 8.0 \emph{Express} path is a point/equality fast path on a single
-index (\code{\_id}-style, no range, sort, or skip), 8.0 \emph{block processing}
-is scoped to time-series collections, and the \code{\$graphLookup} disk-spill fix
-(SERVER-23980) lands only in 8.2.0 (reverted from 8.1) and only helps the
-recursive alternative anyway. The document-at-a-time \code{FETCH} is unchanged
-across the line.
-
-\paragraph{Atlas/Enterprise-only features.} The most direct engine feature for
-this access pattern is a column-store index, so a projection-heavy scan reads only the
-projected column, as the relational engines do---is Atlas-only. But PageIndex never
-scans the whole corpus, so a column store solves a problem this workload does not
-have; the schema changes above address the one it does. Self-managed Search and
-Vector Search run on Community since 8.2 (a separate \code{mongot} process, public
-preview, replica set required) but serve relevance retrieval, not a
-range-projection scan. No Atlas- or Enterprise-only feature addresses the
-document-at-a-time read model itself, so the only levers are schema, index, and
-storage configuration---all on Community.
-
-\section{Deployment optimization plan}\label{sec:opt}
-
-The measured A/B in Section~\ref{sec:resident-ab} ranks variants only for a
-cache-resident host. A production deployment has the opposite constraint: many
-trees or tenants can make the working set larger than RAM, so the first goal is
-to keep the hot navigation data in cache. The deployment plan is therefore:
-
-\begin{enumerate}\itemsep2pt
-\item \textbf{Split \code{text} from the hot node collection.} Store
-  \code{tree\_id}, \code{node\_id}, structure, \code{title}, and \code{summary} in
-  the navigation collection, and store large body text in a separate collection
-  keyed by \code{(tree\_id,node\_id)}. The resident-cache experiment shows this is
-  not a latency improvement when both layouts fit in RAM. At production scale it is still
-  the first schema requirement, because \code{get\_subtree} and navigation never
-  need body text; keeping text inline only makes cold payload bytes compete with
-  hot structure bytes for cache.
-\item \textbf{Lead every index and shard key with \code{tree\_id}.} Multi-tenant
-  reads must remain tenant-local: point lookup, children lookup, subtree range
-  scan, and content fetch should all be served by compound indexes beginning with
-  \code{tree\_id}. This preserves selectivity as the number of trees grows and is
-  the natural shard key for horizontal scale.
-\item \textbf{Add lean covering indexes on the navigation collection.} A
-  \code{\{tree\_id,path,node\_id\}} index can serve id-only subtree scans without
-  document fetch. Avoid putting multi-kilobyte \code{summary} into the default
-  covering key unless the measured workload requires it: the resident-cache A/B
-  shows the fat index works, but the 4.66\,GB index buys only a small additional
-  gain.
-\item \textbf{Denormalize hot subtree views only after measuring demand.} If
-  \code{get\_subtree} remains a top latency contributor, use write-once structure
-  to precompute bounded structure+summary subtree views, or add Nested Sets /
-  tree-order \code{\_id} for range-locality. These are the only options that remove
-  the many-fetch shape entirely, but they add storage amplification and more
-  complicated ingest.
-\end{enumerate}
-
-\noindent The rollout test should reproduce the missing production condition:
-run the Subset Pattern A/B with the WiredTiger cache below the inline-text working
-set and above the split navigation working set. That experiment prices the
-cache-residency benefit directly. The current preliminary benchmark cannot
-quantify it because both layouts were already cache-resident.
+\Needspace{7\baselineskip}
+The companion file
+\path{bench/db/report/MONGODB_OPTIMIZATION_REVIEW.md} maps the MongoDB claims to
+their frozen artifacts and SHA-256 values, distinguishes component evidence from
+implemented behavior, and records the remaining adoption gates. The large raw
+measurement JSON files under \path{bench/db/runs} are not versioned by default;
+external reproduction therefore requires publishing that frozen evidence bundle
+in addition to this report and its manifest.
 
 \section{Conclusion}
 
-The preliminary benchmark supports MongoDB for the PageIndex retrieval workload
-with one qualification. Point reads, children reads, content fetches, writes,
-multi-tenant selectivity, batched reads, concurrency, and footprint are all
-acceptable or favorable. The one weak operation is \code{get\_subtree}, whose
-steady-state P95 is about 0.4\,s on the large tree after re-measurement, roughly
-$3{\times}$ PostgreSQL rather than the 2.5\,s first observed under whole-system
-contention.
+Request coalescing is now integrated into the SQLite-backed Beam path. Under
+the report's local, warm-cache, fully materialized conditions, the storage
+experiment shows that it helps with only three inputs and remains faster than
+submitting individual queries through a 16-worker pool. The cross-engine
+implementation control confirms the direction but also bounds the claim:
+reducing 37 batchable reads to five yields a repeatable
+1.18$\times$ single-client gain and a 1.16$\times$ median paired throughput
+gain at 16 clients, not a statement-count-sized speedup. Under these same
+conditions, cursor batch tuning is not worth pursuing for the fully
+materialized covered-Metadata subtree path: small batches add \code{getMore}
+traffic, while large requests fail to improve Metadata retrieval. Remote RTT,
+streaming, and early termination remain unmeasured.
 
-The resident-cache optimization A/B shows that the measured bottleneck is the
-number of non-covering document fetches. Splitting \code{text} does not improve
-latency when both layouts fit in cache; a lean covering index gives the only
-cheap measured improvement, about ${\sim}1.4{\times}$. That A/B does not set the
-production priority order. For deployment, the first schema step is still to
-split \code{text} from the navigation collection so the hot structure/title/summary
-working set can remain cache-resident. After that, keep indexes and shard keys
-led by \code{tree\_id}, add lean covering indexes where they serve real hot paths,
-and reserve subtree denormalization for measured \code{get\_subtree} bottlenecks.
-The remaining validation is a cache-constrained Subset Pattern A/B that forces
-the inline-text layout out of cache while the split navigation layout fits.
+Separately, a direct \code{CountStage}$\rightarrow$\code{CountScan} pair that
+skips an unread working-set member reduces benchmark-thread user-space retired
+instructions against a pinned upstream base carrying the same benchmark harness
+by 4.600\%, 2.055\% and 3.680\% on the three indexed-count shapes measured,
+favourably in all 30 blocks and consistent at about 117 instructions per counted
+document. The optimization fires wherever \code{CountStage}'s child is a bare
+\code{CountScan}. \code{QueryPlanner::plan} returns a count scan as the single
+solution as soon as one is available, so that is every classic
+\code{COUNT\_SCAN} plan rather than an occasional case; counts that plan to
+\code{FETCH} or a collection scan are untouched. Every plan measured is forced
+by an index hint. That campaign's pre-registered adoption gate did not pass: its
+point-query control showed a binary-level CPU-time offset that the change cannot
+cause, and its un-optimized control had a band that was never attainable at 30
+blocks. No CPU-time or wall-time result is claimed. A post-hoc analysis of that
+second control, conditioning on a two-state instruction latch that the
+pre-registered estimator averages over, indicates that an earlier, rejected
+implementation of the idea intrudes on a plan shape where the optimization
+cannot fire; the pre-registered marginal estimator inverts the sign of that
+comparison, and both figures are reported in
+Section~\ref{sec:master-countscan}. This narrow source experiment is not a
+MongoDB version comparison or evidence of ConDB, whole-process, concurrent, or
+production improvement.
+
+DFS buckets improve the measured large-subtree cohort but are not ready for an
+adoption decision because small reads regress and the size-based router itself
+is unmeasured. The next experiments should measure the same Beam path on
+additional trees, decide whether public navigation needs batch methods, and
+evaluate the size estimator, routing threshold, and false-route cost on
+branch-disjoint trees with mixed subtree sizes. Mutable trees also need measured
+rebuild and publication behavior.
 
 \end{document}

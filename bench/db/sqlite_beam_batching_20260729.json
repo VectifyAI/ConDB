@@ -1,0 +1,161 @@
+{
+  "batchable_short_reads_per_query": {
+    "batched": 5,
+    "derivation": "scalar: root children + first-turn entities + frontier children + second-turn entities + final entity; batched: the same five logical stages",
+    "scalar": 37
+  },
+  "benchmark": "sqlite_production_beam_batching",
+  "concurrency": {
+    "background_threads": 0,
+    "client_threads": 1,
+    "max_concurrent_clients": 1
+  },
+  "environment": {
+    "load_average_after": [
+      4.81201171875,
+      4.98779296875,
+      5.09375
+    ],
+    "load_average_before": [
+      4.81201171875,
+      4.98779296875,
+      5.09375
+    ],
+    "logical_cpus": 96,
+    "platform": "Linux-6.8.0-84-generic-x86_64-with-glibc2.35",
+    "python": "3.10.12",
+    "sqlite": "3.37.2"
+  },
+  "equivalence": {
+    "contents": 1,
+    "matched": true,
+    "nodes": 1,
+    "selected_node_type": "leaf",
+    "sha256": "74dd175bf424994c231303b82399e6cb60b83efe0b4e07496b023998dc125060"
+  },
+  "generated_at_unix_ms": 1785260934183,
+  "provenance": {
+    "argv": [
+      "bench/db/bench_sqlite_beam_batching.py",
+      "--output",
+      "bench/db/sqlite_beam_batching_20260729.json"
+    ],
+    "beam_retriever_sha256": "353eb6752106b6f4208fbb66207ba34e4e943991fdc022944d0b160dcf90b820",
+    "git_head": "73c6109f07970083023c2b74fb065ce12a7b112e",
+    "script_sha256": "e09781b5fbf603b12ffd7e14bbdd67ab7ef27ccf4dc368f00d1c602835772ec0",
+    "storage_sha256": "775059a073d87157c2c5cb732a515ec36c67d3265ee97a8ff3feef93e1557711"
+  },
+  "rounds": [
+    {
+      "batched": {
+        "mean_us": 643.7490799999999,
+        "p50_us": 618.107,
+        "p95_us": 727.6563
+      },
+      "scalar": {
+        "mean_us": 766.500188,
+        "p50_us": 734.84,
+        "p95_us": 864.80105
+      },
+      "speedup_at_marginal_percentile": {
+        "p50": 1.188855651206021,
+        "p95": 1.1884746273755893
+      }
+    },
+    {
+      "batched": {
+        "mean_us": 633.05726,
+        "p50_us": 615.0160000000001,
+        "p95_us": 725.9010000000001
+      },
+      "scalar": {
+        "mean_us": 753.444816,
+        "p50_us": 732.3520000000001,
+        "p95_us": 860.79265
+      },
+      "speedup_at_marginal_percentile": {
+        "p50": 1.1907852803829493,
+        "p95": 1.1858265107776402
+      }
+    },
+    {
+      "batched": {
+        "mean_us": 642.904936,
+        "p50_us": 624.5989999999999,
+        "p95_us": 727.0424499999999
+      },
+      "scalar": {
+        "mean_us": 762.7051160000001,
+        "p50_us": 735.433,
+        "p95_us": 858.6347499999999
+      },
+      "speedup_at_marginal_percentile": {
+        "p50": 1.177448250797712,
+        "p95": 1.1809967217182435
+      }
+    },
+    {
+      "batched": {
+        "mean_us": 621.641344,
+        "p50_us": 609.8679999999999,
+        "p95_us": 697.4187999999999
+      },
+      "scalar": {
+        "mean_us": 737.643224,
+        "p50_us": 726.4145,
+        "p95_us": 806.61295
+      },
+      "speedup_at_marginal_percentile": {
+        "p50": 1.1911011891097747,
+        "p95": 1.1565689797866074
+      }
+    },
+    {
+      "batched": {
+        "mean_us": 625.1985159999999,
+        "p50_us": 607.961,
+        "p95_us": 717.9700499999999
+      },
+      "scalar": {
+        "mean_us": 745.207644,
+        "p50_us": 724.703,
+        "p95_us": 857.4028000000001
+      },
+      "speedup_at_marginal_percentile": {
+        "p50": 1.192022185633618,
+        "p95": 1.1942041314954575
+      }
+    }
+  ],
+  "speedup_range": {
+    "p50_max": 1.192022185633618,
+    "p50_min": 1.177448250797712,
+    "p95_max": 1.1942041314954575,
+    "p95_min": 1.1565689797866074
+  },
+  "sqlite_select_statements_per_query": {
+    "batched": {
+      "count": 7,
+      "sha256": "9ea0473c59b401b19543cd0f4199b25d56bc5679495e299c26919526329fa135"
+    },
+    "scalar": {
+      "count": 39,
+      "sha256": "3db46e5dfc46b840531099cce3d84192368688c7cb261b747213c7ca8941bdaf"
+    }
+  },
+  "workload": {
+    "beam_size": 3,
+    "branches": 8,
+    "candidate_leaves_on_second_turn": 24,
+    "leaves_per_branch": 8,
+    "max_turns": "tree-depth default",
+    "order": "alternating scalar-first and batched-first",
+    "payload_bytes": 1024,
+    "repeats_per_round": 250,
+    "rounds": 5,
+    "select_k": 1,
+    "storage": "file-backed SQLite with warm caches",
+    "turns": 2,
+    "warmups_per_arm": 30
+  }
+}
