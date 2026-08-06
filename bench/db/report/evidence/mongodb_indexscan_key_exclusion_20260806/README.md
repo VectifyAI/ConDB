@@ -1,89 +1,87 @@
-# Not materializing index keys when the only consumer is a FETCH
+# Not materializing index keys when only a FETCH will read them
 
-**Status: specified and its ceiling measured, not implemented.** No production code was written and
-nothing is pushed. This covers the **child expansion** and **subtree retrieval** operations from the
-report.
+**Status: implemented and correct, but with no established performance win. Not proposed.**
 
-Base commit in `base_commit.txt` (`0561c098b99a` lineage).
+Branch `agent/condb-ixscan-key-exclusion`, commit in `commit.txt`, on base `0561c098b99a`. Full diff
+in `change.diff`. Nothing is pushed to a pull request, because the effect does not reproduce.
 
-## The finding
+This covers **child expansion** and **subtree retrieval** from the report.
 
-`IndexScan::doWork` calls the index cursor with the default `KeyInclusion::kInclude`
-(`index_scan.cpp:100,117,126,147,154`), so `wiredtiger_index.cpp:1009` runs `key_string::toBson` for
-every key and `index_scan.cpp:266-277` stores the result on the `WorkingSetMember`.
+## The idea, and why it looked strong
 
-On an `IXSCAN → FETCH` plan that BSON has no consumer. `WorkingSetCommon::fetch` clears `keyData`
-unread at `working_set_common.cpp:192`, and the only thing that would have read it is the yield-time
-index/document consistency check at `:154`, which is skipped entirely when no yield occurred:
+`IndexScan` decodes every index key to BSON. On an `IXSCAN → FETCH` plan nobody reads it:
+`WorkingSetCommon::fetch` clears `keyData` once its post-yield consistency check is done, so no
+stage above the FETCH can see it, and that check is the only reader below. Upstream has a TODO
+asking for exactly this opt-out (`working_set_common.cpp:146-147`), `CountScan` already passes
+`KeyInclusion::kExclude`, and the check does not even consume BSON — it re-encodes the stored BSON
+*back* into a `key_string::Value` to look up in a `KeyStringSet`, so the current path is
+KeyString → BSON → KeyString.
 
-```cpp
-if (memberKey.snapshotId == currentSnapshotId) {
-    continue;
-}
-```
-
-Two facts make this a real candidate rather than a theory:
-
-1. **`KeyInclusion::kExclude` already exists and is honored.** `sorted_data_interface.h:364-367`
-   defines it, and `wiredtiger_index.cpp:1001-1013` skips the whole decode under it. **`CountScan`
-   already passes it** (`count_scan.cpp:127,129`), so this is a per-stage decision with in-tree
-   precedent, not a cross-cutting change.
-2. **Upstream asks for exactly this.** `working_set_common.cpp:146-147`:
-   `// TODO provide a way for the query planner to opt out of this checking if it is unneeded due to
-   the structure of the plan.`
-
-An earlier audit dismissed this on the grounds that the key BSON is load-bearing for the consistency
-check. That reasoning is wrong. The check does not consume BSON — it re-encodes the stored BSON
-*back* into a `key_string::Value` to look up in a `KeyStringSet` (`working_set_common.cpp:181-185`).
-The current path is KeyString → BSON → KeyString, and the storage layer already had the KeyString.
-SBE never materializes key BSON at all (`sbe/stages/ix_scan.cpp:258` uses `nextKeyValueView()`).
-
-## Measured ceiling
-
-The A/B needs no new code: `sorted_data_interface_bm.cpp:249-252` already registers the same cursor
-advance under both settings. Built as
-`//src/mongo/db/storage/wiredtiger:storage_wiredtiger_record_store_and_index_bm`, one pinned CPU,
-5 repetitions, medians:
+The storage-layer ceiling is large. `sorted_data_interface_bm.cpp:249-252` already registers the
+same cursor advance under both settings, so no new code was needed to measure it
+(`sorted_data_interface_advance.json`, one pinned CPU, 5 repetitions, medians):
 
 | Index | `kExclude` | `kInclude` | Ratio | Saved |
 |---|---|---|---|---|
-| non-unique | 5,215,663 ns | 9,953,005 ns | 0.5240 | **47.6%** |
-| unique | 5,093,290 ns | 10,812,723 ns | 0.4710 | **52.9%** |
+| non-unique | 5,215,663 ns | 9,953,005 ns | 0.5240 | 47.6% |
+| unique | 5,093,290 ns | 10,812,723 ns | 0.4710 | 52.9% |
 
-Not materializing the key roughly **halves the cost of advancing the cursor**.
+Not materializing the key roughly halves the cost of advancing the cursor.
 
-Read this as a ceiling on the per-key component, not as a query-level projection. This benchmark
-measures the storage cursor in isolation; a real `find` also does document fetch, filtering,
-projection and reply assembly, none of which this touches. It also reports CPU time rather than
-retired instructions — that harness does not use the PMU wrapper the query benchmarks do — so it is
-subject to the same clock-versus-work caveat recorded for the CountScan campaign.
+## What was built
 
-## What implementing it requires
+`FetchStage` tells a direct `IXSCAN` child that nothing above will read its keys — the same local
+parent-tells-child pattern `CountStage` uses with `CountScan`, rather than a planner flag that could
+be set wrongly. `IndexScan` applies it only when it also has no bounds checker, no filter and no key
+metadata to produce, which are the only other readers of the key inside the stage, so the whole
+condition is decided locally. It then uses `nextKeyString()` / `seekForKeyString()`, stores the
+`key_string::Value` on `IndexKeyDatum`, and `WorkingSetCommon::fetch` compares it directly.
 
-The key cannot simply be dropped: if a yield does occur, the consistency check needs it. The design
-is to keep the `key_string::Value` the storage layer already produced instead of a BSON round trip.
+## Correctness: confirmed
 
-1. A flag on `IndexScanParams` / `IndexScanNode`, defaulting to false.
-2. `classic_stage_builder.cpp` sets it only when the scan's sole consumer is a `FETCH` — which
-   requires no covered projection, no sort-key generation, no shard filter, no `returnKey`, no
-   `AND_HASH`/`AND_SORTED`, no `TEXT_OR`, and no index-only result path.
-3. `IndexScan` uses `nextKeyString()` / `seekForKeyString()` and stores a `key_string::Value` on
-   `IndexKeyDatum` (additive field; existing consumers only run when the flag is false).
-4. `WorkingSetCommon::fetch` compares that value directly, dropping the `HeapBuilder` re-encode.
+**It fires exactly where intended and nowhere else.** A temporary diagnostic (removed before commit,
+output retained in `diag_scan.log.gz` and `diag_cov.log.gz`) counted:
 
-Reachability was checked for the two target patterns: single-interval exact bounds make `_checker`
-null (`index_scan.cpp:105`), exact bounds elide the residual filter (`planner_access.cpp:1148`),
-`addKeyMetadata` is false without `returnKey` (`planner_access.cpp:743`), and `shouldDedup` is false
-for a non-multikey index (`query_solution.cpp:733`). It does **not** apply to a covered projection,
-which reads `keyData` directly (`projection.cpp:268`).
+| Benchmark | Fired | Total | Why |
+|---|---|---|---|
+| `UniqueFieldRangeScan` (IXSCAN → FETCH) | 217 | 217 | parent is a FETCH |
+| `UniqueFieldRangeScanCovered` | 0 | 127 | parent is `PROJECTION_COVERED`, which reads the key |
 
-## Why it was not implemented here
+**It survives the path it rewrites.** 42 core jstest entries pass with
+`internalQueryExecYieldIterations: 1`, which forces a yield on every iteration and so makes the
+consistency check — the only consumer of the retained key — run constantly
+(`resmoke_forced_yield.json`). `query_stage_ixscan` 6/6 and `query_stage_fetch` 2/2 also pass.
 
-The correctness of the change rests entirely on step 2 — deciding when the flag is safe. There are
-at least seven consumers of `keyData` (`projection.cpp:268`, `working_set.cpp:136`,
-`orphan_chunk_skipper.cpp:188-198`, `return_key.cpp`, `and_common.h:60-70`, `text_or.cpp:277-278`,
-`plan_executor_impl.cpp:759-765`), spread over 73 references in 23 files, and setting the flag where
-any of them can run is a silent wrong-results bug rather than a crash. That deserves a careful
-planner change and a broad resmoke matrix, not a rushed one.
+## Effect: not established, and probably not there
 
-The ceiling above is recorded so that work starts from a measured number rather than a hypothesis.
+Two pairs of binaries, built from identical production source and differing only in which collection
+sizes the benchmark registers, disagree:
+
+| Measurement | Range scan (IXSCAN → FETCH) | Covered control |
+|---|---|---|
+| Pair 1 (`rs_*.json`) | 0.9799 — 2.01% saved | 1.0036 |
+| Pair 1 re-run (`rs3_*.json`) | 0.9799 | 1.0033 |
+| Pair 2 (`rs2_*.json`, 10k docs) | 1.0063 — 0.63% **worse** | 1.0041 |
+
+Pair 1 reproduces exactly on re-run, so this is not run-to-run noise; the two *builds* genuinely
+differ. Difference-in-differences against the covered control does not reconcile them either
+(2.4% saved versus 0.2% worse).
+
+The likely reason is mechanical, and it is the useful finding here. The storage layer's `kExclude`
+wins by **producing nothing**. But the consistency check still needs per-key data to survive across
+`work()` calls, so this change has to retain something — a `key_string::Value` from
+`SortedDataKeyValueView::getValueCopy()` (`sorted_data_interface.h:644-647`), which allocates and
+copies. It trades a BSON build for a KeyString copy rather than removing the work. The 47.6% storage
+ceiling therefore does **not** transfer to a FETCH plan, and anyone reading that number as a
+projection for this change would be misled.
+
+## What would have to change to capture it
+
+The win is only available to a consumer that needs nothing per key. That is `CountScan`'s situation,
+not `FETCH`'s. Capturing it here would mean removing the need to retain the key at all — for
+instance by having the FETCH re-derive consistency from the document rather than the stored key, or
+by making the retained form a non-owning view whose lifetime is guaranteed by something other than
+the WorkingSetMember. Both are larger changes than this one and neither was attempted.
+
+The branch is kept because the correctness scaffolding — the local parent-tells-child condition, the
+firing diagnostic, and the forced-yield test matrix — is what any future attempt would need anyway.
