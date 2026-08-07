@@ -1,0 +1,26 @@
+{
+  "tree_id": "base",
+  "documents": 10000000,
+  "verified_nodes": 500,
+  "winning_plan": "IDHACK",
+  "indexes": [
+    "_id_"
+  ],
+  "key_form": {
+    "string_key_form": "used, no field-order hazard expressible",
+    "subdocument_key_form": "rejected: {tree_id,node_id} matches, {node_id,tree_id} returns none, both IDHACK, no error"
+  },
+  "size_mb": 5976.1,
+  "index_size_mb": 111.3,
+  "baseline_size_mb": 5927.1,
+  "baseline_index_size_mb": 5448.4,
+  "baseline_indexes": [
+    "_id_",
+    "allops_tree_node",
+    "allops_tree_parent_path",
+    "layout2_rootcause_exact_cover",
+    "path_1_node_id_1"
+  ],
+  "build_seconds": 46.5,
+  "mongodb_version": "7.0.34"
+}

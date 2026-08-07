@@ -1,0 +1,12 @@
+{
+  "collection": "layout2_view_control",
+  "documents": 10000000,
+  "indexes": [
+    "_id_",
+    "allops_tree_node"
+  ],
+  "size_mb": 5927.1,
+  "index_size_mb": 144.8,
+  "copy_seconds": 32.7,
+  "index_seconds": 12.9
+}
