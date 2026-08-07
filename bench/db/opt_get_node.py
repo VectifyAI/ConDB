@@ -35,13 +35,16 @@ Deliberately not implemented here:
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Optional
 
 from pymongo import ReadPreference
-# Private, and used deliberately: this is the object Pool.checkout runs its
-# error branch through, and a fast path that skips checkout has to run it too.
+# Private, and used deliberately: these are what Pool.checkout and
+# Pool._perished use, and a fast path standing in for them has to use them too.
+from pymongo.monitoring import ConnectionClosedReason
 from pymongo.synchronous.mongo_client import _MongoClientErrorHandler
+from pymongo.synchronous.pool import PoolState
 
 
 # bench_all_ops_layouts.py:148-158.  Field order here is irrelevant to the wire
@@ -176,30 +179,83 @@ class PinnedConnection:
         self._context: Optional[Any] = None
         self._conn: Optional[Any] = None
         self._description: Optional[Any] = None
+        self._handler: Optional[Any] = None
         self._last_used = 0.0
         self.fast_path = 0
         self.full_checkout = 0
 
-    def _usable(self, now: float) -> bool:
+    def _conn_healthy(self, now: float) -> bool:
+        """Pool._perished's conditions AND its side effects.
+
+        Copying only the conditions is worse than not revalidating at all, and
+        an earlier version of this class did exactly that.  _perished
+        (pool.py:1373-1406) calls conn.close_conn(...) on every failing branch;
+        returning False without closing lets release() hand the connection to
+        Pool.checkin, which sees conn.closed False, calls
+        update_last_checkin_time and appends it to pool.conns.  The refreshed
+        checkin time then puts idle_time_seconds below _check_interval_seconds,
+        so the next checkout's own _perished skips its conn_closed() probe and
+        re-issues the same dead socket -- turning a failure pymongo would have
+        absorbed by reconnecting into a raised AutoReconnect.  The same path
+        defeats maxIdleTimeMS outright: the connection is noticed to be
+        over-idle, released, and marked freshly used, so the pool never retires
+        it.
+        """
         conn = self._conn
         if conn is None or conn.closed:
             return False
-        if self._topology.description is not self._description:
-            return False
         pool = self._server.pool
+        if pool.pid != os.getpid():
+            # Forked since checkout.  _get_conn resets the pool here
+            # (pool.py:1143-1149); leave that to the full checkout path.
+            return False
         if pool.stale_generation(conn.generation, conn.service_id):
+            conn.close_conn(ConnectionClosedReason.STALE)
             return False
         idle = now - self._last_used
         max_idle = pool.opts.max_idle_time_seconds
         if max_idle is not None and idle > max_idle:
+            conn.close_conn(ConnectionClosedReason.IDLE)
             return False
         interval = pool._check_interval_seconds
         if interval is not None and (interval == 0 or idle > interval):
             if conn.conn_closed():
+                conn.close_conn(ConnectionClosedReason.ERROR)
                 return False
         return True
 
-    def _acquire(self) -> None:
+    def _usable(self, now: float) -> bool:
+        """Health first, then whether the selection is still current.
+
+        The order matters and is the second thing an earlier version got wrong.
+        Checking the topology first short-circuits the health checks, so a
+        connection that is both dead and superseded by a topology change was
+        released without being closed -- and TopologyDescription identity churns
+        on every heartbeat, roughly every 10 s at the default
+        heartbeatFrequencyMS, so that is the common case rather than a corner.
+        """
+        if not self._conn_healthy(now):
+            return False
+        if self._topology.description is not self._description:
+            # Healthy, but the selection it was made under is stale.  No close:
+            # the connection goes back to the pool intact.
+            return False
+        if self._server.pool.state != PoolState.READY:
+            return False
+        return True
+
+    def _acquire(self, session: Any = None) -> None:
+        """Full checkout, with the error handler wrapped around the whole of it.
+
+        MongoClient wraps checkout, not just the command
+        (mongo_client.py:1728-1733), and Pool.connect uses the handler during
+        the handshake -- contribute_socket(conn, completed_handshake=False) and
+        receive_cluster_time (pool.py:1048-1049, 1059-1060).  Passing
+        handler=None here, as an earlier version did, meant a handshake or auth
+        failure during re-acquisition ran no Topology.handle_error at all: the
+        server stayed Known, the pool was not cleared, its generation was not
+        bumped, and the handshake cluster time was dropped.
+        """
         self.release()
         # Read the description before selecting, not after: a change landing
         # between the two would otherwise be recorded as already-seen and the
@@ -208,11 +264,17 @@ class PinnedConnection:
         server = self._topology.select_server(
             self._read_preference, self._operation
         )
-        context = server.checkout(handler=None)
-        conn = context.__enter__()
+        handler = _MongoClientErrorHandler(self._client, server, session)
+        try:
+            context = server.checkout(handler=handler)
+            conn = context.__enter__()
+        except BaseException as error:
+            handler.handle(type(error), error)
+            raise
         self._description = description
         self._server = server
         self._context = context
+        self._handler = handler
         self._conn = conn
 
     def _report_error(self, error: BaseException, session: Any) -> None:
@@ -227,13 +289,14 @@ class PinnedConnection:
         conn, server = self._conn, self._server
         if conn is None or server is None:
             return
-        try:
+        # Reuse the handler _acquire built where possible, so `handled` is
+        # tracked across the checkout and the command exactly as
+        # MongoClient's single `with` block tracks it.
+        handler = self._handler
+        if handler is None:
             handler = _MongoClientErrorHandler(self._client, server, session)
-            handler.contribute_socket(conn)
-            handler.handle(type(error), error)
-        except Exception:  # noqa: BLE001
-            # Never let error reporting replace the original error.
-            pass
+        handler.contribute_socket(conn)
+        handler.handle(type(error), error)
 
     def command(
         self, dbname: str, spec: dict[str, Any], session: Any = None
@@ -242,7 +305,7 @@ class PinnedConnection:
         if self._usable(now):
             self.fast_path += 1
         else:
-            self._acquire()
+            self._acquire(session)
             self.full_checkout += 1
         try:
             reply = self._conn.command(
@@ -260,6 +323,7 @@ class PinnedConnection:
         self._conn = None
         self._server = None
         self._description = None
+        self._handler = None
         if context is not None:
             context.__exit__(None, None, None)
 
@@ -399,6 +463,73 @@ class PinnedReader(CommandReader):
         self._session.end_session()
 
 
+class NoHintReader(BaselineReader):
+    """The baseline query with the hint dropped, and nothing else changed.
+
+    The idhack arm cannot carry a hint -- any hint disqualifies IDHACK
+    (query_utils.cpp:52-59) -- so part of what it gains is hint removal rather
+    than the IDHACK plan.  This arm prices that part under the harness's own
+    conditions, so the IDHACK figure can be stated net.
+
+    Unhinted, this query still plans PROJECTION_SIMPLE -> FETCH -> IXSCAN on
+    allops_tree_node, but it also becomes plan-cache eligible, so what this arm
+    measures is everything dropping the hint buys, not only the hint parse.
+    """
+
+    name = "nohint"
+
+    def __call__(self, tree_id: str, node_id: str) -> list[tuple[Any, ...]]:
+        return _row(
+            self._nodes.find_one(
+                {"tree_id": tree_id, "node_id": node_id}, PROJECTION
+            )
+        )
+
+
+class UnpinnedReader(CommandReader):
+    """Connection.command with a full per-operation checkout.
+
+    This exists to split the `command` -> `pinned` step, which bundles three
+    things: Database._command's wrapper, the per-operation implicit session, and
+    server selection plus pool checkout/checkin.  Crediting all three to "pool
+    checkout" overstates the pool-side change, and an earlier version of this
+    work did exactly that.
+
+    This arm is identical to PinnedReader in every respect -- Connection.command,
+    explicit session, same client -- except that it runs server selection and
+    checkout on every operation.  `unpinned` minus `pinned` is therefore the
+    pool-side cost alone, and `command` minus `unpinned` is the wrapper plus the
+    implicit session.
+
+    Measurement arm only, never a proposal: it passes handler=None because it is
+    not standing in for the pool, it is reproducing what the pool already does.
+    """
+
+    name = "unpinned"
+
+    def __init__(self, database: Any) -> None:
+        super().__init__(database)
+        self._name = database.name
+        self._client = database.client
+        self._topology = self._client._topology
+        self._session = self._client.start_session()
+
+    def __call__(self, tree_id: str, node_id: str) -> list[tuple[Any, ...]]:
+        server = self._topology.select_server(ReadPreference.PRIMARY, "find")
+        with server.checkout(handler=None) as conn:
+            reply = conn.command(
+                self._name,
+                self._spec(tree_id, node_id),
+                session=self._session,
+                client=self._client,
+            )
+        _require_closed_cursor(reply)
+        return _row(_first(reply))
+
+    def close(self) -> None:
+        self._session.end_session()
+
+
 class IdHackReader(PinnedReader):
     """PinnedReader against the re-keyed collection.  Stacks all three.
 
@@ -450,6 +581,8 @@ READERS = {
         BaselineReader,
         ControlReader,
         CommandReader,
+        NoHintReader,
+        UnpinnedReader,
         PinnedReader,
         IdHackReader,
     )

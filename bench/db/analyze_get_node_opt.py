@@ -21,16 +21,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import zlib
 import random
 import statistics
 from pathlib import Path
 from typing import Any, Sequence
 
 RUNS = (
-    ("r3", "arms_r3_control.json"),
-    ("r4", "arms_r4_sample.json"),
-    ("r5", "arms_r5_fixed.json"),
-    ("r6", "arms_r6_fixed_sample.json"),
+    ("r7", "arms_r7_head.json"),
+    ("r8", "arms_r8_sample.json"),
+    ("r9", "arms_r9_head.json"),
+    ("r10", "arms_r10_sample.json"),
 )
 
 COMPARISONS = (
@@ -38,7 +39,10 @@ COMPARISONS = (
     ("idhack", "control", "full stack vs control"),
     ("control", "baseline", "control vs baseline (freshness)"),
     ("command", "baseline", "command vs baseline"),
-    ("pinned", "command", "pinned increment"),
+    ("unpinned", "command", "wrapper + implicit session"),
+    ("pinned", "unpinned", "pool checkout + server selection"),
+    ("pinned", "command", "pinned increment (all three)"),
+    ("idhack", "pinned", "idhack alone"),
 )
 
 METRICS = ("wall_us", "ccpu_us", "scpu_us")
@@ -54,6 +58,22 @@ def paired_deltas(
         for i in range(len(b))
     ]
     return absolute, relative
+
+
+def outlier_blocks(blocks: dict[str, list[dict]], factor: float = 1.5) -> list[int]:
+    """Same rule as bench_get_node_opt.outlier_blocks, recomputed here.
+
+    Applied uniformly to every run, so a run produced by an older harness that
+    recorded no screen is treated the same as one that did.
+    """
+    flagged: set[int] = set()
+    for rows in blocks.values():
+        walls = sorted(row["wall_us"] for row in rows)
+        middle = walls[len(walls) // 2]
+        for index, row in enumerate(rows):
+            if row["wall_us"] > factor * middle:
+                flagged.add(index)
+    return sorted(flagged)
 
 
 def bootstrap(
@@ -115,15 +135,26 @@ def main() -> None:
             "iters_per_block": data["run"]["iters_per_block"],
             "comparisons": {},
         }
+        dropped = outlier_blocks(blocks)
+        keep = [i for i in range(data["run"]["blocks"]) if i not in set(dropped)]
+        entry["blocks_dropped_by_screen"] = dropped
+        entry["blocks_kept"] = len(keep)
         for arm, base, label in COMPARISONS:
             if arm not in blocks or base not in blocks:
                 continue
             row: dict[str, Any] = {}
             for metric in METRICS:
-                absolute, relative = paired_deltas(blocks, arm, base, metric)
+                absolute_all, relative_all = paired_deltas(blocks, arm, base, metric)
+                absolute = [absolute_all[i] for i in keep]
+                relative = [relative_all[i] for i in keep]
                 # One seed per (run, comparison, metric) so the intervals are
                 # independent draws rather than the same random stream reused.
-                seed = args.seed + hash((tag, arm, base, metric)) % 100_000
+                # crc32, not hash(): str.__hash__ is per-process randomized, so
+                # an earlier version's "seed 20260807" did not describe a
+                # reproducible computation.
+                seed = args.seed + zlib.crc32(
+                    f"{tag}|{arm}|{base}|{metric}".encode()
+                ) % 100_000
                 lo_a, hi_a = bootstrap(absolute, args.resamples, seed)
                 lo_r, hi_r = bootstrap(relative, args.resamples, seed)
                 row[metric] = {
@@ -133,6 +164,7 @@ def main() -> None:
                     "ci95_pct": [round(lo_r, 2), round(hi_r, 2)],
                     "blocks_favouring_arm": sum(1 for d in absolute if d < 0),
                     "blocks": len(absolute),
+                    "blocks_before_screen": len(absolute_all),
                     "excludes_zero": hi_r < 0 or lo_r > 0,
                 }
             entry["comparisons"][label] = row

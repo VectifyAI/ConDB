@@ -70,8 +70,9 @@ from opt_get_node import (
     idhack_key,
 )
 
-ARM_ORDER = ("baseline", "command", "pinned", "idhack")
+ARM_ORDER = ("baseline", "command", "unpinned", "pinned", "idhack")
 CONTROL_ARM = "control"
+NOHINT_ARM = "nohint"
 
 
 def log(message: str) -> None:
@@ -281,8 +282,11 @@ def main() -> None:
     parser.add_argument(
         "--input-mode", choices=("head", "sample"), default="head",
         help="head: the first --inputs node_ids in sort order, which is what "
-             "the earlier campaigns used.  sample: a seeded random draw over "
-             "the whole collection, which spreads the working set.",
+             "the earlier campaigns used.  sample: a seeded subset of a $sample "
+             "draw four times the size, which spreads the working set.  $sample "
+             "is not seedable server-side, so the draw differs run to run and "
+             "the exact cohort is recorded under run.node_ids; --seed fixes the "
+             "block order and the subset taken from a given draw.",
     )
     parser.add_argument("--seed", type=int, default=20260807)
     parser.add_argument(
@@ -295,6 +299,11 @@ def main() -> None:
         "--settle", type=float, default=30.0,
         help="seconds to wait before the first block, so a write or a build "
              "that just finished cannot bleed into block 0",
+    )
+    parser.add_argument(
+        "--with-nohint", action="store_true",
+        help="add the unhinted baseline arm, which prices what dropping the "
+             "hint is worth on its own; the idhack arm cannot carry a hint",
     )
     parser.add_argument("--out", default="runs/get_node_opt/arms.json")
     args = parser.parse_args()
@@ -317,6 +326,8 @@ def main() -> None:
                 "run prepare_get_node_control.py first"
             )
         arm_order = ARM_ORDER + (CONTROL_ARM,)
+    if args.with_nohint:
+        arm_order = arm_order + (NOHINT_ARM,)
 
     if args.input_mode == "head":
         node_ids = [
@@ -340,10 +351,15 @@ def main() -> None:
                 ]
             )
         ]
+        # random.sample over the whole draw, not sorted()[:n].  An earlier
+        # version sorted and truncated, which silently took the
+        # lexicographically smallest quarter of the draw -- in one retained run
+        # nothing above node_id 6,846,721 appeared at all, so "sampled across
+        # all 10M" was false.  The shuffle before it was dead code, erased by
+        # the sort, which also made --seed have no effect on the subset.
+        unique = sorted(set(pool))
         rng = random.Random(args.seed)
-        rng.shuffle(pool)
-        node_ids = sorted(set(pool))[: args.inputs]
-        rng.shuffle(node_ids)
+        node_ids = rng.sample(unique, min(args.inputs, len(unique)))
     if len(node_ids) < args.inputs:
         raise SystemExit(f"only {len(node_ids)} inputs available")
     log(
