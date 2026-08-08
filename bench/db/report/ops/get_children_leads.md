@@ -391,6 +391,56 @@ exclusive but wrap syscalls, so the 15.24% kernel figure is inflated relative to
 This affects all arms equally and so does not touch any A/B delta in L2, but no absolute figure here
 should be transferred to a different host.
 
+## L4a — what a fast path is worth, measured · **24 µs per command; the first result that clears the bar**
+
+Before building a bounded-prefix-scan fast path, price what bypassing plan selection and executor
+construction is worth at all. There is an exact lever for this that needs no rebuild and no knob:
+`isIdHackEligibleQueryWithoutCollator` (`query_utils.h:41`) requires `findCommand.getHint().isEmpty()`,
+so on one server, over the same `_id` index, returning the same document:
+
+    express   find({_id: X})                  -> express fast path
+    planned   find({_id: X}, hint={_id: 1})   -> CanonicalQuery, planning, executor construction
+
+Both arms run in **one process** on their own pinned connections, so there is no process-to-process
+bias to correct. `control` is a second express connection and prices connection-to-connection
+variance. `bench/db/bench_express_ceiling.py`, artifact
+`runs/getchildren_plancache_20260809/express_ceiling_clean.json`, 20 blocks x 40 sweeps x 64 ids.
+
+| arm | server CPU µs/op | vs express, median paired | spread over blocks |
+|---|---|---|---|
+| express | ≈30.3 | — | — |
+| planned | ≈54.2 | **+79.23%** | [+66.80, +92.21] |
+| control | ≈30.2 | −0.44% | [−6.41, +7.34] |
+
+**Express saves 44.05% of the planned arm's server CPU, about 24 µs per command.** The effect is an
+order of magnitude outside the control floor, and every block agrees.
+
+**A first attempt at this run was discarded, not reported.** A sibling agent started a bazel build
+partway through it; the control spread blew out to [−16.53, +22.86] and the absolutes read 150–300 µs
+for a point query. It was re-run only after the box was verified quiet for 60 consecutive seconds,
+and confirmed clean at the end. The contaminated numbers are not in any table here.
+
+### What this does and does not say about `get_children`
+
+**It is a different shape and does not transfer as a `get_children` result.** What it establishes is
+the size of the machinery a fast path removes: on this build, plan selection plus executor
+construction plus the surrounding `CanonicalQuery` work costs **≈24 µs per command** on a minimal
+query.
+
+The source document's decomposition licenses treating that as *fixed* per-command cost — its two
+zero-row arms of different shapes agreed within 0.65% — so the absolute transfers better than the
+percentage. Against `get_children`'s ≈100 µs server CPU on this same build and instrument, an
+envelope of ≈24 µs is **≈24%**, of which L2 has already shown ≈8.6 points are reachable by caching
+alone. The incremental headroom for skipping construction as well is therefore ≈15 points.
+
+**Both figures are bounds derived from a different shape, not measurements on `get_children`, and
+must not be reported as results for it.** A bounded-scan fast path must additionally iterate,
+produce ten rows rather than one, and satisfy the sort, so it would recover **less** than 24 µs —
+never more.
+
+That said, this is the first number in this lane with room above the bar, and it is why L4 is worth
+building where M1 was not.
+
 ## Still to run
 
 - **L4** — extend a fast path to a bounded prefix scan (brief's fallback 1). This is now the
