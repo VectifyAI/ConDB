@@ -128,8 +128,9 @@ whenever server-selection logging is enabled. The driver's own
 `test_server_selection_logging` could not have caught this here: those tests fail identically on
 stock master in this environment, for reasons unrelated to the change.
 
-Branch `cache-server-selection`. **No PR opened**: 4.0% of the driver's client work is about 1.9% of
-the operation, below the bar, and it touches a spec-governed area. Recorded, not pushed for review.
+Branch `cache-server-selection`, draft PR `#2`. On its own it is below the bar and the PR says so;
+it is proposed because §2b shows the three compose to 14.3% of the operation, which is not below
+the bar. Judged alone it is probably not worth a reviewer's time; judged as one of three, it is.
 
 ### C1b — pool checkout and checkin · **attempted; 3.0%, and the layer turns out not to be removable**
 
@@ -167,7 +168,28 @@ across the broader suite — the three that fail (`test_discovery_and_monitoring
 stock master in this environment, and a fourth, `test_collection.py::test_create`, was leftover
 state from a run killed earlier and passes once the stale collection is dropped.
 
-Branch `pool-checkout-fast-path`. **No PR opened**, same reason as C1a: 3.0% is below the bar.
+Branch `pool-checkout-fast-path`, draft PR `#3`, same reasoning as C1a: below the bar alone,
+proposed as one of three.
+
+**A second blank-context review, of the pool change specifically, verified the premise and found
+eight more defects.** The premise held — the three `Condition`s are views over one mutex in both the
+sync and async builds, and cross-view `notify()` is legal in both, with the `_waiters` lists staying
+distinct so notify targeting survives. The defects were about what merging changed *around* the
+mutex, and the first was real: **the merged `checkin` released the maxPoolSize slot before closing a
+stale connection**, so a waiting thread could open a replacement while the old socket was still
+open and a pool could briefly hold twice `maxPoolSize` sockets — worse in the async build, where
+closing awaits. Only the return-a-healthy-connection case is merged now; everything else falls
+through to the untouched long path. Also fixed: a `checkOutStarted` event that could be left
+unpaired, the `_perished` predicate duplicated with nothing pointing back, a third copy of the
+events gate where a `_should_log` property already existed, and a comment the unasync tool mangled
+from "waiter" to "witer" via its `aiter -> iter` mapping. Six tests added, none of which existed.
+
+**An upstream bug found in passing, not introduced here:** `operation_count` leaks on every *failed*
+checkout — `_get_conn` increments it but neither its `except BaseException` clause nor the
+`_raise_*` paths decrement it, and only a pid change resets it. It feeds least-operations server
+selection. Measured on both the branch and the base commit (597 vs 635 leaked in the same
+wait-queue scenario), so it is pre-existing. Recorded in PR `#3`'s limits as deserving its own
+ticket.
 
 Its decomposition, retained because it is the evidence for the conclusion above (instructions, at
 roughly 3,600 per µs on this box):
@@ -221,6 +243,34 @@ are small — together 5.7% of server CPU, about 1.8% of the operation.
 Syscall fusing (−0.50%, inside noise) and hot-spot hunting (240 functions, largest non-socket frame
 0.026 s of 1.066 s) were settled before this session and were not revisited.
 
+## 2b. The three together
+
+Each change above was measured on its own. `bench/db/bench_entity_driver_all.py` measures them
+together, toggling all three in place inside one process — the upstream `find_one` body inlined, the
+selection memo cleared before each control call, `Pool._checkout_idle` replaced by one that declines
+— with the toggles applied in *both* arms so their cost cancels in the paired delta. 14 blocks × 500,
+`runs/entity_driver_20260809/all_three_ab_v2.json`:
+
+| instrument | control | all three | saved | blocks |
+|---|---|---|---|---|
+| retired instructions | 366,526 | 268,151 | 98,372 (**26.8%**) | 14/14 |
+| client CPU | 87.4 µs | 66.4 µs | **21.1 µs (24.1%)** | 14/14 |
+| wall | 199.4 µs | 170.8 µs | **28.4 µs (14.3%)** | 14/14 |
+
+**The cross-check that makes this trustworthy**: the three measured separately come to
+72,696 + 14,313 + 11,184 = **98,193 instructions**, against 98,372 measured together — agreement to
+0.2%. The parts compose, nothing is double-counted, and the control arm's residual cost (it still
+pays the disabled fast paths' entry checks) is inside that 0.2%.
+
+**Together they clear the bar: 14.3% of the operation's wall, where no single one of them does.**
+That is the case for taking all three rather than only the first.
+
+Two cautions on the table. The absolute columns are not comparable with the per-change tables above
+— those were different processes, and only the paired delta within a run is claimed. And the wall
+saving (28.4 µs) exceeds the client-CPU saving (21.1 µs) by more than is comfortably explained;
+the wall spread is wide, [11.2, 44.5], so **21.1 µs of client CPU is the conservative figure** and
+14.3% of wall the optimistic one.
+
 ## 3. What the driver lane can and cannot deliver
 
 The operation is 167.7 µs of wall in this harness, of which 77.5 µs is client CPU and 17.6 µs is the
@@ -232,11 +282,13 @@ What was actually available:
 | lead | client CPU | % of operation | kept |
 |---|---|---|---|
 | C2 `find_one` without a cursor | 12.1 µs | 6.2% | yes, PR opened |
-| C1b pool mutex taken once | ~2.4 µs | ~1.4% | branch only |
-| C1a server-selection reuse | ~3.2 µs | ~1.9% | branch only |
+| C1a server-selection reuse | ~3.2 µs | ~1.9% | yes, PR opened |
+| C1b pool mutex taken once | ~2.4 µs | ~1.4% | yes, PR opened |
+| **all three together, measured** | **21.1 µs** | **14.3% of wall** | |
 | everything else identified | ≤1 µs each | | no |
 
-**Together, about 17.7 µs — 10% of the operation — and only the first clears the bar on its own.**
+**No single change clears the bar; the three together do** — §2b, 14.3% of the operation's wall,
+14/14 blocks, with the sum of the parts agreeing with the combined measurement to 0.2%.
 
 The plan projected 51.7 µs from C1 and C2. The shortfall has one documented cause and one measured
 one. The documented cause is that **the plan's figures were taken on PyMongo 4.12 and driver master
