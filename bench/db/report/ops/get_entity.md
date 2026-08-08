@@ -122,15 +122,21 @@ not of MongoDB. It is common-mode with the PostgreSQL psycopg arm.
 The list is short, and that is the finding: **the server-side levers proposed for the other two
 operations do not apply here.** What remains is the driver and the fixed command path.
 
-### M1 — Pool-checkout fast path · PyMongo · 13.5 µs per command
+### M1 — Pool checkout and server selection · PyMongo · **done, 5.6 µs per command combined**
 
-Pool checkout and checkin on every operation against an already-pooled connection. **The 27.3 µs
-this line used to quote was measured on PyMongo 4.12 and no longer holds**: re-measured on driver
-master it is 13.5 µs, because master replaced the `@contextlib.contextmanager` generators with
-context-manager classes and put the CMAP telemetry behind an enablement check. Not attempted.
-Server selection, which the old figure bundled in, is a further 2.1 µs and has been done —
-`get_entity_driver.md` §2 C1a. Full decomposition and the locking structure that makes the rest
-tractable: `get_entity_driver.md` §2 C1b.
+**The 27.3 µs this line used to quote was measured on PyMongo 4.12 and no longer holds**:
+re-measured on driver master the checkout layer is 13.5 µs, because master replaced the
+`@contextlib.contextmanager` generators with context-manager classes and put the CMAP telemetry
+behind an enablement check.
+
+Both halves are built. Taking the pool mutex once instead of eight times (`Pool.lock`,
+`Pool.size_cond` and `Pool._max_connecting_cond` are three `Condition` views over one mutex) is
+3.0%; reusing the last server selection while the topology description is unchanged is 4.0%. Draft
+PRs `carsontung666/mongo-python-driver#3` and `#2`.
+
+Neither clears the bar alone. **With M2 they do: 21.1 µs of client CPU and 14.3% of the operation's
+wall, 14/14 blocks**, with the parts summing to the whole within 0.2%. Details:
+`get_entity_driver.md` §2b.
 
 ### M2 — Skip `Cursor` construction for single-batch replies · PyMongo · **done, 12.1 µs per command**
 
