@@ -24,8 +24,12 @@ mixed or converted into one another.
 
 Two independent checks that the instrument is sound:
 
-- The stock `find_one` measures **334,152 instructions and 79.0 µs of client CPU** on a quiet box.
-  The 4.12-era ablation, a different harness on a different shape, put `find_one` at **79.1 µs**.
+- The stock `find_one` measures **79.0 µs of client CPU** on a quiet box. The 4.12-era ablation, a
+  different harness on a different shape, put `find_one` at **79.1 µs**.
+
+  (The stock arm's absolute reading moves a few per cent between processes — 334,152 instructions in
+  one run, 349,919 in another — which is why nothing here claims an absolute before-and-after across
+  runs. Every figure below is a paired delta taken inside one process.)
 - The driver term (`find_one` − hand-written OP_MSG) measures **61.4 µs**; `get_entity.md` §4 M2
   quotes **60.3 µs** from the earlier harness.
 
