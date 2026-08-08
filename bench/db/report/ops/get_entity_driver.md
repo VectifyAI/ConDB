@@ -127,13 +127,43 @@ stock master in this environment, for reasons unrelated to the change.
 Branch `cache-server-selection`. **No PR opened**: 4.0% of the driver's client work is about 1.9% of
 the operation, below the bar, and it touches a spec-governed area. Recorded, not pushed for review.
 
-### C1b — pool checkout and checkin · **not attempted, and it is the largest remaining item**
+### C1b — pool checkout and checkin · **attempted; 3.0%, and the layer turns out not to be removable**
 
-**13.5 µs, 27% of the remaining 49.2 µs driver term, 8.3% of the operation.** Bigger than anything
-else left, and the only single change that would take C2 from single-digit to double-digit against
-wall.
+The layer costs **13.5 µs, 27% of the remaining 49.2 µs driver term**, which made it the only
+candidate that could have taken C2 from single-digit to double-digit against wall. It does not.
 
-Decomposed (instructions, at roughly 3,600 per µs on this box):
+**The structural finding**: `Pool.lock`, `Pool.size_cond` and `Pool._max_connecting_cond` are three
+`Condition` views over *one* mutex (`_create_condition(self.lock)`, `pool.py:654,674,682`). The
+eight acquire/release pairs per operation — five in `_get_conn`, three in `checkin` — are eight
+fragments of a single critical section. Taking it once is the same mutual exclusion.
+
+Built on branch `pool-checkout-fast-path`: `Pool._checkout_idle` takes the mutex once and re-checks
+everything the long path checks except `conn_closed()`, which is a syscall and does not belong under
+the pool mutex; anything that does not hold returns `None` and the long path runs in full. `checkin`
+merges its three the same way.
+
+Paired in-process, fast path disabled for the control arm, 12 blocks × 400:
+
+| | control | fast | saved |
+|---|---|---|---|
+| checkout + checkin | 60,042 | 48,950 | 11,116 instr (**18.5%**, 12/12) |
+| whole operation | 368,159 | 357,105 | 11,116 instr (**3.0%**, 12/12) |
+
+**So the acquisitions are only about a fifth of the layer.** The other four fifths are the
+`_ClientCheckout` (9,232 instr) and `_PoolCheckout` (4,775) objects and accounting the pool
+genuinely has to do — `requests`, `active_sockets`, `operation_count`, `active_contexts`,
+generation and idle checks. Merging the two wrapper classes might recover another ~1 µs. Nothing
+here reaches the bar.
+
+**The driver's own tests caught a defect in the first version**: `test_pooling.py::
+test_get_conn_reused_connection_rolls_back_on_cancel` failed because the fast path incremented the
+pool counters before `active_contexts.add`, the one statement that can raise, leaving them
+half-updated. Reordered so nothing is touched until after it. 132 pool and CMAP spec tests pass.
+
+Branch `pool-checkout-fast-path`. **No PR opened**, same reason as C1a: 3.0% is below the bar.
+
+Its decomposition, retained because it is the evidence for the conclusion above (instructions, at
+roughly 3,600 per µs on this box):
 
 | | instr |
 |---|---|
@@ -143,18 +173,6 @@ Decomposed (instructions, at roughly 3,600 per µs on this box):
 | — of which lock and condition acquisitions | 10,642 |
 | — of which `_perished(conn)` | 3,443 |
 | — of which two `os.getpid()` fork checks | 646 + 2 syscalls |
-
-**The structural finding that makes this tractable**: `Pool.lock`, `Pool.size_cond` and
-`Pool._max_connecting_cond` are three `Condition` views over *one* mutex —
-`_create_condition(self.lock)` at `pool.py:654,674,682`. The eight acquire/release pairs per
-operation are eight fragments of the same critical section, and the ones separated only by
-non-blocking Python (L1–L4 in `_get_conn`, M1–M3 in `checkin`) can be merged without changing what
-is mutually excluded. `_perished` and `connect` must stay outside.
-
-Not attempted here because it is a rewrite of the CMAP checkout path and the accounting
-(`requests`, `active_sockets`, `operation_count`) deadlocks if it is wrong. The safety net exists:
-`test/test_connection_monitoring.py` runs the CMAP spec tests, which are built to catch exactly
-that. This is the next thing to do.
 
 ### Not worth doing, measured
 
@@ -198,15 +216,34 @@ Syscall fusing (−0.50%, inside noise) and hot-spot hunting (240 functions, lar
 
 ## 3. What the driver lane can and cannot deliver
 
-The operation is 173.8 µs of wall in this harness, of which 79.0 µs is client CPU and 17.6 µs is the
-irreducible hand-written OP_MSG exchange. **The whole driver term is 61.4 µs, so removing all of it
-would move the operation by about 35%.** C2 has taken 10.9 µs of that. C1b is worth another 13.5.
-Everything else identified is 9 µs or less apiece and sits in spec-governed machinery.
+The operation is 167.7 µs of wall in this harness, of which 77.5 µs is client CPU and 17.6 µs is the
+irreducible hand-written OP_MSG exchange. **The whole driver term is about 60 µs, so removing all of
+it would move the operation by roughly 35%.**
 
-So the honest ceiling for this lane is around 24 µs — C2 plus C1b — or roughly 14% of the operation,
-and reaching it requires the pool-checkout rewrite. That is a smaller prize than the plan's 62.2 µs,
-for the documented reason: **the plan's figure was measured against PyMongo 4.12, and driver master
-has already taken much of it.**
+What was actually available:
+
+| lead | client CPU | % of operation | kept |
+|---|---|---|---|
+| C2 `find_one` without a cursor | 12.1 µs | 6.2% | yes, PR opened |
+| C1b pool mutex taken once | ~2.4 µs | ~1.4% | branch only |
+| C1a server-selection reuse | ~3.2 µs | ~1.9% | branch only |
+| everything else identified | ≤1 µs each | | no |
+
+**Together, about 17.7 µs — 10% of the operation — and only the first clears the bar on its own.**
+
+The plan projected 51.7 µs from C1 and C2. The shortfall has one documented cause and one measured
+one. The documented cause is that **the plan's figures were taken on PyMongo 4.12 and driver master
+has already absorbed much of them** — the generator-based context managers and the ungated telemetry
+that made checkout expensive in 4.12 are gone. The measured one is that **what remains in checkout
+is not overhead but accounting**: merging all eight mutex acquisitions into two recovered only 18.5%
+of that layer.
+
+So the conclusion for this lane is that the driver is no longer where the `get_entity` gap lives.
+After C2, client CPU is 66.4 µs against a 17.6 µs floor, and the 49 µs between them is spread across
+the retryable-read wrapper, the connection pool's accounting, implicit session creation and
+`conn.command` — four spec-governed subsystems, none worth more than 9 µs, each carrying real
+correctness obligations. §2a of `get_entity.md` says the same thing from the server side: 60% of the
+server's 45.4 µs is transport and dispatch, not query work.
 
 ## 4. Artefacts
 
@@ -216,8 +253,10 @@ has already taken much of it.**
 | `bench/db/bench_entity_driver_ladder.py` | the eight-rung ladder |
 | `bench/db/bench_find_one_fastpath.py` | paired A/B for C2 |
 | `runs/entity_driver_20260809/ladder_patched.json` | ladder, 14 × 500, quiet box |
-| `runs/entity_driver_20260809/fastpath_ab.json` | C2 A/B, 14 × 500, quiet box |
+| `runs/entity_driver_20260809/fastpath_ab_v2.json` | C2 A/B after review fixes, 14 × 500, quiet box |
+| `report/evidence/entity_driver_20260809/get_entity_phases.txt` | the exclusive server-side partition |
 
-The driver work is in `/home/junyao/code/mongo-python-driver`, branches `find-one-fast-path` and
-`cache-server-selection`, pushed to `carsontung666/mongo-python-driver`. Neither is upstream-ready
-and no PYTHON- ticket exists for either.
+The driver work is in `/home/junyao/code/mongo-python-driver`, branches `find-one-fast-path`,
+`cache-server-selection` and `pool-checkout-fast-path`, pushed to
+`carsontung666/mongo-python-driver`. None is upstream-ready and no PYTHON- ticket exists for any of
+them. Only `find-one-fast-path` has a PR.
