@@ -162,7 +162,10 @@ here reaches the bar.
 **The driver's own tests caught a defect in the first version**: `test_pooling.py::
 test_get_conn_reused_connection_rolls_back_on_cancel` failed because the fast path incremented the
 pool counters before `active_contexts.add`, the one statement that can raise, leaving them
-half-updated. Reordered so nothing is touched until after it. 132 pool and CMAP spec tests pass.
+half-updated. Reordered so nothing is touched until after it. 132 pool and CMAP spec tests pass, and 1129 pass
+across the broader suite — the three that fail (`test_discovery_and_monitoring`) fail identically on
+stock master in this environment, and a fourth, `test_collection.py::test_create`, was leftover
+state from a run killed earlier and passes once the stale collection is dropped.
 
 Branch `pool-checkout-fast-path`. **No PR opened**, same reason as C1a: 3.0% is below the bar.
 
