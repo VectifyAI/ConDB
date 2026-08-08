@@ -192,8 +192,9 @@ def main() -> int:
                                  "title": {"$regex": "e"}},
                                 {"_id": 0, "node_id": 1, "title": 1})
                       .sort([("path", 1), ("node_id", 1)]).hint(COVER_INDEX)).explain()
-            row["fused" if enabled else "base"] = ab.stage_names(
-                ex.get("queryPlanner", {}).get("winningPlan", {}))
+            wp = ex.get("queryPlanner", {}).get("winningPlan", {})
+            row["fused" if enabled else "base"] = {
+                "stages": ab.stage_names(wp), "ixscan_fused": ab.ixscan_fused(wp)}
         shapes[name] = row
         log(f"plan {name}: {row}")
     results["plan_shapes"] = shapes

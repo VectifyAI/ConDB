@@ -9,9 +9,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "types/skip-trailing",
@@ -22,9 +24,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "types/skip-both-sides",
@@ -35,9 +39,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "types/all-components",
@@ -48,9 +54,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "descending/skip-leading",
@@ -61,9 +69,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "descending/skip-middle",
@@ -74,9 +84,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "refused/residual-filter",
@@ -90,25 +102,68 @@
         "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": false
+      "fused": false,
+      "_unused": true
     },
     {
-      "case": "untouched/multikey-fetch",
+      "case": "refused/multikey-dedup",
       "rows": 3,
       "identical": true,
       "base_plan": [
-        "PROJECTION_SIMPLE",
-        "SORT",
-        "FETCH",
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
       "fused_plan": [
-        "PROJECTION_SIMPLE",
-        "SORT",
-        "FETCH",
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": false
+      "fused": false,
+      "_unused": true
+    },
+    {
+      "case": "checker/in-list",
+      "rows": 5,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused": true,
+      "_unused": true
+    },
+    {
+      "case": "backward-scan",
+      "rows": 100,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused": true,
+      "_unused": true
+    },
+    {
+      "case": "id-included",
+      "rows": 20,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "single-key-seek-path",
@@ -119,9 +174,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     },
     {
       "case": "yield-every-work",
@@ -132,9 +189,11 @@
         "IXSCAN"
       ],
       "fused_plan": [
+        "PROJECTION_COVERED",
         "IXSCAN"
       ],
-      "fused": true
+      "fused": true,
+      "_unused": true
     }
   ],
   "failures": []

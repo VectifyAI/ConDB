@@ -13,8 +13,9 @@ Pairing discipline (each of these has produced a wrong answer in this project be
     is fatal.
   * Retired instructions, server CPU and client wall are three different quantities. All three are
     recorded, none is derived from another, and none is compared across.
-  * Activation is proved from explain -- the fused arm's plan has no PROJECTION_COVERED stage --
-    and asserted, not assumed.
+  * Activation is proved from explain -- the IXSCAN reports coveredProjection: true -- and
+    asserted, not assumed. The PROJECTION_COVERED stage stays in the tree either way, so its
+    presence is not the signal; the plan-stage tree must be identical in both arms.
 
 Each arm-block is a fixed wall-clock window with the query replayed back to back inside it, and
 `perf stat` counting the same window. Per-operation figures divide by the operations that actually
@@ -101,9 +102,32 @@ def run_subtree(coll: Any, lower: str, upper: str) -> list[tuple]:
             for d in cursor_for(coll, lower, upper)]
 
 
-def plan_shape(coll: Any, lower: str, upper: str) -> list[str]:
-    ex = cursor_for(coll, lower, upper).explain()
-    return stage_names(ex.get("queryPlanner", {}).get("winningPlan", {}))
+def ixscan_fused(plan: Any) -> bool:
+    """True when an IXSCAN in this plan reports a folded-in covered projection.
+
+    PROJECTION_COVERED stays in the tree when the fold happens, so its presence proves nothing;
+    the IXSCAN's 'coveredProjection' flag is the activation signal and is emitted only when true.
+    """
+    found = False
+
+    def walk(node: Any) -> None:
+        nonlocal found
+        if isinstance(node, dict):
+            if node.get("stage") == "IXSCAN" and node.get("coveredProjection"):
+                found = True
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(plan)
+    return found
+
+
+def plan_shape(coll: Any, lower: str, upper: str) -> tuple[list[str], bool]:
+    wp = cursor_for(coll, lower, upper).explain().get("queryPlanner", {}).get("winningPlan", {})
+    return stage_names(wp), ixscan_fused(wp)
 
 
 def start_perf(pid: int, seconds: float, tag: str) -> tuple[subprocess.Popen, Path] | None:
@@ -260,13 +284,16 @@ def main() -> int:
     for path in args.paths:
         lower, upper = path + "/", path + "0"
         set_arm(client, False)
-        base_plan = plan_shape(coll, lower, upper)
+        base_stages, base_fused = plan_shape(coll, lower, upper)
         set_arm(client, True)
-        fused_plan = plan_shape(coll, lower, upper)
-        activation[path] = {"base_stages": base_plan, "fused_stages": fused_plan}
-        log(f"activation {path}: base={base_plan} fused={fused_plan}")
-        assert "PROJECTION_COVERED" in base_plan, "base arm lost its projection stage"
-        assert "PROJECTION_COVERED" not in fused_plan, "fused arm did not fuse"
+        fused_stages, fused_fused = plan_shape(coll, lower, upper)
+        activation[path] = {"base_stages": base_stages, "fused_stages": fused_stages,
+                            "base_ixscan_fused": base_fused, "fused_ixscan_fused": fused_fused}
+        log(f"activation {path}: stages={fused_stages} "
+            f"ixscan coveredProjection base={base_fused} fused={fused_fused}")
+        assert not base_fused, "base arm reported a fused scan"
+        assert fused_fused, "fused arm did not fuse"
+        assert base_stages == fused_stages, "the fold changed the plan-stage tree"
     results["activation"] = activation
     set_arm(client, False)
 

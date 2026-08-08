@@ -268,62 +268,60 @@ spends ~16% of its CPU in `sendto`. The fusion removes user-space work exclusive
 necessarily a larger share of user instructions than of total CPU. The gap between the two columns
 below is that, not a measurement disagreement, and neither number may be quoted as the other.
 
-Quiet box (load average 3.28), 10 blocks, 5 s windows (`ab_p50_p90.json`):
+**These are the post-review numbers.** An earlier design deleted the `PROJECTION_COVERED` stage
+from the plan; review found that breaks the QuerySolution/PlanStage correspondence (see "review"
+below), so the stage now stays as a pass-through. Everything was re-measured against the revised
+code; the superseded figures are in `ab_p50_p90.json` / `ab_tail.json` and differ by about 1–1.7 pp
+of retired instructions, which is what the pass-through costs.
+
+Quiet box, 10 blocks × 5 s windows for P50/P90 (`ab_p50_p90_v2.json`), 8 blocks × 15 s for the tail
+(`ab_tail_v2.json`):
 
 | input | rows | retired instructions | server CPU | client wall | mismatches |
 |---|---|---|---|---|---|
-| P50 | 11,686 | **−15.50%** [−15.76, −15.16] | **−13.12%** [−15.35, −12.56] | **−6.24%** [−8.57, −4.75] | 0 |
-| P90 | 97,773 | **−15.56%** [−17.24, −13.54] | **−12.48%** [−16.59, −9.76] | **−5.40%** [−8.98, −2.48] | 0 |
-| tail | 1,404,566 | −11.69% [−23.43, −10.17] | **−12.63%** [−13.78, +14.66] | **−4.84%** [−5.75, +23.75] | 0 |
+| P50 | 11,686 | **−13.80%** [−14.19, −13.55] | **−13.12%** [−16.07, −9.92] | **−6.36%** [−9.18, −3.30] | 0 |
+| P90 | 97,773 | **−14.58%** [−15.64, −13.03] | **−11.95%** [−14.44, −8.77] | **−5.18%** [−7.49, −2.11] | 0 |
+| tail | 1,404,566 | **−14.47%** [−14.55, −14.46] | **−13.04%** [−14.76, −11.74] | **−5.23%** [−6.10, −3.61] | 0 |
 
-All medians are paired per block. At P50 and P90, **10/10 blocks improved on every one of the six
-measurements** and every range is strictly negative. **The effect is flat across a 120× change in
-input size** — server CPU −12.5 to −13.1%, wall −4.8 to −6.2%, at 11,686, 97,773 and 1,404,566 rows.
+Every block improved on every measurement — 10/10 at P50 and P90, 8/8 at the tail — and every range
+is strictly negative. **The effect is flat across a 120× change in input size.**
 
-Two blemishes in the tail run, both stated rather than trimmed. Block 7 is a single outlier
-(+23.75% wall, +14.66% CPU, op counts 6 vs 5) from interference; blocks 0–6 run −2.0 to −5.8% wall
-and −10.9 to −13.8% CPU, and the medians are robust to it. And **the tail instruction column is not
-trustworthy**: the window loop *completes* the operation in flight when the deadline passes, so it
-overruns the perf window by up to one whole operation. At P50 (~200 operations per window) that is
-under 1%; at the tail (~7 per window) it is up to 14%, and it differs between arms whenever their
-op counts differ — which is exactly block 2's −23.43%. Wall and server CPU are measured over the
-loop's actual span and are unaffected. The harness now starts an operation only when it is expected
-to finish inside the window; the tail figures above predate that fix.
+**A demonstration of why retired instructions are the primary metric here**, from a tail run that had
+to be discarded. Partway through it, a build was started on the same box — my own, which is a
+discipline failure worth recording rather than hiding. Across the affected blocks:
 
-An earlier run of the same P50 input (`ab_p50.json`, 3 s windows) was taken while a sibling agent
-was compiling at ~236% CPU — checked with `ps` before starting, so the contamination is recorded
-rather than inferred. It is retained because it shows which metric survives interference:
-instructions −15.33% [−17.02, −14.46] with 10/10 blocks improved, against server CPU −10.67% with a
-range of [−17.39, **+19.06**] and wall −3.49% with [−11.93, **+31.45**]. The instruction median
-moved 0.17 pp between the noisy and quiet runs; the wall median moved 2.75 pp.
+| block | client wall | server CPU | retired instructions |
+|---|---|---|---|
+| 1 | −3.54% | −12.02% | −13.99% |
+| 3 | −5.19% | −11.18% | −14.18% |
+| 4 | **+12.20%** | **+5.15%** | −14.10% |
+| 5 | **+140.47%** | **+107.16%** | −13.96% |
+| 6 | −2.72% | −11.66% | −14.12% |
 
-**Against the prediction recorded before building** — 12–18% of server CPU, 7–11% of wall:
-server CPU landed at −12.5 to −13.1%, at the bottom of the predicted band. Wall landed at
-−5.4 to −6.2%, **below** it. The prediction was right about the mechanism and optimistic about the
-payoff.
-
-**Against this project's bar (no single-digit percentages): it clears on server CPU and does not
-clear on client wall.** Server CPU is only ~59% of this operation; transmission (~20%) and client
-decode (~21%) are untouched, so a 13% cut in the server's share is a 6% cut in what the user waits
-for. That is the honest arithmetic and it is not improved by restating it.
+Wall and CPU moved by more than 100%; **retired instructions stayed inside a 0.22 pp band the whole
+time.** That run is not used for anything; the tail figures in the table above come from a re-run on
+an idle box (98.7% idle, zero compiler processes, verified before starting).
 
 ### L2 — non-intrusion
 
 `bench_subtree_fused_control.py`, same pairing discipline, 10 blocks, 3 s windows
 (`controls.json`). Three shapes the change must not damage:
 
-| control | rows | plan, base → fused | retired instructions | server CPU | client wall | mismatches |
+| control | rows | IXSCAN `coveredProjection` | retired instructions | server CPU | client wall | mismatches |
 |---|---|---|---|---|---|---|
-| small covered result (fused) | 8 | `PROJECTION_COVERED, IXSCAN` → `IXSCAN` | **−2.34%** [−2.88, −1.02] | −1.04% | −1.04% | 0 |
-| uncovered, needs a FETCH (never eligible) | 1 | unchanged in both arms | **+0.10%** [−1.12, +0.46] | +0.62% | +0.94% | 0 |
-| covered scan with a residual filter (refused) | 8 | unchanged in both arms | **+0.07%** [−0.46, +0.46] | +1.33% | +0.82% | 0 |
+| small covered result (fused) | 8 | false → **true** | −0.52% [−3.66, +2.22] | +1.93% | +1.29% | 0 |
+| uncovered, needs a FETCH (never eligible) | 1 | false → false | **+0.06%** [−0.53, +0.21] | +0.65% | +0.53% | 0 |
+| covered scan with a residual filter (**refused**) | 8 | false → false | **+0.02%** [−0.36, +0.31] | −0.24% | −0.52% | 0 |
 
-Small covered results — the seek fallback for the first key, and the overwhelming majority of real
-`find` traffic — do not regress; they improve slightly. The two shapes that never take the fused
-path cost **+0.10% and +0.07% of retired instructions**, which is indistinguishable from zero and
-is the price of the eligibility check plus one null-pointer branch in `IndexScan::doWork`. Their
-CPU and wall columns are noisier than their instruction columns because these queries run in
-microseconds, well under the 10 ms resolution of `/proc` CPU accounting per sample.
+The two shapes that never take the fused path cost **+0.06% and +0.02% of retired instructions** —
+indistinguishable from zero, and the price of the eligibility check alone. Small covered results
+are neutral at −0.52%: on an 8-row query the decode saving and the retained pass-through stage
+roughly cancel, which is the honest reading rather than a win. Their CPU and wall columns are
+noisier than their instruction columns because these queries run in microseconds, far under the
+10 ms resolution of `/proc` CPU accounting.
+
+The refusal is genuinely exercised: the filtered control keeps `coveredProjection: false` with a
+residual filter present, so the guard fires rather than the shape simply never qualifying.
 
 **Two of these controls were wrong on the first attempt and are recorded because the corrections
 matter.** The residual-filter control originally used `node_id: {$gte: ""}`; the planner folded
@@ -456,7 +454,74 @@ here against **−12.63% measured single-client at the same input**. Both are pa
 they come from different harnesses measuring over different windows, and nothing here establishes
 which is the better estimate of the same quantity.
 
-Status: **built, correct, measured single-client and concurrent, non-intrusion shown, resmoke green.**
+### L2 — blank-context review, and what it changed
+
+A reviewer with no knowledge of this work was given the diff, the applied tree to navigate, and the
+test, and asked to review to MongoDB Query Execution standards. Per the brief: fix, don't argue.
+It found one crash-class defect, two silent explain defects, two costs charged to the untouched
+path, and a claim in this log that was **wrong**.
+
+**1. The design was wrong, and it was fixed at the cause.** Deleting the `PROJECTION_COVERED` node
+left the plan-stage tree with fewer nodes than the QuerySolution. `ExactCardinalityImpl::
+populateCardinalities` (`exact_cardinality_impl.cpp:61`) walks both in lockstep and **tasserts**
+under `planRankerMode: "exactCE"`. The same break silently corrupted explain — the IXSCAN lost its
+`nss`, inherited the projection's cardinality estimate and `planNodeId` — and would have broken
+roughly 115 assertions across 21 jstests plus ~50 `query_golden` expected-output files that check
+for `PROJECTION_COVERED`.
+
+Rather than patch three symptoms, the stage now **stays in the tree as a pass-through**: the scan
+produces the projected object and `ProjectionStageCovered::transform` returns immediately. One fix,
+three defects gone, and the plan shape is preserved for every existing test. Cost: about one
+virtual call per row — **1 to 1.7 pp of retired instructions**, and nothing measurable on CPU or
+wall.
+
+**2. A claim in this log was wrong.** It said the `shouldDedup` guard "is not reachable through a
+covered projection". It is. `IndexScanNode::getFieldAvailability` returns `kFullyProvided` for a
+field whose own path is not multikey even on a multikey index, while the node's constructor sets
+`shouldDedup = index.multikey` unconditionally — so `PROJECTION_COVERED` over a deduplicating
+`IXSCAN` is reachable, and fusing it would emit **one row per index entry instead of one per
+document**. The earlier test passed only because its `sort()` forced a FETCH: right assertion, wrong
+reason. That guard is now the load-bearing one, is documented as such in the code, and is exercised
+by a test that reaches it (`refused/multikey-dedup`, and the jstest equivalent).
+
+**3. Costs charged to queries that get no benefit.** A `BufBuilder` default-constructs with a
+512-byte malloc, and it sat on *every* `IndexScan` in the server, knob off included; `Ordering::make`
+re-walked the key pattern on every construction. Both now live inside `CoveredProjection`, so a scan
+without a folded projection allocates nothing and computes nothing. A `getOwned()` copy that the
+fused fallback immediately discarded was moved below the early return.
+
+**4. `Ordering` came from the wrong source.** It was derived from the planner node's key pattern,
+which is documented as possibly differing from the descriptor's for `$**` indexes. It is not wrong
+today — only because wildcard finalisation happens to agree — but it is the only decoder in the tree
+that does not take it from the index descriptor. Now `entry->ordering()`, the same value the storage
+layer decodes with.
+
+**5. Activation had to be re-instrumented.** With the stage retained, its presence no longer
+distinguishes the arms. `IndexScanStats` gained a `coveredProjection` flag, emitted in explain
+**only when true**, so knob-off output stays byte-identical — which matters, because ~50 golden
+files compare exactly. Every harness now reads that flag and additionally asserts the two arms have
+identical stage trees.
+
+**6. Test coverage for the new parser.** `toBsonProjectedSafe` is a second parser over on-disk
+bytes and had neither a unit test nor a fuzzer entry. It is now in
+`key_string_to_bson_fuzzer.cpp`, and `key_string_test.cpp` gained
+`ProjectedDecodeMatchesFullDecodeForEverySubset`, which checks **all 16 subsets** of a
+four-component key against `toBsonSafe`-plus-rename across two orderings and both KeyString
+versions. It failed on first run — V0 cannot encode `NumberDecimal` — which is a real constraint
+correctly caught. **136/136 `key_string` tests pass.**
+
+Also added from the review's list of untested paths: a multi-interval `$in` scan (which builds an
+`IndexBoundsChecker` and forces the materialised-key fallback), a backward scan, `_id` as an
+included component, and a `totalKeysExamined` equivalence assertion between the arms.
+
+Not adopted, with reasons: the review suggested a non-appending sink so excluded components are not
+materialised at all. It is right that this is the remaining waste, but for this workload the only
+excluded component is `path` at ~7-20 bytes of a ~420-byte key, so the ceiling is small; it is
+recorded as future work rather than done blind. The IDL knob was confirmed to need no
+`annotations: query_knob:` block — 38 of 51 parameters in that file have none.
+
+Status: **built, correct, measured single-client and concurrent, non-intrusion shown, resmoke green,
+reviewed and revised.**
 
 ---
 

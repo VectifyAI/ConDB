@@ -46,6 +46,30 @@ def stage_names(plan: Any, acc: list[str] | None = None) -> list[str]:
     return acc
 
 
+def ixscan_fused(plan: Any) -> bool:
+    """True when an IXSCAN in this plan reports a folded-in covered projection.
+
+    The projection stage stays in the tree when the fold happens -- removing it would desynchronise
+    the plan-stage tree from the QuerySolution -- so its presence says nothing. The IXSCAN's own
+    'coveredProjection' flag is the activation signal, and it is only emitted when true.
+    """
+    found = False
+
+    def walk(node: Any) -> None:
+        nonlocal found
+        if isinstance(node, dict):
+            if node.get("stage") == "IXSCAN" and node.get("coveredProjection"):
+                found = True
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(plan)
+    return found
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=57018)
@@ -68,27 +92,27 @@ def main() -> int:
                 cur = cur.sort(sort)
             return list(cur)
 
-        def plan() -> list[str]:
+        def explain() -> dict:
             cur = coll.find(filt, proj).hint(hint)
             if sort:
                 cur = cur.sort(sort)
-            return stage_names(cur.explain().get("queryPlanner", {}).get("winningPlan", {}))
+            return cur.explain().get("queryPlanner", {}).get("winningPlan", {})
 
         set_arm(False)
         db.command({"planCacheClear": coll.name})
-        base_rows, base_plan = run(), plan()
+        base_rows, base_wp = run(), explain()
         set_arm(True)
         db.command({"planCacheClear": coll.name})
-        fused_rows, fused_plan = run(), plan()
+        fused_rows, fused_wp = run(), explain()
+        base_plan, fused_plan = stage_names(base_wp), stage_names(fused_wp)
 
-        # Fusion means the covered projection the base plan had is gone. Testing only for the
-        # absence of PROJECTION_COVERED misreads plans that never had one -- a multikey index
-        # cannot cover, so that query plans with a FETCH and no covered projection either way.
-        had_covered = "PROJECTION_COVERED" in base_plan
-        fused_actually = had_covered and "PROJECTION_COVERED" not in fused_plan
-        if not had_covered and base_plan != fused_plan:
-            failures.append(f"{name}: plan changed for a query that was never covered: "
-                            f"{base_plan} -> {fused_plan}")
+        fused_actually = ixscan_fused(fused_wp)
+        if ixscan_fused(base_wp):
+            failures.append(f"{name}: the base arm reported a fused scan")
+        # The stage tree must be identical in both arms: the fold keeps PROJECTION_COVERED in
+        # place so that the plan-stage tree still matches the QuerySolution one to one.
+        if base_plan != fused_plan:
+            failures.append(f"{name}: plan shape changed: {base_plan} -> {fused_plan}")
         ok = base_rows == fused_rows
         if not ok:
             failures.append(f"{name}: output differs")
@@ -104,9 +128,10 @@ def main() -> int:
         if not base_rows:
             failures.append(f"{name}: query returned no rows, comparison is vacuous")
 
+        keys_base = base_wp.get("executionStats")  # not requested; kept for shape parity
         report.append({"case": name, "rows": len(base_rows), "identical": ok,
                        "base_plan": base_plan, "fused_plan": fused_plan,
-                       "fused": fused_actually})
+                       "fused": fused_actually, "_unused": keys_base is None})
         print(f"{'ok  ' if ok and fused_actually == expect_fused else 'FAIL'}  {name}: "
               f"{len(base_rows)} rows, fused={fused_actually}, identical={ok}", flush=True)
 
@@ -162,12 +187,29 @@ def main() -> int:
     multi.insert_many([{"a": [1, 2, 3], "b": "x"}, {"a": [2, 3, 4], "b": "y"},
                        {"a": [5], "b": "z"}])
     multi.create_index([("a", ASCENDING), ("b", ASCENDING)], name="ab")
-    # A multikey index cannot serve a covered projection, so this plans with a FETCH and never
-    # reaches the fusion decision. It is kept as a control that the plan is untouched and the rows
-    # are unchanged; the shouldDedup guard in the stage builder is defensive, and this shows why it
-    # is not reachable through a covered projection rather than claiming it was exercised.
-    differential("untouched/multikey-fetch", multi, {"a": {"$gte": 0}},
-                 {"_id": 0, "b": 1}, "ab", [("a", 1)], False)
+    # An index that is multikey overall can still fully provide a field whose own path is not
+    # multikey, so PROJECTION_COVERED over a DEDUPLICATING IXSCAN is reachable -- with no sort, so
+    # nothing forces a FETCH. This is the guard that matters: fusing here would emit one row per
+    # index entry instead of one per document. {a:[1,2,3]} must yield exactly one {b:"x"}.
+    differential("refused/multikey-dedup", multi, {"a": {"$gte": 0}},
+                 {"_id": 0, "b": 1}, "ab", None, False)
+
+    # -- a multi-interval scan builds an IndexBoundsChecker, which forces every key onto the
+    # -- fused stage's materialised-key fallback rather than its fast path ---------------
+    differential("checker/in-list", filt, {"a": {"$in": [1, 5, 9, 42, 77]}},
+                 {"_id": 0, "a": 1, "c": 1}, "abc", [("a", 1)], True)
+
+    # -- backward scan: the cursor walks in reverse, the decode must not care -----------
+    differential("backward-scan", filt, {"a": {"$gte": 0}},
+                 {"_id": 0, "a": 1, "c": 1}, "abc", [("a", -1)], True)
+
+    # -- _id as an included key component ------------------------------------------------
+    ids = db.idcover
+    ids.drop()
+    ids.insert_many([{"_id": i, "a": f"a{i}"} for i in range(20)])
+    ids.create_index([("_id", ASCENDING), ("a", ASCENDING)], name="ida")
+    differential("id-included", ids, {"_id": {"$gte": 0}},
+                 {"_id": 1, "a": 1}, "ida", [("_id", 1)], True)
 
     # -- single-key result takes the seek path, not the fast path -----------------------
     single = db.single
