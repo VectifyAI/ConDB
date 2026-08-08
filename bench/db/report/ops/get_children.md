@@ -73,6 +73,21 @@ single-row lookup.
 
 ### M1 — Cache plans for hinted single-solution classic queries · `mongod` · ≤11% of server CPU
 
+> **Superseded by a direct measurement on master. See
+> [`get_children_leads.md`](get_children_leads.md) L2d.** The ≤11% below is *derived* from a 7.0.34
+> profile. Built and measured on master, the ceiling for this change is **−8.6% of server CPU**
+> (three campaigns, −7.37% / −8.63% / −9.00%, gate rotated across three servers, against a
+> two-identical-servers control floor of ±1.8%), and that is an upper bound because the probe is
+> cheaper than a correct implementation on both the hit and store paths.
+>
+> Two structural findings from that work change what M1 *is*. Relaxing the `shouldCacheQuery` hint
+> test alone would produce **zero stores and zero hits**: the classic cache's only writer is reached
+> through `ClassicPlanCacheWriter::operator()(cq, MultiPlanStage&, ...)`, and a hinted query never
+> multi-plans. And `encodeClassic` does not encode the hint, so relaxing the exclusion without
+> extending the encoder would let two different hints on one shape share a cache key. M1 is
+> therefore a substantially larger change than "flip a predicate", for less than a tenth of the
+> operation. **Lead closed, not deferred.**
+
 **`get_children` is where this is best established of the four operations.** Under `trySbeEngine`,
 which caches these shapes, server CPU falls across three retained runs:
 
@@ -107,7 +122,21 @@ server-global; the other operations were checked and none regresses (`get_subtre
 `forceClassicEngine` is the deliberate 7.0.34 default, so defaulting to SBE is a deployment-policy
 decision this evidence does not settle.
 
-### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **not measured**
+### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **envelope now measured: ≈24 µs**
+
+> **Update.** M2 was recorded below with no value. There is now a measured envelope for it, from a
+> different shape: on master, `find({_id: X})` takes the express fast path while the same query with
+> `hint: {_id: 1}` does not, so the two differ exactly by plan selection and executor construction
+> over the same index for the same document. Express is **44.05% cheaper — about 24 µs per command**
+> (+79.23% median for the hinted arm, blocks [+66.80, +92.21], against a same-process control floor
+> of −0.44%).
+>
+> That 24 µs is fixed per-command machinery, which the two zero-row arms in §2 license treating as
+> shared across shapes. Against this operation's ≈100 µs of server CPU on the same build it is an
+> envelope of **≈24%**, of which M1 has now been shown to reach ≈8.6 points. **These are bounds
+> derived from a different shape, not measurements of this operation** — a bounded-scan fast path
+> must additionally iterate and satisfy the sort, so it would recover less than 24 µs, never more.
+> Detail in [`get_children_leads.md`](get_children_leads.md) L4a. **This is the lead worth building.**
 
 `get_node.md` §5 M1 proposes a fast path for unique compound-index equality. `get_children` is the
 natural next shape: an equality on a *prefix* of a compound index (`tree_id, parent_id`) returning
