@@ -517,6 +517,54 @@ that `planFromCache` never reads and which made the memo look more faithful than
 **The probe was rebuilt with these fixes and every campaign re-run**, because the eligibility check
 and the key comparison both add work to the hit path. Numbers in L2d are from the corrected build.
 
+## L4b — express already does a bounded range seek; it just refuses to keep going · **read-only finding**
+
+The brief describes the express machinery as one that "cannot iterate", and I assumed extending it
+would be major surgery on the plan. Reading it (no files touched — this lane belongs to the
+`get_node` agent) says otherwise.
+
+`src/mongo/db/exec/express/express_plan.h`, `LookupViaUserIndex::consumeOne` at `:666`:
+
+```cpp
+// Build the start and end bounds for the equality by appending a fully-open bound for each
+// remaining field in the compound index.
+BSONObjBuilder startBob, endBob;
+... for (int i = 1; i < desc->getNumFields(); ++i) { startBob.appendMinKey(""); endBob.appendMaxKey(""); }
+auto indexCursor = sortedAccessMethod->newCursor(opCtx, ru, true /* forward */);
+indexCursor->setEndPosition(endKey, true /* endKeyInclusive */);
+...
+if (isSuccessfulResult(progress)) {
+    _exhausted = true;      // <- stops after exactly one document
+    return Exhausted{};
+}
+```
+
+**It is already a bounded prefix scan.** It seeks to the first key of an equality range with
+MinKey/MaxKey padding over the remaining compound fields, and it already sets an end position on the
+cursor. Everything needed to walk `(tree_id, parent_id)` = constant and stop at the end of the run
+is present. Two things stop it:
+
+1. `_exhausted = true` after the first successfully-consumed document (`:736`), and
+2. the cursor is a local built fresh inside `consumeOne` (`:694`), so there is nothing to resume from
+   on a subsequent call.
+
+So the shape of the change is: hoist the cursor to a member, replace the unconditional `_exhausted`
+with `nextKeyValueView()` until the end position is passed, and relax the eligibility predicate that
+currently requires the equality to identify at most one document. `ExpressPlan` is already templated
+on `IteratorChoice` (`:1146-1150`) with three implementations, so a fourth is a supported extension
+point rather than a rewrite.
+
+The sort is free for this operation: `get_children` sorts on `(path, node_id)`, which are exactly the
+trailing fields of `allops_tree_parent_path` that the MinKey/MaxKey padding walks in order, so a
+forward cursor emits rows already sorted. That is the same reason the current plan has no `SORT`
+stage.
+
+**Not attempted here.** These are the `get_node` agent's files and they are mid-change on
+`express-compound-equality`. The finding has been relayed to them along with the L4a numbers. What
+this changes is the estimate: extending express to this shape is a tractable change to one iterator,
+not the rewrite the brief's "cannot iterate" phrasing implies, and L4a says the envelope is ≈24 µs
+of a ≈92 µs operation.
+
 ## Still to run
 
 - **L4** — extend a fast path to a bounded prefix scan (brief's fallback 1). This is now the
