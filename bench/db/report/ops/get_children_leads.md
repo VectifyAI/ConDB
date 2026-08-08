@@ -106,7 +106,7 @@ works-based active/inactive state machine — which is the right shape for a pla
 beaten by an alternative, and answers the brief's "replanning" design question directly: there is no
 works measurement to compare against, so works-based replanning does not apply.
 
-## L2 — Ceiling probe for the win, before building the mechanism · **in progress**
+## L2 — Ceiling probe for the win, before building the mechanism · **closed, ≈−10.3%**
 
 Rather than build a store path, a key encoding, a synthetic decision and a test suite for a change
 whose value is bounded near 11% by the brief's own derivation, the win is priced first. This is the
@@ -197,7 +197,9 @@ set before enumeration — which is what makes the shape single-solution in the 
 
 The probe now sits in `preparePlanner`, replacing `QueryPlanner::plan()` for a hinted shape with a
 memo lookup and returning through the identical `buildSingleSolutionPlanner` the planning path uses,
-so the arms differ only in whether planning ran. `get_executor.cpp` was reverted to pristine.
+so the two arms run the same plan. (An earlier version of this line claimed they "differ only in
+whether planning ran"; review showed that was overstated — see L2e.) `get_executor.cpp` was
+reverted to pristine.
 
 **Cost of this detour: one build and one smoke run.** Recorded because the brief's file references
 are 7.0.34-era and the next person will otherwise repeat it. The non-deferred
@@ -319,8 +321,10 @@ Reported this way rather than quietly replacing one number with another.
 
 ### Why this closes the lead
 
-The bar was: no single-digit percentages. **−8.6% is single digit**, and it is an upper bound in a
-strong sense — a correct implementation is strictly more expensive than this probe on both paths:
+The bar was: no single-digit percentages. The ceiling measures **≈−10.3%**, which nominally clears
+it — but only as a ceiling, and by 0.3 of a point, which is **smaller than the ±1.3-point control
+floor**. It is an upper bound in a strong sense: a correct implementation is strictly more expensive
+than this probe on every path —
 
 - the **hit** path would consult the real `PlanCache` (partitioned lock, entry state check, eviction
   bookkeeping) instead of one `unordered_map` lookup under a plain mutex;
@@ -329,9 +333,13 @@ strong sense — a correct implementation is strictly more expensive than this p
 - **every query on the server**, hinted or not, would pay a slightly larger `encodeClassic` once the
   hint is folded into the key.
 
-None of those costs are in the −8.6%. The real change lands below it, on an operation where the
-brief's own decomposition puts 71% of the cost in fixed per-command work — of which planning, now
-measured, is about 8.6 points.
+None of those costs are in the −10.3%. **The honest reading is therefore that a correct
+implementation is not demonstrated to clear a ten-percent bar**: it lands below 10.3% by an
+unmeasured amount, and the margin to spend is thinner than the run-to-run floor. Closing the lead is
+a judgement that the remaining machinery — a single-solution store path, hint-and-more in
+`encodeClassic`, a synthetic ranking decision, invalidation and collision tests — is not worth
+building to find out, on an operation where a fast path has a ≈24 µs envelope against this ≈9.5 µs
+one (L4a).
 
 **Not built:** the single-solution store path, the hint in `encodeClassic`, the synthetic ranking
 decision, invalidation and collision tests. Priced first, deliberately, and not worth building at
@@ -371,7 +379,7 @@ points of session, dispatch and command-framework overhead outside the command i
 parsing, collection acquisition, reply building and cursor handling.
 
 This also explains the L2 number honestly: `getExecutorFind` is 24.60% inclusive, but a cache hit
-does not remove all of it — it still constructs an executor, and `planFromCache` still runs. −8.6%
+does not remove all of it — it still constructs an executor, and `planFromCache` still runs. −10.3%
 out of a 24.60% envelope is the expected shape, not a disappointment.
 
 ### Where the cycles pool (exclusive, aggregated over the whole profile, 99.0% accounted)
@@ -475,7 +483,7 @@ a query can only ever *read* another query's unbounded entry and never store its
 Every min/max query carries a hint (the planner rejects min/max without one), so all of them are
 read candidates.
 
-**This does not invalidate the −8.6%.** The measured workload is a single hinted shape with no
+**This does not invalidate the result.** The measured workload is a single hinted shape with no
 min/max, no tailable and no explain — the reviewer's own words: "the verification covered the
 configuration that happens to be safe." But it means the 53,056-execution equality check proved less
 than it appeared to, and the probe's own comment understated its danger. Fixed by
