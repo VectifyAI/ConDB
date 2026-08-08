@@ -11,6 +11,10 @@ below is an A/B on one locally built binary, never a comparison against `:57017`
 
 Started 2026-08-09.
 
+**Deliverables so far.** Branch `hinted-plan-cache-ceiling` pushed to `origin`; Draft PR
+`carsontung666/mongo#4`, opened against the **fork's** master, not upstream. No SERVER ticket exists
+and none was invented; the PR states in its first line that it is a measurement and not a proposal.
+
 ---
 
 ## L0 — Reading the exclusion on master, not on 7.0.34 · **premise correction, no measurement**
