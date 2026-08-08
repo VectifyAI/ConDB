@@ -5,7 +5,7 @@ including the ones that did not pay. Negative results are retained deliberately:
 file is that the next person does not repeat them.
 
 Target is **master**, pinned base `0561c098b99ac5e929005e70a2e37d7a97a82423`, fork
-`carsontung666/mongo`, branch `plan-cache-hinted-solutions`, worktree `/tmp/mongo-getchildren`.
+`carsontung666/mongo`, branch `hinted-plan-cache-ceiling`, worktree `/tmp/mongo-getchildren`.
 The measured ConDB baseline (stock 7.0.34 on `:57017`) cannot run a master build, so every number
 below is an A/B on one locally built binary, never a comparison against `:57017`.
 
@@ -64,15 +64,22 @@ cheaper than planning from scratch — which is the question L1 exists to answer
 
 ## L1 — Does relaxing the exclusion do anything at all? · **no, on its own it is inert**
 
-Checked before writing any code. The classic plan cache has exactly one writer:
+Checked before writing any code. The classic plan cache has one writer function,
+`plan_cache_util.cpp:135` `updateClassicPlanCacheFromClassicCandidates`, with **two** callers:
 
-- `plan_cache_util.cpp:135` `updateClassicPlanCacheFromClassicCandidates`
-- reached only from `plan_cache_util.cpp:334` `ClassicPlanCacheWriter::operator()(const
-  CanonicalQuery&, MultiPlanStage&, ...)`
+- `plan_cache_util.cpp:340`, `ClassicPlanCacheWriter::operator()(const CanonicalQuery&,
+  MultiPlanStage&, ...)`
+- `classic_runtime_planner_for_sbe/multi_planner.cpp:135`, a direct call bound as a
+  `MultiPlanStage::OnPickBestPlan` callback at `multi_planner.cpp:32`
 
-The signature is the finding: **the only path into the classic cache runs off a `MultiPlanStage`.**
+*(Corrected after review — an earlier version of this file, and of the commit message on the branch,
+said "exactly one writer, reached only from `ClassicPlanCacheWriter`". That was wrong. The
+conclusion is unchanged, because both callers are `MultiPlanStage` pick-best-plan callbacks, but
+the claim as written was false.)*
+
+The signature is the finding: **every path into the classic cache runs off a `MultiPlanStage`.**
 A hinted query yields one solution, is served by `SingleSolutionPassthroughPlanner`
-(`get_executor.cpp:673`), and never reaches that writer.
+(`get_executor.cpp:673`), and never reaches either caller.
 
 So flipping the `shouldCacheQuery` hint test to `true` would produce **0 stores and 0 hits** — the
 lookup would start succeeding at `buildCachedPlan`, find nothing, and fall through to full planning
@@ -105,27 +112,31 @@ Rather than build a store path, a key encoding, a synthetic decision and a test 
 whose value is bounded near 11% by the brief's own derivation, the win is priced first. This is the
 same discipline the brief prescribes for its fallback lead 1, applied to the primary lead.
 
-`get_executor.cpp`, 87 lines, one file, gated by `MONGO_PROBE_HINTED_PLAN_MEMO` read once per
-process:
+One file, gated by `MONGO_PROBE_HINTED_PLAN_MEMO` read once per process:
 
-- **store** — in `buildSingleSolutionPlan`, memoise the winning solution's `SolutionCacheData` under
-  the plan cache key, for hinted queries only
-- **hit** — in `buildCachedPlan`, after `shouldCacheQuery` declines, rebuild the solution from the
-  memo via **`QueryPlanner::planFromCache`** — the same call a real cache hit makes — and run it
-  through `SingleSolutionPassthroughPlanner`
+- **store** — memoise the winning solution's `SolutionCacheData` under the plan cache key, for
+  eligible hinted queries only
+- **hit** — before planning runs, rebuild the solution from the memo via
+  **`QueryPlanner::planFromCache`** — the same call a real cache hit makes — and return it through
+  the same `SingleSolutionPassthroughPlanner` the planning path returns
+
+*(The first version of this was written into `get_executor.cpp`, which turned out not to be the file
+master executes — see L2a — and the store was placed on the non-CBR branch, which turned out not to
+be the branch master takes — see L2b. It now lives in
+`get_executor_deferred_engine_choice_planning.cpp`, in `preparePlanner` and `planWithCBR`.)*
 
 Because the hit path is the real one, the number it produces bounds what a correct implementation
 could deliver. What the probe skips is exactly what a real hit would skip: `PlanRanker::rankPlans`
 and the `QueryPlanner::plan` beneath it.
 
 **The probe is deliberately incorrect and is a measurement device only.** The memo is process-wide,
-keyed on a hash that does not encode the hint (so two hints on one shape collide), is never
-invalidated by index or collection drops, and never evicts. It also bypasses `shouldCacheQuery`,
-which would trip the `dassert` at `query_planner.cpp:729` in a debug build; it is safe here only
-because `kDebugBuild` is false under `--config=opt`.
+is never invalidated by index or collection drops, and never evicts. It also bypasses
+`shouldCacheQuery`, which would trip the `dassert` at `query_planner.cpp:729` in a debug build; it is
+safe here only because `kDebugBuild` is false under `--config=opt`. Review found two further
+wrong-results defects in the first version of it — see L2e — both since fixed.
 
-Known non-intrusion detail: with the gate off, the only added work per query is storing a 32-bit
-hash (`_probeKeyHash`) and testing one cached static bool. An earlier revision stashed the whole
+Known non-intrusion detail: with the gate off, the only added work per query is testing one cached
+static bool, at most three times, before any other work. An earlier revision stashed the whole
 `PlanCacheKey`; that would have cost an allocation per query in *both* arms. `PlanCacheKey` has a
 deleted copy-assignment operator, which caught it at compile time — the hash is both free and
 sufficient, since the memo is keyed on it anyway.
@@ -150,7 +161,8 @@ helper never ran". That last case is a live risk — master defaults `internalQu
 to `kTrySbeRestricted`, not `forceClassicEngine`, and the probe is only wired into
 `ClassicPrepareExecutionHelper`.
 
-**Result: −8.6% of server CPU. Under the bar. Lead closed.** Detail in L2d below.
+**Result: ≈−10.3% of server CPU as an upper bound; a correct build lands below it. Lead closed.**
+Detail in L2d below.
 
 ### L2a — the first probe build measured nothing, because master plans somewhere else
 
@@ -260,48 +272,50 @@ hidden.
 
 ---
 
-### L2d — the ceiling for plan caching on this operation is −8.6% of server CPU · **under the bar**
+### L2d — the ceiling for plan caching on this operation is ≈−10.3% of server CPU · **at the bar, and an upper bound**
 
-Three campaigns, 20 blocks x 40 sweeps x 64 parents each, on a 1.5M-document clone. The gate was
-rotated across all three ports and dbpath copies, so a server-specific bias would show up as the
-effect failing to follow the gate.
+Three campaigns, 20 blocks x 40 sweeps x 64 parents each, on a 1.5M-document clone, **on the
+review-corrected probe** (L2e) and on a box verified quiet for 60 consecutive seconds first. The
+gate was rotated across all three ports and dbpath copies, so a server-specific bias would show up
+as the effect failing to follow the gate.
 
-Artifacts: `runs/getchildren_plancache_20260809/probe_ceiling{,_rot1,_rot2}.json`, summarised by
-`bench/db/analyze_children_plancache.py` into `summary.json`.
+Artifacts: `runs/getchildren_plancache_20260809/v2_rot{0,1,2}.json`, summarised by
+`bench/db/analyze_children_plancache.py` into `summary_v2.json`.
 
-| rotation | probe ran on | probe vs baseline | control vs baseline | probe vs control |
-|---|---|---|---|---|
-| 0 | 57022 | −7.37% | +1.82% | −10.32% |
-| 1 | 57023 | −8.63% | −0.79% | −8.23% |
-| 2 | 57021 | −9.00% | +1.72% | −10.41% |
-| **median across rotations** | | **−8.63%** | **+1.72%** | −10.32% |
+| rotation | probe ran on | probe vs baseline | control vs baseline | probe vs control | blocks better |
+|---|---|---|---|---|---|
+| 0 | 57022 | −10.29% | −0.59% | −9.55% | 15/20 |
+| 1 | 57023 | −11.58% | +0.35% | −10.72% | **20/20** |
+| 2 | 57021 | −10.33% | −1.28% | −9.36% | **20/20** |
+| **median across rotations** | | **−10.33%** | **−0.59%** | −9.55% | |
 
-Server CPU, per-block paired, median over blocks. Absolute medians in rotation 2: baseline 99.45,
-probe 90.93, control 101.22 µs/op.
+Server CPU, per-block paired, median over blocks. Absolute medians: baseline 91.6–94.6, probe
+81.5–84.5, control 91.8–93.6 µs/op.
 
-**The effect follows the gate, not the machine.** The probe produced −7.4%, −8.6% and −9.0% while
-running on three different ports against three different dbpath copies. Rotation 1 was 20/20 blocks
-better; rotation 2, 17/20.
+**The effect follows the gate, not the machine**, on three different ports against three different
+dbpath copies. Two of the three rotations improved in every single block.
 
 **Activation, every campaign:** probe **53,055 hits / 53,056 executions**; baseline and control **0
 hits**, 53,056 `skipped`. **Correctness, every campaign:** 1,320 elements compared element-wise
-across all three arms, every block, 20 blocks, zero mismatches.
+across all three arms, every block, zero mismatches.
 
-**The control is not zero, and that is the floor.** Two servers from the same binary on
-byte-identical data with the gate off in both differ by −0.79% to +1.82%. Nothing smaller than about
-two percentage points is demonstrated here, which is why the effect is quoted as ≈−8.6% and not to a
-tighter figure.
+**The control floor is now tight**: −0.59%, +0.35%, −1.28%, against ±1.8% in the earlier campaigns.
+That is the whole reason these numbers supersede the first set.
 
-**Client wall, kept separate and never combined with CPU:** −1.84%, −4.37%, −5.35% across the three
-rotations. Smaller than the server-CPU effect, as expected for an operation the source document puts
-at roughly 59% server / 41% client — a ~8 µs server saving sits inside a ~200 µs round trip.
+**Client wall, kept separate and never combined with CPU:** −5.08%, −6.92%, −5.68%.
 
-**Contaminated blocks, reported rather than removed.** Rotation 0 had four blocks (4, 6, 7, 8) where
-the probe read +30% to +59% while the control in those same blocks read +0.1% to +1.4%; rotation 2
-had two such blocks. Because the control was clean in them, this is not general box noise but
-unexplained arm-specific contamination, and it remains unexplained. Excluding them moves rotation 0
-to −8.10% and rotation 2 to −9.54% — *closer to the other rotations, not further*, so the exclusion
-would strengthen the result and is therefore not taken. The headline numbers include every block.
+### Superseded: the first campaigns read −8.6%
+
+The first three campaigns (`probe_ceiling{,_rot1,_rot2}.json`) gave −7.37% / −8.63% / −9.00%,
+median −8.63%. They are retained but **superseded**, for one reason: they ran while the box was
+still settling from concurrent sibling builds, and their control arm drifted +1.82% / −0.79% /
++1.72% where the corrected runs hold −0.59% / +0.35% / −1.28%.
+
+**Two things changed between the two sets and they cannot be cleanly separated**: the probe was
+corrected after review, and the box was quieter. What can be said is that the corrections *add* work
+to the hit path — an eligibility check and a full key-string comparison — so they cannot explain an
+effect getting larger. The difference is attributable to measurement conditions, not to the change.
+Reported this way rather than quietly replacing one number with another.
 
 ### Why this closes the lead
 
@@ -440,6 +454,68 @@ never more.
 
 That said, this is the first number in this lane with room above the bar, and it is why L4 is worth
 building where M1 was not.
+
+## L2e — blank-context review of the branch, and what it changed
+
+A reviewer with no context on this work was given the branch and asked to apply MongoDB query-team
+standards adversarially. It found one wrong-results defect, one false claim of mine, and a lint
+violation. All were fixed rather than argued; the findings are recorded here because the negative
+ones are the point of this file.
+
+**1. Wrong results — the probe kept only one of `shouldCacheQuery`'s five exclusions.**
+`shouldCacheQuery` rejects hint, `min`, `max`, explain-cache-ineligible and tailable. That list is
+not arbitrary: `encodeClassic` encodes **none** of them, so those queries are excluded precisely
+because the key cannot tell them apart from a query without them. The probe tested only the hint.
+
+The concrete failure: `find({a: {$gte: 0}}).hint("a_1")` stores an entry; the same shape with
+`.min({a: 5}).max({a: 10})` hashes to the same key, hits that entry, and is served a plan built
+**without the min/max bounds** — returning every document with `a >= 0`. Silently, no error. It is
+one-directional and self-reinforcing: planning a min/max query never sets `soln->cacheData`, so such
+a query can only ever *read* another query's unbounded entry and never store its own correct one.
+Every min/max query carries a hint (the planner rejects min/max without one), so all of them are
+read candidates.
+
+**This does not invalidate the −8.6%.** The measured workload is a single hinted shape with no
+min/max, no tailable and no explain — the reviewer's own words: "the verification covered the
+configuration that happens to be safe." But it means the 53,056-execution equality check proved less
+than it appeared to, and the probe's own comment understated its danger. Fixed by
+`hintedPlanMemoEligible()`, which now mirrors every `shouldCacheQuery` exclusion except the hint.
+
+**2. Wrong results — keying on the 32-bit hash alone.** The real cache hashes to a bucket then
+compares the full `PlanCacheKey`; the probe compared nothing. Since `tagAccordingToCache` validates
+only tree *topology*, not field paths, a collision between two structurally isomorphic shapes over
+different fields would tag the wrong predicate and build bounds for the wrong field. Fixed: the memo
+now stores the key string and compares it on hit.
+
+**3. My "exactly one writer" claim was false.** Corrected in L1 above.
+
+**4. The measurement claim was overstated.** The branch said the arms "differ only in whether
+`QueryPlanner::plan()` ran". They do not. With `planRanker` at its default `kMixed` the baseline
+runs `planWithCBR`, and the probe returns before it, so what is actually skipped is
+`rankPlans()` + `QueryPlanner::plan()` + `SolutionCacheData` construction + a second `WorkingSet`
+allocation + `incrementPlannerInvocationCount()`; the probe also bypasses the subplanning check and
+sits outside the `if (!replanning)` guard, and returns a solution with no `cacheData` where the
+planning path always sets one. For a non-explain single-solution hinted find the two arms do return
+an equivalent planner — the reviewer agreed the result is "directionally sound" — but the sentence
+was wrong and is now restated. **The servers ran the default `internalQueryPlanRanker`, `kMixed`;
+the number would mean something different under `multiPlanner`.**
+
+**5. A fourth reason the ceiling is optimistic**, on top of the three already listed: the probe's
+lookup is a hash into a flat map, where the real one also walks LRU/budget bookkeeping and the
+`getCacheEntryIfActive` works-state check.
+
+**6. `std::unordered_map` is a banned name** (`MongoBannedNamesCheck.cpp:108`) and would have failed
+clang-tidy. Now `stdx::unordered_map`. Note the converse, which I had backwards: `std::mutex` is
+**correct** here — `mongo/stdx/mutex.h` was deleted by `685559c5fe`, which is why my first build
+failed to find it. That was not a missing bazel dependency, and the earlier note in this file
+saying the target lacked the dep was wrong.
+
+Also fixed: the decline-to-store log fired for every *non-hinted* query when the gate was on, adding
+asymmetric work to the probe arm; and two dead assignments (`indexFilterApplied`, `solutionHash`)
+that `planFromCache` never reads and which made the memo look more faithful than it was.
+
+**The probe was rebuilt with these fixes and every campaign re-run**, because the eligibility check
+and the key comparison both add work to the hit path. Numbers in L2d are from the corrected build.
 
 ## Still to run
 

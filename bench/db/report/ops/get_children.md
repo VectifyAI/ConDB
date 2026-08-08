@@ -75,18 +75,21 @@ single-row lookup.
 
 > **Superseded by a direct measurement on master. See
 > [`get_children_leads.md`](get_children_leads.md) L2d.** The ≤11% below is *derived* from a 7.0.34
-> profile. Built and measured on master, the ceiling for this change is **−8.6% of server CPU**
-> (three campaigns, −7.37% / −8.63% / −9.00%, gate rotated across three servers, against a
-> two-identical-servers control floor of ±1.8%), and that is an upper bound because the probe is
-> cheaper than a correct implementation on both the hit and store paths.
+> profile. Built and measured on master, the ceiling is **≈−10.3% of server CPU** (three campaigns,
+> −10.29% / −11.58% / −10.33%, gate rotated across three servers, control floor −0.59% / +0.35% /
+> −1.28%, two of three rotations improving in every block). **That is an upper bound**, and a
+> correct implementation lands below it: the probe pays none of the real cache's key comparison,
+> LRU and works-state bookkeeping on hit, none of the synthetic ranking decision on store, and none
+> of the wider `encodeClassic` that every query on the server would pay once the hint is in the key.
 >
-> Two structural findings from that work change what M1 *is*. Relaxing the `shouldCacheQuery` hint
-> test alone would produce **zero stores and zero hits**: the classic cache's only writer is reached
-> through `ClassicPlanCacheWriter::operator()(cq, MultiPlanStage&, ...)`, and a hinted query never
-> multi-plans. And `encodeClassic` does not encode the hint, so relaxing the exclusion without
-> extending the encoder would let two different hints on one shape share a cache key. M1 is
-> therefore a substantially larger change than "flip a predicate", for less than a tenth of the
-> operation. **Lead closed, not deferred.**
+> Two structural findings change what M1 *is*. Relaxing the `shouldCacheQuery` hint test alone would
+> produce **zero stores and zero hits**: every path into the classic cache runs off a
+> `MultiPlanStage` pick-best-plan callback, and a hinted query never multi-plans. And
+> `encodeClassic` encodes neither the hint **nor `min`, `max` or tailable** — which is why
+> `shouldCacheQuery` excludes all of them — so relaxing the exclusion without extending the encoder
+> would let queries that differ in ways the key cannot see share one entry. M1 is therefore a
+> substantially larger change than "flip a predicate", for about a tenth of the operation at best.
+> **Lead closed, not deferred.**
 
 **`get_children` is where this is best established of the four operations.** Under `trySbeEngine`,
 which caches these shapes, server CPU falls across three retained runs:
