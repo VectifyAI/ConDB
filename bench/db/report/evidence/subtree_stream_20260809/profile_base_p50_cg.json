@@ -1,0 +1,13 @@
+{
+  "tag": "base_p50_cg",
+  "path": "/000006/000075/000773",
+  "rows": 11686,
+  "seconds": 20,
+  "threads": 1,
+  "operations": 1485,
+  "server_cpu_us_total": 12220000.0,
+  "server_cpu_us_per_op": 8228.95622895623,
+  "client_wall_us_per_op": 14529.627737328374,
+  "self_percent": [],
+  "inclusive_percent": []
+}

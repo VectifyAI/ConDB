@@ -1,0 +1,113 @@
+{
+  "upstream": "127.0.0.1:57017",
+  "inputs": {
+    "/000006/000075/000773": {
+      "reps": [
+        {
+          "rows": 11686,
+          "wall_us": 47544.038854539394,
+          "n_replies": 2,
+          "n_big_replies": 1,
+          "reply_bytes": 5108543,
+          "transmit_us": 5463.973619043827,
+          "transmit_us_big": 5463.973619043827
+        },
+        {
+          "rows": 11686,
+          "wall_us": 55665.38590937853,
+          "n_replies": 2,
+          "n_big_replies": 1,
+          "reply_bytes": 5108543,
+          "transmit_us": 3497.8827461600304,
+          "transmit_us_big": 3497.8827461600304
+        },
+        {
+          "rows": 11686,
+          "wall_us": 50156.379118561745,
+          "n_replies": 2,
+          "n_big_replies": 1,
+          "reply_bytes": 5108543,
+          "transmit_us": 6791.246123611927,
+          "transmit_us_big": 6791.246123611927
+        },
+        {
+          "rows": 11686,
+          "wall_us": 51750.94213336706,
+          "n_replies": 2,
+          "n_big_replies": 1,
+          "reply_bytes": 5108543,
+          "transmit_us": 6374.6897503733635,
+          "transmit_us_big": 6374.6897503733635
+        },
+        {
+          "rows": 11686,
+          "wall_us": 43536.292389035225,
+          "n_replies": 2,
+          "n_big_replies": 1,
+          "reply_bytes": 5108543,
+          "transmit_us": 4578.007385134697,
+          "transmit_us_big": 4578.007385134697
+        }
+      ],
+      "median_rows": 11686,
+      "median_wall_us": 50156.379118561745,
+      "median_transmit_us": 5463.973619043827,
+      "median_reply_bytes": 5108543,
+      "ceiling_share_of_wall": 0.10893875744355186
+    },
+    "/000004/000046": {
+      "reps": [
+        {
+          "rows": 97773,
+          "wall_us": 346117.5812408328,
+          "n_replies": 4,
+          "n_big_replies": 3,
+          "reply_bytes": 42785375,
+          "transmit_us": 44808.75935405493,
+          "transmit_us_big": 44808.75935405493
+        },
+        {
+          "rows": 97773,
+          "wall_us": 375844.8101580143,
+          "n_replies": 4,
+          "n_big_replies": 3,
+          "reply_bytes": 42785375,
+          "transmit_us": 54767.295718193054,
+          "transmit_us_big": 54767.295718193054
+        },
+        {
+          "rows": 97773,
+          "wall_us": 340542.8435653448,
+          "n_replies": 4,
+          "n_big_replies": 3,
+          "reply_bytes": 42785375,
+          "transmit_us": 42501.11244618893,
+          "transmit_us_big": 42501.11244618893
+        },
+        {
+          "rows": 97773,
+          "wall_us": 374278.8480594754,
+          "n_replies": 4,
+          "n_big_replies": 3,
+          "reply_bytes": 42785375,
+          "transmit_us": 49722.6994484663,
+          "transmit_us_big": 49722.6994484663
+        },
+        {
+          "rows": 97773,
+          "wall_us": 361422.5881174207,
+          "n_replies": 4,
+          "n_big_replies": 3,
+          "reply_bytes": 42785375,
+          "transmit_us": 43850.3623008728,
+          "transmit_us_big": 43850.3623008728
+        }
+      ],
+      "median_rows": 97773,
+      "median_wall_us": 361422.5881174207,
+      "median_transmit_us": 44808.75935405493,
+      "median_reply_bytes": 42785375,
+      "ceiling_share_of_wall": 0.12397885695925913
+    }
+  }
+}
