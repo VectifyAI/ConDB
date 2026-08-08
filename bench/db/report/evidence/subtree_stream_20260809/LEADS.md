@@ -543,3 +543,83 @@ reviewed and revised.**
 - Dataset for a locally-built mongod: `bench_bottleneck_local_mongod.py` clones the target
   subtrees plus filler out of 57017 into a mongod started under this uid, keeping the five
   indexes and the document shape. It does not reproduce total collection size.
+
+---
+
+## L3 — Non-key payload columns in indexes (PostgreSQL `INCLUDE`)
+
+Scoped as the brief asks: a design sketch and a ceiling probe, not an implementation.
+
+**The asymmetry.** MongoDB has no way to store a covering field in an index without order-encoding
+it into the key. `title` (~53 B) and `summary` (~340 B) are escaped into the KeyString and decoded
+back out on every row. PostgreSQL's `INCLUDE (title, summary)` stores them uninterpreted and returns
+them with a length-prefixed copy. Note the index is **not** bigger for it: MongoDB's covering index
+is 4.662 GB against PostgreSQL's 5.506 GB, so this is an encoding cost, not a size one.
+
+**Design shape**, if it were built: a key-format flag marking a suffix of components as payload;
+payload appended after the key proper with a length prefix and no order-encoding, no escaping and no
+TypeBits participation; comparison and seeking restricted to the key prefix; `toBsonProjectedSafe`
+gaining a branch that memcpys payload components instead of decoding them. The invasive part is not
+the decoder — it is that every consumer of a KeyString has to learn that a suffix of it is not
+ordered, including index builds, validation, repair, and the resumable-index-build format.
+
+**Ceiling probe** (`bench_subtree_l3_ceiling.py`, `l3_ceiling.json`, 8 blocks × 5 s, alternating,
+both arms fused). Two covered scans over the same 11,686 rows: the wide index
+`(path, node_id, title, summary)` projecting three fields, against the narrow `path_1_node_id_1`
+projecting one. The difference is the whole cost of carrying ~393 bytes of payload through the key:
+
+| | median | range |
+|---|---|---|
+| share of server CPU | 37.46% | [34.24, 40.61] |
+| share of retired instructions | **21.02%** | [20.81, 21.24] |
+| share of client wall | 41.56% | [39.22, 44.44] |
+
+**None of those is what `INCLUDE` would save, and the gap between them and the real answer is
+large.** The probe measures carrying the payload *at all*; `INCLUDE` keeps the payload in the index
+and still returns it. Specifically it does **not** save:
+
+- **the copy** of ~393 bytes per row into the output object — `INCLUDE` does that too;
+- **the WiredTiger traversal**, because the narrow index is 0.28 GB against the wide index's
+  4.66 GB, so the narrow arm walks a far denser B-tree with a fraction of the pages. This is
+  probably the largest single term in the 37% and `INCLUDE` recovers none of it;
+- **the transmission and client decode** that dominate the wall column — the narrow arm returns a
+  ~0.3 MB reply against 5.11 MB, which has nothing to do with key encoding.
+
+What `INCLUDE` actually removes is the escape scan and the TypeBits participation for payload
+components. After L2 those are what remains of the decode: in the post-fusion profile,
+`readCString` plus `readCStringWithNuls` are ~4.3% of server CPU self time and
+`toBsonProjectedSafe` 5.33%, of which the copy is irreducible. **A defensible estimate is a few
+percent of server CPU — call it 3–6% — which is 2–4% of wall.**
+
+**Recommendation: not worth building for this workload.** It is a storage-format change touching
+every KeyString consumer, for low single digits of wall time, and L2 has already taken the part of
+the decode that was cheap to take. The reason is arithmetic, not pessimism: see below.
+
+---
+
+## Where the remaining time actually is
+
+Applying the measured L2 deltas to the P50 budget established in L1b:
+
+| | before L2 | after L2 |
+|---|---|---|
+| server produce | 8,229 µs (59%) | ~7,150 µs (55%) |
+| transmission | ~2,800 µs (20%) | ~2,800 µs (21.5%) |
+| client BSON decode | ~3,000 µs (21%) | ~3,000 µs (23%) |
+| **total** | **~13,900 µs** | **~13,030 µs** |
+
+**44% of this operation is now transmission plus client decode, and L1a and L1b established that
+both are unreachable from the server for a client that did not request an exhaust cursor.** That is
+the honest ceiling on anything further in this lane, and it is why L3 is not recommended: even
+eliminating the *entire* remaining server-side decode would leave the operation dominated by two
+terms no server-side change can touch.
+
+The levers that remain are therefore not in `mongod`'s query execution at all:
+
+1. **Make the exhaust path reachable.** The machinery exists and delivers the overlap; what blocks
+   it is that drivers refuse it behind `mongos` and it cannot combine with `limit()`. That is a
+   driver and router question, not a query-execution one.
+2. **Cheaper client-side BSON decode**, which is ~23% of this operation after L2 and belongs to
+   PyMongo.
+
+Neither is in this lane, and both are larger than what is left in it.

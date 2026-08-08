@@ -1,0 +1,173 @@
+{
+  "path": "/000006/000075/000773",
+  "rows": 11686,
+  "blocks": [
+    {
+      "wide": {
+        "ops": 413,
+        "rows": 11686,
+        "wall_us": 12082.816433098356,
+        "cpu_us": 6319.612590799032,
+        "instructions": 60480822.646489106
+      },
+      "narrow": {
+        "ops": 715,
+        "rows": 11686,
+        "wall_us": 6988.325363376757,
+        "cpu_us": 3944.055944055944,
+        "instructions": 47636097.47412588
+      },
+      "cpu_payload_share_pct": 37.590225866087934,
+      "instr_payload_share_pct": 21.23768264105922,
+      "wall_payload_share_pct": 42.16310905598386
+    },
+    {
+      "narrow": {
+        "ops": 711,
+        "rows": 11686,
+        "wall_us": 7025.81535789031,
+        "cpu_us": 3909.9859353023908,
+        "instructions": 47547481.34739803
+      },
+      "wide": {
+        "ops": 415,
+        "rows": 11686,
+        "wall_us": 12035.995937255491,
+        "cpu_us": 6265.060240963855,
+        "instructions": 60212024.69879518
+      },
+      "cpu_payload_share_pct": 37.59060910959645,
+      "instr_payload_share_pct": 21.033246124424988,
+      "wall_payload_share_pct": 41.626639004230405
+    },
+    {
+      "wide": {
+        "ops": 423,
+        "rows": 11686,
+        "wall_us": 11801.015116697085,
+        "cpu_us": 6193.853427895981,
+        "instructions": 60212836.10401891
+      },
+      "narrow": {
+        "ops": 729,
+        "rows": 11686,
+        "wall_us": 6853.704348421146,
+        "cpu_us": 3840.877914951989,
+        "instructions": 47567850.156378604
+      },
+      "cpu_payload_share_pct": 37.988879464706436,
+      "instr_payload_share_pct": 21.000482232386187,
+      "wall_payload_share_pct": 41.92275596085001
+    },
+    {
+      "narrow": {
+        "ops": 703,
+        "rows": 11686,
+        "wall_us": 7111.905170485356,
+        "cpu_us": 4011.379800853485,
+        "instructions": 47547247.547652915
+      },
+      "wide": {
+        "ops": 413,
+        "rows": 11686,
+        "wall_us": 12097.940550210546,
+        "cpu_us": 6343.825665859564,
+        "instructions": 60124557.02179177
+      },
+      "cpu_payload_share_pct": 36.76718100181338,
+      "instr_payload_share_pct": 20.91875615745541,
+      "wall_payload_share_pct": 41.21391867509562
+    },
+    {
+      "wide": {
+        "ops": 419,
+        "rows": 11686,
+        "wall_us": 11904.811513274552,
+        "cpu_us": 6252.983293556086,
+        "instructions": 60230708.06443914
+      },
+      "narrow": {
+        "ops": 717,
+        "rows": 11686,
+        "wall_us": 6964.045732621119,
+        "cpu_us": 3919.1073919107394,
+        "instructions": 47562345.746164575
+      },
+      "cpu_payload_share_pct": 37.3241985797481,
+      "instr_payload_share_pct": 21.0330622457917,
+      "wall_payload_share_pct": 41.50225961279767
+    },
+    {
+      "narrow": {
+        "ops": 725,
+        "rows": 11686,
+        "wall_us": 6890.968206370699,
+        "cpu_us": 3875.862068965517,
+        "instructions": 47511494.95862069
+      },
+      "wide": {
+        "ops": 403,
+        "rows": 11686,
+        "wall_us": 12402.924558808727,
+        "cpu_us": 6526.0545905707195,
+        "instructions": 59997650.4292804
+      },
+      "cpu_payload_share_pct": 40.6094139242166,
+      "instr_payload_share_pct": 20.811074069270795,
+      "wall_payload_share_pct": 44.44077948150834
+    },
+    {
+      "wide": {
+        "ops": 430,
+        "rows": 11686,
+        "wall_us": 11601.066669492528,
+        "cpu_us": 6069.767441860465,
+        "instructions": 60426174.258139536
+      },
+      "narrow": {
+        "ops": 709,
+        "rows": 11686,
+        "wall_us": 7051.082750932118,
+        "cpu_us": 3991.537376586742,
+        "instructions": 47638451.20592383
+      },
+      "cpu_payload_share_pct": 34.23903938956708,
+      "instr_payload_share_pct": 21.162556142619216,
+      "wall_payload_share_pct": 39.22039281547757
+    },
+    {
+      "narrow": {
+        "ops": 699,
+        "rows": 11686,
+        "wall_us": 7151.602074578511,
+        "cpu_us": 4048.6409155937054,
+        "instructions": 47544241.20314735
+      },
+      "wide": {
+        "ops": 423,
+        "rows": 11686,
+        "wall_us": 11810.707602095097,
+        "cpu_us": 6193.853427895981,
+        "instructions": 60057635.38297872
+      },
+      "cpu_payload_share_pct": 34.63453788946042,
+      "instr_payload_share_pct": 20.83564246250338,
+      "wall_payload_share_pct": 39.44814895502204
+    }
+  ],
+  "cpu_payload_share_pct": {
+    "median": 37.45721222291802,
+    "min": 34.23903938956708,
+    "max": 40.6094139242166
+  },
+  "instr_payload_share_pct": {
+    "median": 21.016772239088944,
+    "min": 20.811074069270795,
+    "max": 21.23768264105922
+  },
+  "wall_payload_share_pct": {
+    "median": 41.56444930851404,
+    "min": 39.22039281547757,
+    "max": 44.44077948150834
+  }
+}
