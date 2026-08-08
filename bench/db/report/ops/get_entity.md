@@ -47,11 +47,11 @@ client cell.
 ## 2. Where MongoDB's 45.4 µs goes
 
 `perf_nolog/get_entity_hit.perf.data` — 194 MB, 83,543 samples, 92.58% of self frames resolved, same
-instrument and basis as `get_node`'s. What has never been produced is the *exclusive* phase
-partition; it can be run from the retained data without re-measuring.
+instrument and basis as `get_node`'s.
 
 From the **inclusive** profile at 45.354 µs/op. A caller and its callee are both counted, so **these
-must not be added together** — the artifact's own header says so.
+must not be added together** — the artifact's own header says so. The *exclusive* partition, which
+may be added, is §2a.
 
 | frame | inclusive % | µs |
 |---|---|---|
@@ -68,6 +68,38 @@ must not be added together** — the artifact's own header says so.
 transport dominates, then collection acquisition, then execution — but the shared components are
 **not** paid at equal magnitude: collection acquisition is 3.62 µs here against `get_node`'s 5.62,
 command parse 1.99 against 2.43. `get_entity` is not simply `get_node` minus planning.
+
+## 2a. The exclusive partition, and the target list it produces
+
+**It exists.** `runs/bottleneck_20260806/decomp_get_node/get_entity_phases.txt`, produced by the
+same `phases.py` leaf-to-root classifier that produced `get_node_phases.txt`, over the same 83,543
+samples, summing to 100.000% / 45.354 µs. Earlier versions of this file and of the hand-off said the
+pass had never been run; that was wrong, and the two proposals below follow from it.
+
+Its rows agree with the independent inclusive pass to three decimals where the two overlap —
+projection `parseAndAnalyze` 1.998% against 2.00%, collection acquisition 8.027% against 7.99%,
+release 2.044% against 2.04% — which is what says both ran over the same sample set.
+
+By group, exclusive, µs of 45.354:
+
+| group | µs | % | |
+|---|---|---|---|
+| `tx` transport | 17.954 | 39.6 | send reply 10.163, receive request 4.282, `~OperationContext` 1.666, acceptResponse 0.953 |
+| `cmd` dispatch | 9.334 | 20.6 | continuation machinery 4.158, `_initiateCommand` 1.947, `makeOperationContext` 1.191 |
+| `acq` collection | 4.568 | 10.1 | acquire + WT snapshot 3.641, release + rollback 0.927 |
+| `exec` execution | 3.867 | 8.5 | rest of `getNext` 2.854, record fetch 0.860, projection transform 0.152 |
+| `plan` planning | 2.164 | 4.8 | see M4 |
+| `parse` | 1.802 | 4.0 | |
+| `proj` projection analysis | 1.511 | 3.3 | `parseAndAnalyze` 0.906, `optimize` 0.506 |
+| `find` `FindCmd::run` | 1.240 | 2.7 | |
+| `post` | 1.055 | 2.3 | index-usage stats 0.594, `markKillOnClientDisconnect` 0.210 |
+| `filt` match expression | 0.797 | 1.8 | `MatchExpressionParser::parse` 0.761 |
+| `teardown` | 0.601 | 1.3 | |
+| unattributed | 0.460 | 1.0 | |
+
+**Transport and dispatch are 60.2% of the operation. All query work together — execution, planning,
+parsing, projection analysis, match expression — is 10.14 µs, 22%.** That is the shape of a command
+whose query is already trivial, and it is why §5's conclusion holds.
 
 **Environment note.** 8.39% of self samples land in EDR and container-networking kernel modules
 (`dsa_filter`, `bmhook`, `tmhook`, `nf_tables`, `nf_conntrack`, `nf_nat`, `bridge`, `nft_compat`)
@@ -90,17 +122,24 @@ not of MongoDB. It is common-mode with the PostgreSQL psycopg arm.
 The list is short, and that is the finding: **the server-side levers proposed for the other two
 operations do not apply here.** What remains is the driver and the fixed command path.
 
-### M1 — Pool-checkout fast path · PyMongo · 27.3 µs per command
+### M1 — Pool-checkout fast path · PyMongo · 13.5 µs per command
 
-Server selection, pool checkout and checkin on every operation against an already-pooled connection
-and an unchanged topology. Nothing attempted. See `get_node.md` §5 M3 for the isolating measurement.
+Pool checkout and checkin on every operation against an already-pooled connection. **The 27.3 µs
+this line used to quote was measured on PyMongo 4.12 and no longer holds**: re-measured on driver
+master it is 13.5 µs, because master replaced the `@contextlib.contextmanager` generators with
+context-manager classes and put the CMAP telemetry behind an enablement check. Not attempted.
+Server selection, which the old figure bundled in, is a further 2.1 µs and has been done —
+`get_entity_driver.md` §2 C1a. Full decomposition and the locking structure that makes the rest
+tractable: `get_entity_driver.md` §2 C1b.
 
-### M2 — Skip `Cursor` construction for single-batch replies · PyMongo · 24.4 µs per command
+### M2 — Skip `Cursor` construction for single-batch replies · PyMongo · **done, 12.1 µs per command**
 
 An `_id` lookup is naturally `limit:1`/`singleBatch`, so the driver knows before it sends that the
-reply cannot need a cursor — this is the cleanest case for the change. `find_one` and
-`Database.command` put byte-identical documents on the wire yet differ by 24.4 µs of client CPU;
-paired 16 blocks, −23.46 µs median, 16/16 blocks.
+reply cannot need a cursor. **Built and measured**: `Collection._find_one_single_batch` on branch
+`find-one-fast-path`, draft PR `carsontung666/mongo-python-driver#1`. Paired 14 blocks × 500 on
+this operation's own shape: **−12.1 µs of client CPU, 15.6%, 14/14 blocks**; −10.4 µs of wall,
+6.2%. Wire-identical including key order, monitoring events identical, 1004 driver tests pass.
+Details and the ten review defects fixed: `get_entity_driver.md`.
 
 The driver term measured on this operation's own shape is **60.3 µs** against `get_node`'s 63.0;
 paired difference −1.5 µs, block range [−9.2, +11.2], inside the spread. So the transfer holds, but
@@ -110,15 +149,37 @@ For scale: PostgreSQL's *entire* client-side term for this operation is 52.3 µs
 server CPU). That figure includes the relay and kernel time whereas MongoDB's 60–63 µs is CPU only,
 so the two are not like-for-like — but the comparison is conservative in the direction claimed.
 
-### M3 — The fixed command path · `mongod` · ~24 µs, and nobody has attacked it
+### M3 — The fixed command path · `mongod` · ~24 µs
 
 §5 shows that after `IDHACK` there is still 23.9 µs of server CPU above MongoDB's own per-command
 floor, in dispatch, IDL parse, collection acquisition, projection AST and executor construction. The
 inclusive profile in §2 shows where it sits. This is the term that survives every planner change, and
 it is the reason the other operations cannot be fixed by planner work alone.
 
-**No proposal is attached to it**, because no exclusive partition of this operation exists yet. The
-first step is running the re-attribution pass over the retained perf data — §6.
+§2a partitions it. Two proposals follow, both small in absolute terms and both on work this
+operation provably cannot use.
+
+### M4 — Do not build or probe a plan-cache key on the `IDHACK` path · `mongod` · 1.185 µs
+
+`plan` is 2.164 µs on an operation that skips planning entirely, and 1.185 µs of it is
+**`plan-cache KEY build` 0.599 + `plan-cache LOOKUP` 0.586**. The fast path is chosen before a
+cached plan could be used and never contributes one, so both are spent on a cache this operation
+neither reads usefully nor writes. 2.6% of the operation, and it also lands on every other
+`IDHACK` query in the server.
+
+### M5 — Skip the projection dependency analysis a `PROJECTION_SIMPLE` cannot need · `mongod` · 1.412 µs
+
+`proj parseAndAnalyze` 0.906 + `proj optimize` 0.506, for the two-field inclusion projection
+`{_id: 1, text: 1}`. The plan chosen is `PROJECTION_SIMPLE`, the case where no dependency analysis
+is required. 3.1% of the operation.
+
+Alongside them, smaller and listed for completeness rather than proposed: `MatchExpressionParser::parse`
+0.761 µs to parse `{_id: <string>}`, which `IDHACK` does not evaluate; `CurOp::startTime`
+0.612 µs of `clock_gettime`; `endQueryOp` index-usage statistics 0.594 µs.
+
+**None of these is large.** Together M4 and M5 are 2.6 µs, 5.7% of server CPU and about 1.8% of the
+0.142 ms operation. They are recorded because they are real and specific, not because they close the
+gap — §2a's own finding is that they cannot, since 60% of the operation is transport and dispatch.
 
 ### Not applicable here
 
@@ -179,9 +240,9 @@ independent confirmation that M1, M2 and M3 are aimed at the right term. It is n
 
 Not measured, stated plainly:
 
-- **The exclusive phase partition of the 45.4 µs has not been produced.** The perf data is retained
-  and the pass can be run without re-measuring. Until then §2's figures are inclusive and
-  non-additive, and M3 has no component-level target.
+- **The exclusive phase partition has been produced** — §2a. The claim that it had not, which stood
+  in earlier versions of this file, was wrong: `get_entity_phases.txt` was written by the same pass
+  and on the same day as `get_node_phases.txt`.
 - **No client/server split against PostgreSQL exists for this operation** — the gap-locus table
   covers the other three only.
 - **`get_entity` appears at 0.228 ms in some artifacts and 0.142 ms in others, and logging is not the

@@ -64,22 +64,48 @@ Quiet-box figures, patched driver (client CPU, µs):
 `Collection._find_one_single_batch` builds the `_Query` and reads `firstBatch` directly; anything
 outside `{filter, projection, session}` still goes through `Cursor`, as do load-balanced clients.
 
-Paired, 14 blocks × 500, `runs/entity_driver_20260809/fastpath_ab.json`:
+Paired, 14 blocks × 500, `runs/entity_driver_20260809/fastpath_ab_v2.json`:
 
 | instrument | before | after | saved | blocks |
 |---|---|---|---|---|
-| retired instructions | 334,152 | 268,021 | 66,131 (19.8%) | 14/14 |
-| client CPU | 79.0 µs | 67.8 µs | 10.9 µs (13.8%) | 14/14 |
-| wall | 173.8 µs | 164.2 µs | 8.1 µs (4.7%) | 14/14 |
+| retired instructions | 349,919 | 277,211 | 72,696 (20.8%) | 14/14 |
+| client CPU | 77.5 µs | 66.4 µs | 12.1 µs (15.6%) | 14/14 |
+| wall | 167.7 µs | 157.8 µs | 10.4 µs (6.2%) | 14/14 |
 
 Wire-identical including key order, and the CommandStarted/CommandSucceeded events match field for
-field. Six tests in each of the sync and async suites pin the equivalence; **they pass against stock
-master too**, which is what makes them equivalence tests rather than descriptions of new behaviour.
+field. 1004 driver tests pass, including the CMAP connection-monitoring spec suite.
 
 Branch `find-one-fast-path`, draft PR `carsontung666/mongo-python-driver#1`.
 
-**Against the bar this is a partial result.** 13.8% of client CPU clears it; 4.7% of the operation's
-wall does not. C2 alone is not enough, which is why the leads below were opened.
+**A blank-context review to driver-team standards found ten defects, all fixed.** Worth recording
+because most were invisible from the benchmark:
+
+1. *Blocker.* `_run_operation` is annotated as returning `Response`, so unpacking a tuple from it
+   failed `mypy --strict` with ten errors. Fixed by calling `_retryable_read` directly, which also
+   removed a wrapper — the reason the numbers above are better than the first measurement
+   (10.9 → 12.1 µs).
+2. The legacy `$explain` modifier makes the server reply with an explain document rather than a
+   cursor, so `find_one({"$query": …, "$explain": True})` raised `KeyError('cursor')` where it used
+   to return the plan.
+3. A `Collection` subclass overriding `find()` was silently bypassed.
+4. A falsy non-`None` session raised `AttributeError`: `Cursor` tests the session for truth, the
+   fast path tested it for `None`.
+5. Both projection forms at once raised a different `TypeError` message.
+6. An implicit session passed explicitly kept `_attached_to_cursor` set.
+7. An empty non-`dict` filter (`SON()`, `RawBSONDocument`) was published verbatim in
+   `CommandStartedEvent` instead of `{}` — contradicting the claim that the events are unchanged.
+8. The gate comment gave the wrong reason for excluding `skip`, `collation`, `batch_size` and
+   `allow_disk_use`.
+9. An unreachable branch used `cursor["ns"]` where the cursor path uses `.get("ns")`.
+10. The tests asserted that options reached the server but never that the fallback *happened*, never
+    compared key order, and never exercised a session's own fields.
+
+Each of 2–7 was re-verified against the inlined upstream body afterwards and now matches exactly.
+The tests now assert the fast path is taken and not taken, compare key order, and compare `lsid` and
+`afterClusterTime` under a causally consistent session.
+
+**Against the bar this is still a partial result.** 15.6% of client CPU clears it; 6.2% of the
+operation's wall does not. C2 alone is not enough, which is why the leads below were opened.
 
 ### C1a — reuse the last server selection · **kept, but below the bar**
 
@@ -146,6 +172,24 @@ that. This is the next thing to do.
   carries no `$clusterTime`, 1,826 instructions. An early return is free and correct; it is 0.6%.
 - **`os.getpid()` twice per operation** (confirmed by `strace -c`: 2 getpid, 2 poll, 1 sendto,
   2 recvfrom per operation). About 646 user instructions plus two syscalls. Real but tiny.
+
+### Fallback lead 1 — the exclusive phase partition of the server's 45.4 µs · **it already existed**
+
+The hand-off and `get_entity.md` both said this pass had never been run and was the first thing to
+do. **It had been run**: `runs/bottleneck_20260806/decomp_get_node/get_entity_phases.txt`, written by
+the same `phases.py` classifier on the same day as `get_node_phases.txt`, over the same 83,543
+samples, summing to 100.000% / 45.354 µs. Nobody had looked in the `decomp_get_node` directory for a
+`get_entity` file.
+
+Checked rather than assumed: its rows agree with the independent inclusive pass to three decimals
+where the two overlap (projection `parseAndAnalyze` 1.998% vs 2.00%, collection acquisition 8.027%
+vs 7.99%, release 2.044% vs 2.04%).
+
+What it says: **transport 39.6% and command dispatch 20.6% are 60.2% of the operation; all query
+work together is 22%.** The two specific targets it exposes are now `get_entity.md` §4 M4 (plan-cache
+key build and lookup, 1.185 µs, on a path that skips planning) and M5 (projection dependency
+analysis, 1.412 µs, under a `PROJECTION_SIMPLE` plan that cannot need it). Both are real and both
+are small — together 5.7% of server CPU, about 1.8% of the operation.
 
 ### Confirmed dead, not re-litigated
 

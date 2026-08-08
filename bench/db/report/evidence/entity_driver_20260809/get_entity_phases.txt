@@ -1,0 +1,59 @@
+# 83543 samples, 45.354 us/op -> 1 sample = 0.5429 ns
+    pct      us  phase
+ 22.408  10.163  tx    send reply (sinkMessage/sync_send)
+  9.441   4.282  tx    receive request (sourceMessage/sync_recv)
+  9.168   4.158  cmd   dispatch/continuation machinery (rest)
+  8.027   3.641  acq   collection acquisition + WT snapshot
+  6.294   2.854  exec  rest of getNext
+  4.292   1.947  cmd   _initiateCommand (rest)
+  3.672   1.666  tx    ~OperationContext (WT RU/session release)
+  2.734   1.240  find  FindCmd::run (rest)
+  2.625   1.191  cmd   makeOperationContext
+  2.119   0.961  parse cmd BSON -> FindCommandRequest
+  2.102   0.953  tx    acceptResponse (killAndDelistOperation)
+  2.044   0.927  acq   collection release + txn rollback
+  1.998   0.906  proj  parseAndAnalyze (1st dep analysis)
+  1.897   0.860  exec  record fetch (WT record cursor)
+  1.677   0.761  filt  MatchExpressionParser::parse
+  1.459   0.662  cmd   RunCommandImpl::_epilogue
+  1.350   0.612  cmd   CurOp::startTime (CPU clock_gettime)
+  1.325   0.601  teardown  plan tree + QuerySolution + CQ
+  1.320   0.599  plan  plan-cache KEY build
+  1.311   0.594  tx    scheduleIteration (rest)
+  1.311   0.594  post  endQueryOp (index-usage stats)
+  1.292   0.586  plan  plan-cache LOOKUP (rest)
+  1.167   0.529  plan  getExecutor* (rest)
+  1.116   0.506  proj  optimize (2nd dep analysis)
+  1.015   0.460  UNATTRIBUTED
+  0.812   0.368  plan  PlanExecutor construct
+  0.739   0.335  parse makeExpressionContext
+  0.725   0.329  cmd   OpMsg::parse + validateBSON
+  0.654   0.296  tx    doOneIteration (rest)
+  0.628   0.285  parse CanonicalQuery::init (rest)
+  0.625   0.283  cmd   completeOperation
+  0.487   0.221  parse parsed_find_command (rest)
+  0.463   0.210  post  markKillOnClientDisconnect
+  0.335   0.152  cmd   makeCommandResponse
+  0.335   0.152  exec  projection transform
+  0.279   0.126  post  CursorResponseBuilder::done
+  0.274   0.124  post  getPlanSummary string
+  0.219   0.099  proj  setSortAndProjection (rest)
+  0.121   0.055  plan  fillOutPlannerParams (rest)
+  0.061   0.028  plan  QueryPlannerParams dtor
+  0.049   0.022  filt  MatchExpression::optimize
+  0.031   0.014  filt  MatchExpression::sortTree
+100.000  45.354  TOTAL
+
+    pct      us  group
+ 39.587  17.954  tx
+ 20.580   9.334  cmd
+ 10.071   4.568  acq
+  8.526   3.867  exec
+  4.772   2.164  plan
+  3.973   1.802  parse
+  3.332   1.511  proj
+  2.734   1.240  find
+  2.327   1.055  post
+  1.757   0.797  filt
+  1.325   0.601  teardown
+  1.015   0.460  UNATTR
