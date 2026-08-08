@@ -573,15 +573,81 @@ this changes is the estimate: extending express to this shape is a tractable cha
 not the rewrite the brief's "cannot iterate" phrasing implies, and L4a says the envelope is ≈24 µs
 of a ≈92 µs operation.
 
+## L4c — concrete plan for the express extension, and the hazard in it · **handed off, not attempted**
+
+Completing L4b by reading the driver as well as the iterator. `PlanExecutorExpress::getNext`
+(`plan_executor_express.cpp:368`) already does the right thing:
+
+```cpp
+while (!haveOutput) {
+    if (_plan.exhausted()) { return ExecState::IS_EOF; }
+    _opCtx->checkForInterrupt();
+    progress = _plan.proceed(_opCtx, [&](RecordId rid, BSONObj obj) { ...; haveOutput = true; ... });
+```
+
+It loops, checks `exhausted()` at the top, and returns one document per call. **The express framework
+already supports returning many documents.** Nothing above the iterator needs to change. Combined
+with L4b — the range seek and end position already exist — the entire restriction to one document
+lives in two lines of `LookupViaUserIndex::consumeOne`.
+
+### The change
+
+1. Hoist the cursor. `:694` builds `indexCursor` as a local inside `consumeOne`; it becomes a member,
+   built on first call and advanced with `nextKeyValueView()` afterwards.
+2. Replace `_exhausted = true` at `:736` with an advance, setting `_exhausted` only when the cursor
+   passes the end position already set at `:695`.
+3. Relax the eligibility predicate that requires the equality to identify at most one document
+   (`isEqualityExpressEligibleQuery`). **This is the file the `get_node` agent is changing**, which
+   is why nothing here was attempted.
+4. `get_children` needs no sort work: `(path, node_id)` are the trailing fields of
+   `allops_tree_parent_path` that the MinKey/MaxKey padding already walks in order.
+
+### The hazard, which is the real work
+
+`releaseResources()`/`restoreResources()` (`:747`, `:751`) currently only null and re-fetch
+`_indexCatalogEntry`, because a cursor that never outlives one call needs nothing else. A persisted
+cursor must be saved and restored across yields — `save()`, `restore()`,
+`detachFromOperationContext()`, `reattachToOperationContext()` — and a bounded scan yields *between*
+documents where a point lookup never did.
+
+Getting this wrong does not fail loudly; it returns wrong or duplicated rows under concurrent
+writes. **Whoever builds this must test under `internalQueryExecYieldIterations: 1`**, which the
+brief already requires, and should treat that as the acceptance gate rather than a formality. It is
+the reason this is a careful change rather than a small one, and the reason it was not started
+speculatively at the end of a long session in another agent's lane.
+
+### Why it is still the right lead
+
+L4a measured the envelope at **≈24 µs per command** against this operation's ≈92 µs — roughly 26% —
+where the plan-cache ceiling measured ≈9.5 µs. L3 found no hotspot to attack instead: the largest
+leaf in the whole profile is 2.10%. A fast path does not need a hotspot, because it skips layers
+rather than optimising one.
+
 ## Still to run
 
-- **L4** — extend a fast path to a bounded prefix scan (brief's fallback 1). This is now the
-  strongest remaining lead precisely *because* L3 found no hotspot: it does not attack a hot
-  function, it skips whole layers. The envelope is `getExecutorFind` at 24.60% inclusive plus part
-  of the ≈25 points of parse/acquire/reply inside `FindCmd::run`; L2 has already shown ≈8.6 of that
-  envelope is reachable by caching alone, so the headroom for skipping construction as well is the
-  remainder — **bounded, not measured**. Ceiling probe first. Coordinate with the `get_node` agent
-  before touching express files; they are mid-change on `express-compound-equality`, so this must
-  work behind a separate gate.
-- **L5** — the real M1 mechanism. **Not planned.** L2 priced it under the bar; it is recorded as
-  closed, not deferred.
+- **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver
+  already supports it (L4c), hazard identified (yield/restore of a persisted cursor). Belongs to
+  whoever owns `src/mongo/db/exec/express/`; the `get_node` agent has been sent L4a and L4b.
+- **L5** — the real M1 mechanism. **Not planned.** L2 priced it at a ≈−10.3% ceiling that a correct
+  build lands below, with less margin than the run-to-run floor. Closed, not deferred.
+
+---
+
+## Summary of the lane
+
+| lead | outcome |
+|---|---|
+| L0 | The brief's premise is 7.0.34's. Master dropped the SBE carve-out; the exclusion is now unconditional |
+| L1 | Relaxing the exclusion alone is **inert** — every path into the classic cache runs off a `MultiPlanStage` |
+| L2 | Ceiling for caching hinted single-solution plans: **≈−10.3% server CPU**, an upper bound |
+| L2a/L2b | Two wasted builds: master plans in a different file, and CBR owns its own single-solution exit |
+| L2e | Review found two wrong-results defects and one false claim of mine. All fixed |
+| L3 | **No hotspot exists.** Largest leaf 2.10%; allocator traffic 8.53% is the largest mechanism |
+| L4a | A fast path is worth **≈24 µs per command**, measured on a different shape |
+| L4b/L4c | Express already range-seeks; the restriction is two lines. Plan and hazard written up |
+
+**What MongoDB should take from this lane:** the plan-cache change is not worth building, and the
+reason is not that caching is cheap — it is that planning is only about a tenth of this operation,
+while 71% is fixed per-command cost with no concentrated term anywhere in it. The one change with
+room above the bar is extending express to a bounded prefix scan, and the machinery for it is
+almost entirely present already.
