@@ -1,0 +1,364 @@
+{
+  "path": "/000000/000007",
+  "reference_rows": 1404566,
+  "by_clients": {
+    "4": {
+      "blocks": [
+        {
+          "base": {
+            "ops": 8,
+            "elapsed_s": 17.125046795234084,
+            "throughput_ops_s": 0.467152008146711,
+            "server_cpu_us_per_op": 1283750.0,
+            "server_cpu_cores": 0.5997063904583402,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 15.860914607532322,
+            "throughput_ops_s": 0.5043845325414471,
+            "server_cpu_us_per_op": 1025000.0,
+            "server_cpu_cores": 0.5169941458549833,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 7.970109032056882,
+          "cpu_per_op_delta_pct": -20.15579357351509
+        },
+        {
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 16.64395529869944,
+            "throughput_ops_s": 0.48065497992686396,
+            "server_cpu_us_per_op": 1067500.0,
+            "server_cpu_cores": 0.5130991910719273,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "base": {
+            "ops": 8,
+            "elapsed_s": 16.84550680126995,
+            "throughput_ops_s": 0.4749040853669595,
+            "server_cpu_us_per_op": 1297500.0,
+            "server_cpu_cores": 0.6161880507636299,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 1.2109591677782028,
+          "cpu_per_op_delta_pct": -17.726396917148357
+        },
+        {
+          "base": {
+            "ops": 8,
+            "elapsed_s": 16.71900780312717,
+            "throughput_ops_s": 0.4784972944688535,
+            "server_cpu_us_per_op": 1275000.0,
+            "server_cpu_cores": 0.6100840504477881,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 17.112092722207308,
+            "throughput_ops_s": 0.46750564819099877,
+            "server_cpu_us_per_op": 1073750.0,
+            "server_cpu_cores": 0.501984189745085,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": -2.297117748608335,
+          "cpu_per_op_delta_pct": -15.784313725490195
+        },
+        {
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 16.435826380737126,
+            "throughput_ops_s": 0.4867415738448078,
+            "server_cpu_us_per_op": 1063750.0,
+            "server_cpu_cores": 0.5177713491774143,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "base": {
+            "ops": 8,
+            "elapsed_s": 16.0045322785154,
+            "throughput_ops_s": 0.49985840640524426,
+            "server_cpu_us_per_op": 1230000.0,
+            "server_cpu_cores": 0.6148258398784504,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": -2.624109626317339,
+          "cpu_per_op_delta_pct": -13.516260162601624
+        },
+        {
+          "base": {
+            "ops": 8,
+            "elapsed_s": 16.169011035002768,
+            "throughput_ops_s": 0.49477361247892987,
+            "server_cpu_us_per_op": 1240000.0,
+            "server_cpu_cores": 0.613519279473873,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 15.638302967883646,
+            "throughput_ops_s": 0.5115644591634774,
+            "server_cpu_us_per_op": 1016250.0000000019,
+            "server_cpu_cores": 0.5198773816248848,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 3.393642316618606,
+          "cpu_per_op_delta_pct": -18.04435483870953
+        }
+      ],
+      "bad_blocks": 0,
+      "paired_throughput_delta_pct": {
+        "median": 1.2109591677782028,
+        "min": -2.624109626317339,
+        "max": 7.970109032056882,
+        "blocks_improved": 3,
+        "blocks": 5
+      },
+      "paired_cpu_per_op_delta_pct": {
+        "median": -17.726396917148357,
+        "min": -20.15579357351509,
+        "max": -13.516260162601624,
+        "blocks_improved": 5,
+        "blocks": 5
+      }
+    },
+    "8": {
+      "blocks": [
+        {
+          "base": {
+            "ops": 7,
+            "elapsed_s": 22.822923879139125,
+            "throughput_ops_s": 0.3067091682498324,
+            "server_cpu_us_per_op": 1997142.857142857,
+            "server_cpu_cores": 0.6125420245903797,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 7,
+            "elapsed_s": 21.959370343014598,
+            "throughput_ops_s": 0.3187705244119962,
+            "server_cpu_us_per_op": 1612857.142857143,
+            "server_cpu_cores": 0.5141313172302052,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 3.932505908117867,
+          "cpu_per_op_delta_pct": -19.241773962803997
+        },
+        {
+          "fused": {
+            "ops": 5,
+            "elapsed_s": 19.140746289864182,
+            "throughput_ops_s": 0.26122283448517924,
+            "server_cpu_us_per_op": 1824000.0,
+            "server_cpu_cores": 0.4764704501009669,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "base": {
+            "ops": 7,
+            "elapsed_s": 22.634709854610264,
+            "throughput_ops_s": 0.30925954187012616,
+            "server_cpu_us_per_op": 1978571.4285714286,
+            "server_cpu_cores": 0.611892093557321,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": -15.532813343272679,
+          "cpu_per_op_delta_pct": -7.812274368231053
+        },
+        {
+          "base": {
+            "ops": 6,
+            "elapsed_s": 20.279189293272793,
+            "throughput_ops_s": 0.2958698157618351,
+            "server_cpu_us_per_op": 2078333.3333333333,
+            "server_cpu_cores": 0.614916100425014,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 5,
+            "elapsed_s": 18.99359994009137,
+            "throughput_ops_s": 0.26324656809508157,
+            "server_cpu_us_per_op": 1932000.0,
+            "server_cpu_cores": 0.5085923695596976,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": -11.026216913256903,
+          "cpu_per_op_delta_pct": -7.040898155573371
+        },
+        {
+          "fused": {
+            "ops": 6,
+            "elapsed_s": 20.362005309201777,
+            "throughput_ops_s": 0.2946664588722283,
+            "server_cpu_us_per_op": 1713333.3333333333,
+            "server_cpu_cores": 0.5048618662010845,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "base": {
+            "ops": 6,
+            "elapsed_s": 20.385395215824246,
+            "throughput_ops_s": 0.2943283628537393,
+            "server_cpu_us_per_op": 2098333.3333333335,
+            "server_cpu_cores": 0.6175990147214296,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 0.1148703492965808,
+          "cpu_per_op_delta_pct": -18.347895154884842
+        },
+        {
+          "base": {
+            "ops": 8,
+            "elapsed_s": 23.319193196482956,
+            "throughput_ops_s": 0.34306504228484946,
+            "server_cpu_us_per_op": 1787500.0,
+            "server_cpu_cores": 0.6132287630841685,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "fused": {
+            "ops": 8,
+            "elapsed_s": 22.763873586431146,
+            "throughput_ops_s": 0.3514340373410155,
+            "server_cpu_us_per_op": 1433750.0000000037,
+            "server_cpu_cores": 0.5038685510376822,
+            "distinct_results": [
+              [
+                1404566,
+                637696145
+              ]
+            ],
+            "errors": []
+          },
+          "throughput_delta_pct": 2.4394776571893484,
+          "cpu_per_op_delta_pct": -19.79020979020958
+        }
+      ],
+      "bad_blocks": 0,
+      "paired_throughput_delta_pct": {
+        "median": 0.1148703492965808,
+        "min": -15.532813343272679,
+        "max": 3.932505908117867,
+        "blocks_improved": 3,
+        "blocks": 5
+      },
+      "paired_cpu_per_op_delta_pct": {
+        "median": -18.347895154884842,
+        "min": -19.79020979020958,
+        "max": -7.040898155573371,
+        "blocks_improved": 5,
+        "blocks": 5
+      }
+    }
+  }
+}

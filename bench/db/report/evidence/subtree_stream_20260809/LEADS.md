@@ -254,7 +254,209 @@ the constructor.
 Outputs compared element-wise, in order: **identical**. The plan shape is the activation proof —
 the fused arm has no projection stage.
 
-Status: **built, correct on the target shape, measurement in progress.**
+### L2 — measured
+
+`bench_subtree_fused_ab.py`. Both arms in one mongod process against one dbpath and one warm WT
+cache; arms alternate inside every block with the leading arm rotating; each arm-block is a fixed
+wall-clock window with the query replayed back to back inside it and all three counters read over
+that same window; per-operation figures divide by the operations that actually completed. Output is
+compared element-wise against a reference on every block of both arms.
+
+**Three quantities, never interchanged.** `instructions:u` counts **user-space instructions only**.
+Server CPU is `utime + stime` from `/proc`, which **includes kernel time** — and this operation
+spends ~16% of its CPU in `sendto`. The fusion removes user-space work exclusively, so it is
+necessarily a larger share of user instructions than of total CPU. The gap between the two columns
+below is that, not a measurement disagreement, and neither number may be quoted as the other.
+
+Quiet box (load average 3.28), 10 blocks, 5 s windows (`ab_p50_p90.json`):
+
+| input | rows | retired instructions | server CPU | client wall | mismatches |
+|---|---|---|---|---|---|
+| P50 | 11,686 | **−15.50%** [−15.76, −15.16] | **−13.12%** [−15.35, −12.56] | **−6.24%** [−8.57, −4.75] | 0 |
+| P90 | 97,773 | **−15.56%** [−17.24, −13.54] | **−12.48%** [−16.59, −9.76] | **−5.40%** [−8.98, −2.48] | 0 |
+| tail | 1,404,566 | −11.69% [−23.43, −10.17] | **−12.63%** [−13.78, +14.66] | **−4.84%** [−5.75, +23.75] | 0 |
+
+All medians are paired per block. At P50 and P90, **10/10 blocks improved on every one of the six
+measurements** and every range is strictly negative. **The effect is flat across a 120× change in
+input size** — server CPU −12.5 to −13.1%, wall −4.8 to −6.2%, at 11,686, 97,773 and 1,404,566 rows.
+
+Two blemishes in the tail run, both stated rather than trimmed. Block 7 is a single outlier
+(+23.75% wall, +14.66% CPU, op counts 6 vs 5) from interference; blocks 0–6 run −2.0 to −5.8% wall
+and −10.9 to −13.8% CPU, and the medians are robust to it. And **the tail instruction column is not
+trustworthy**: the window loop *completes* the operation in flight when the deadline passes, so it
+overruns the perf window by up to one whole operation. At P50 (~200 operations per window) that is
+under 1%; at the tail (~7 per window) it is up to 14%, and it differs between arms whenever their
+op counts differ — which is exactly block 2's −23.43%. Wall and server CPU are measured over the
+loop's actual span and are unaffected. The harness now starts an operation only when it is expected
+to finish inside the window; the tail figures above predate that fix.
+
+An earlier run of the same P50 input (`ab_p50.json`, 3 s windows) was taken while a sibling agent
+was compiling at ~236% CPU — checked with `ps` before starting, so the contamination is recorded
+rather than inferred. It is retained because it shows which metric survives interference:
+instructions −15.33% [−17.02, −14.46] with 10/10 blocks improved, against server CPU −10.67% with a
+range of [−17.39, **+19.06**] and wall −3.49% with [−11.93, **+31.45**]. The instruction median
+moved 0.17 pp between the noisy and quiet runs; the wall median moved 2.75 pp.
+
+**Against the prediction recorded before building** — 12–18% of server CPU, 7–11% of wall:
+server CPU landed at −12.5 to −13.1%, at the bottom of the predicted band. Wall landed at
+−5.4 to −6.2%, **below** it. The prediction was right about the mechanism and optimistic about the
+payoff.
+
+**Against this project's bar (no single-digit percentages): it clears on server CPU and does not
+clear on client wall.** Server CPU is only ~59% of this operation; transmission (~20%) and client
+decode (~21%) are untouched, so a 13% cut in the server's share is a 6% cut in what the user waits
+for. That is the honest arithmetic and it is not improved by restating it.
+
+### L2 — non-intrusion
+
+`bench_subtree_fused_control.py`, same pairing discipline, 10 blocks, 3 s windows
+(`controls.json`). Three shapes the change must not damage:
+
+| control | rows | plan, base → fused | retired instructions | server CPU | client wall | mismatches |
+|---|---|---|---|---|---|---|
+| small covered result (fused) | 8 | `PROJECTION_COVERED, IXSCAN` → `IXSCAN` | **−2.34%** [−2.88, −1.02] | −1.04% | −1.04% | 0 |
+| uncovered, needs a FETCH (never eligible) | 1 | unchanged in both arms | **+0.10%** [−1.12, +0.46] | +0.62% | +0.94% | 0 |
+| covered scan with a residual filter (refused) | 8 | unchanged in both arms | **+0.07%** [−0.46, +0.46] | +1.33% | +0.82% | 0 |
+
+Small covered results — the seek fallback for the first key, and the overwhelming majority of real
+`find` traffic — do not regress; they improve slightly. The two shapes that never take the fused
+path cost **+0.10% and +0.07% of retired instructions**, which is indistinguishable from zero and
+is the price of the eligibility check plus one null-pointer branch in `IndexScan::doWork`. Their
+CPU and wall columns are noisier than their instruction columns because these queries run in
+microseconds, well under the 10 ms resolution of `/proc` CPU accounting per sample.
+
+**Two of these controls were wrong on the first attempt and are recorded because the corrections
+matter.** The residual-filter control originally used `node_id: {$gte: ""}`; the planner folded
+that into index bounds, leaving no filter, so the query fused and the control tested nothing. It
+now uses a non-anchored regex on an indexed field, which stays a residual filter, and the refusal
+is visible in the table above — `PROJECTION_COVERED` survives in both arms. The **jstest carried
+the identical flaw** (`{a: {$gte: 0}, b: 3}` on `{a,b,c}`) and would have asserted the right thing
+for the wrong reason; it was fixed the same way. Separately, `find_small_prefix` first selected a
+**1,338,993-row** range as the "small" control: it walked up from a leaf to the first prefix with
+at least 2 rows, and in this tree one step too far up multiplies the count by six orders of
+magnitude. It is now bounded to a [2, 64] band.
+
+### L2 — departures from the brief's instrumentation, and why
+
+- **Runtime knob instead of an env var read once at startup.** See above: the gate is read once per
+  plan build, never per key, so it cannot reach the hot loop, and one process against one dbpath is
+  a better-paired instrument than two processes against two clones.
+- **No activation counter printed at exit.** The brief asks for one. A static destructor writing to
+  stderr is a debugging artifact that would not survive review, and explain gives a stronger,
+  per-query proof that the plan fused. But explain does *not* distinguish the fused fast path from
+  the seek fallback inside the fused stage — they produce identical output — so that distinction is
+  established with a perf profile instead, below.
+
+### L2 — proof that the fast path is what ran
+
+Explain shows the *plan* fused. It cannot show whether the keys went through the fused fast path
+(`projectKeyValueView`, off `nextKeyValueView`) or the seek fallback (`projectMaterialisedKey`),
+because the two produce identical output. A perf profile separates them. Self time, 999 Hz, same
+P50 input, knob off then on:
+
+| symbol | knob off | knob on |
+|---|---|---|
+| `ProjectionStageCovered::transform` | 3.96% | **absent** |
+| `key_string::toBsonSafe` | 3.14% | **absent** |
+| `key_string::toBson` | 0.67% | **absent** |
+| `BSONObjBuilderBase::appendAs` | 2.13% | **absent** |
+| `key_string::toBsonProjectedSafe` | — | **5.33%** |
+| `IndexScan::projectKeyValueView` | — | **1.39%** |
+| `readCString` / `readCStringWithNuls` | 2.11% / 2.08% | 2.12% / 2.16% |
+
+The two materialisations collapse into one, the irreducible read is untouched, and
+`projectKeyValueView` — not `projectMaterialisedKey` — is what appears, so the fast path served the
+keys. **Read as presence and absence only.** These are two separate profiles with different total
+cycle counts, so the percentages are not comparable in magnitude across the columns.
+
+The same profile reports 6,562 µs/op server CPU against the base profile's 8,219. **That figure is
+unpaired and is not used.** Different runs, different binaries, minutes apart; this project has
+already had an unpaired −14% on this very operation become +0.5% when paired. The paired −13.12%
+stands.
+
+### L2 — correctness on values the dataset does not contain
+
+`layout2_view` holds nothing but ordinary strings, so the A/B's element-wise checks never exercise
+the decoder's hard paths. `bench_subtree_fused_types.py` builds those cases explicitly and runs
+every query with the knob off and on (`types_differential.json`):
+
+| case | rows | fused | identical |
+|---|---|---|---|
+| skip leading / trailing / both / no components | 11 each | yes | yes |
+| descending component, skip leading / middle | 50 each | yes | yes |
+| residual filter (non-anchored regex) | 19 | **refused** | yes |
+| multikey — plans with a FETCH, never covered | 3 | n/a, plan unchanged | yes |
+| single key, seek path only | 1 | yes | yes |
+| 2,000 rows at `internalQueryExecYieldIterations: 1` | 2,000 | yes | yes |
+
+Indexed values include embedded NULs in leading, trailing, doubled and lone positions, `Int64`,
+`Decimal128`, `null`, `true`, `Date`, `-0.0`, `MinKey`, `MaxKey`, a 500-character string and
+non-ASCII text. **All ten cases identical, plan shapes as expected.**
+
+A third instrument bug, recorded: the multikey case first reported a false failure because the
+harness inferred "fused" from the absence of `PROJECTION_COVERED` in the fused plan. A multikey
+index cannot serve a covered projection at all — that query plans `PROJECTION_SIMPLE, SORT, FETCH,
+IXSCAN` in both arms — so there was no covered projection to lose. Fusion is now inferred from the
+base plan having one and the fused plan not, and the case is relabelled: it shows the plan is
+untouched, and documents that **the stage builder's `shouldDedup` guard is not reachable through a
+covered projection** rather than claiming it was exercised. The jstest carried the same flaw and
+was corrected identically.
+
+### L2 — acceptance gate
+
+1. **Test that fails on the unpatched base.** `jstests/noPassthrough/query/fused_covered_projection.js`
+   — differential across the same cases as above. Under resmoke against the patched build: **all 3
+   tests passed in 0.73 s** (`no_passthrough` suite, `--dbpathPrefix` to a writable path; the
+   worktree needs `mongo`/`mongod` symlinks at its root, as the main checkout has).
+2. **Non-intrusion.** Table above: small covered results −2.34% instructions, never-eligible
+   FETCH +0.10%, refused residual filter +0.07%; `internalQueryExecYieldIterations: 1` over 2,000
+   rows returns identical output.
+3. **Locally-decidable safety.** The fused path holds an unowned `SortedDataKeyValueView` across
+   the decode. `handlePlanStageYield` (`plan_executor_impl.h:57-75`) is `try { return f(); } catch
+   { yieldHandler(); return NEED_YIELD; }` — on the success path it returns the lambda's value with
+   no `save()`, no further `next()`/`seek()`, and no cursor destruction, so the view is still valid
+   at the decode immediately after. The eligibility conditions the stage builder checks
+   (`filter`, `shouldDedup`, `addKeyMetadata`, inclusion-only, not `distinct`) are properties of the
+   solution node; the one condition it cannot know in advance, `_checker`, is created inside
+   `initIndexScan()` and is re-checked at runtime, with the materialising fallback behind it.
+4. **Error paths.** `toBsonProjectedSafe` raises the same `keyStringAssert`s as `toBsonSafe` on a
+   malformed key. Those are `uassert`s, not the storage exceptions `handlePlanStageYield` converts
+   to yields, so they propagate out of `doWork` exactly as they do today — the decode simply happens
+   in `IndexScan::doWork` instead of inside the WiredTiger cursor's `curr()`.
+
+### L2 — the tail under concurrency
+
+The prior work on this operation notes that **no input above 30,000 rows was ever run
+concurrently**, so the reads carrying most of the cohort's time had never been measured under load.
+`bench_subtree_fused_concurrency.py`, the 1,404,566-row subtree, 5 blocks × 12 s windows, arms
+alternating with rotating order (`concurrency_tail.json`):
+
+| clients | throughput | server CPU per operation | blocks with wrong output |
+|---|---|---|---|
+| 4 | +1.21% [−2.62, +7.97], 3/5 up | **−17.73%**, 5/5 down | 0 |
+| 8 | +0.11% [−15.53, +3.93], 3/5 up | **−18.35%**, 5/5 down | 0 |
+
+**Throughput is flat, and the run itself says why: mongod used 0.5–0.6 cores of 96.** The server was
+never the constrained resource. At these sizes each client streams ~614 MB and spends its time in
+PyMongo decoding 1.4M documents, so the whole arrangement is client-bound and a server-CPU saving
+has nothing to convert into. Reported as a null result, not as "+1.2% throughput": **this run does
+not show a throughput benefit, and it is not designed to.** Demonstrating one would need either many
+more clients or a client cheap enough to let mongod reach saturation, and neither was run.
+
+What it does establish, and what it was worth running for:
+
+- The CPU reduction **survives concurrency** — 5/5 blocks down at both client counts.
+- **Output is identical under concurrent load.** Each client folds its rows into a CRC and the row
+  count and CRC are compared against a reference captured outside the timed window; every block of
+  every arm at both client counts matched, and no client raised.
+- No pathology appears at 8 concurrent tail reads: no errors, no divergence, no collapse.
+
+One number is left unreconciled rather than smoothed over: server CPU per operation falls 17.7–18.4%
+here against **−12.63% measured single-client at the same input**. Both are paired per block, but
+they come from different harnesses measuring over different windows, and nothing here establishes
+which is the better estimate of the same quantity.
+
+Status: **built, correct, measured single-client and concurrent, non-intrusion shown, resmoke green.**
 
 ---
 

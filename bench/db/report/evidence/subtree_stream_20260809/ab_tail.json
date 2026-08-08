@@ -1,0 +1,183 @@
+{
+  "knob": "internalQueryEnableFusedCoveredProjection",
+  "port": 57018,
+  "seconds_per_window": 15.0,
+  "blocks": 8,
+  "inputs": {
+    "/000000/000007": {
+      "rows": 1404566,
+      "blocks": [
+        {
+          "base": {
+            "ops": 7,
+            "wall_us": 2390725.6621335233,
+            "cpu_us": 878571.4285714285,
+            "instructions": 7688372868.0
+          },
+          "fused": {
+            "ops": 7,
+            "wall_us": 2277571.9656742043,
+            "cpu_us": 764285.7142857143,
+            "instructions": 6876323398.142858
+          },
+          "wall_delta_pct": -4.733027224810849,
+          "cpu_delta_pct": -13.008130081300806,
+          "instr_delta_pct": -10.56204588147639
+        },
+        {
+          "fused": {
+            "ops": 7,
+            "wall_us": 2351329.992259187,
+            "cpu_us": 777142.8571428572,
+            "instructions": 6634644871.285714
+          },
+          "base": {
+            "ops": 7,
+            "wall_us": 2493441.057657557,
+            "cpu_us": 885714.2857142857,
+            "instructions": 7386158982.571428
+          },
+          "wall_delta_pct": -5.699395418308983,
+          "cpu_delta_pct": -12.25806451612903,
+          "instr_delta_pct": -10.174626799382548
+        },
+        {
+          "base": {
+            "ops": 6,
+            "wall_us": 2507100.53400447,
+            "cpu_us": 903333.3333333334,
+            "instructions": 8611331687.5
+          },
+          "fused": {
+            "ops": 7,
+            "wall_us": 2362853.139904993,
+            "cpu_us": 784285.7142857143,
+            "instructions": 6593868942.714286
+          },
+          "wall_delta_pct": -5.753554440398823,
+          "cpu_delta_pct": -13.178703215603582,
+          "instr_delta_pct": -23.427999501101716
+        },
+        {
+          "fused": {
+            "ops": 7,
+            "wall_us": 2302250.898709255,
+            "cpu_us": 765714.2857142857,
+            "instructions": 6819841914.285714
+          },
+          "base": {
+            "ops": 7,
+            "wall_us": 2430466.125852295,
+            "cpu_us": 884285.7142857143,
+            "instructions": 7621713507.0
+          },
+          "wall_delta_pct": -5.2753348742138435,
+          "cpu_delta_pct": -13.408723747980622,
+          "instr_delta_pct": -10.520883420477878
+        },
+        {
+          "base": {
+            "ops": 7,
+            "wall_us": 2454249.5137346643,
+            "cpu_us": 891428.5714285715,
+            "instructions": 7536757990.0
+          },
+          "fused": {
+            "ops": 7,
+            "wall_us": 2332990.728451737,
+            "cpu_us": 768571.4285714285,
+            "instructions": 6678383024.142858
+          },
+          "wall_delta_pct": -4.9407684346815195,
+          "cpu_delta_pct": -13.782051282051288,
+          "instr_delta_pct": -11.38918042739412
+        },
+        {
+          "fused": {
+            "ops": 7,
+            "wall_us": 2332225.135660597,
+            "cpu_us": 771428.5714285715,
+            "instructions": 6678402018.714286
+          },
+          "base": {
+            "ops": 7,
+            "wall_us": 2442497.421056032,
+            "cpu_us": 877142.8571428572,
+            "instructions": 7587978785.571428
+          },
+          "wall_delta_pct": -4.514734977601654,
+          "cpu_delta_pct": -12.052117263843643,
+          "instr_delta_pct": -11.987075775524126
+        },
+        {
+          "base": {
+            "ops": 7,
+            "wall_us": 2497318.9809492654,
+            "cpu_us": 894285.7142857143,
+            "instructions": 7386696928.714286
+          },
+          "fused": {
+            "ops": 7,
+            "wall_us": 2446704.185035612,
+            "cpu_us": 797142.8571428572,
+            "instructions": 6423847571.142858
+          },
+          "wall_delta_pct": -2.026765355157556,
+          "cpu_delta_pct": -10.862619808306706,
+          "instr_delta_pct": -13.034910825006873
+        },
+        {
+          "fused": {
+            "ops": 5,
+            "wall_us": 3582341.251336038,
+            "cpu_us": 1202000.0,
+            "instructions": 5972808028.8
+          },
+          "base": {
+            "ops": 6,
+            "wall_us": 2894936.7868093154,
+            "cpu_us": 1048333.3333333334,
+            "instructions": 7457175456.5
+          },
+          "wall_delta_pct": 23.745059569482095,
+          "cpu_delta_pct": 14.658187599364059,
+          "instr_delta_pct": -19.905223316237787
+        }
+      ],
+      "mismatches": 0,
+      "paired_wall_delta_pct": {
+        "median": -4.836897829746184,
+        "min": -5.753554440398823,
+        "max": 23.745059569482095,
+        "blocks": 8,
+        "blocks_improved": 7
+      },
+      "paired_cpu_delta_pct": {
+        "median": -12.633097298714919,
+        "min": -13.782051282051288,
+        "max": 14.658187599364059,
+        "blocks": 8,
+        "blocks_improved": 7
+      },
+      "paired_instr_delta_pct": {
+        "median": -11.688128101459123,
+        "min": -23.427999501101716,
+        "max": -10.174626799382548,
+        "blocks": 8,
+        "blocks_improved": 8
+      }
+    }
+  },
+  "idle_instructions_per_window": 42175402.0,
+  "activation": {
+    "/000000/000007": {
+      "base_stages": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_stages": [
+        "IXSCAN"
+      ]
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "cases": [
+    {
+      "case": "types/skip-leading",
+      "rows": 11,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "types/skip-trailing",
+      "rows": 11,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "types/skip-both-sides",
+      "rows": 11,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "types/all-components",
+      "rows": 11,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "descending/skip-leading",
+      "rows": 50,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "descending/skip-middle",
+      "rows": 50,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "refused/residual-filter",
+      "rows": 19,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused": false
+    },
+    {
+      "case": "untouched/multikey-fetch",
+      "rows": 3,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_SIMPLE",
+        "SORT",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "PROJECTION_SIMPLE",
+        "SORT",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "fused": false
+    },
+    {
+      "case": "single-key-seek-path",
+      "rows": 1,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    },
+    {
+      "case": "yield-every-work",
+      "rows": 2000,
+      "identical": true,
+      "base_plan": [
+        "PROJECTION_COVERED",
+        "IXSCAN"
+      ],
+      "fused_plan": [
+        "IXSCAN"
+      ],
+      "fused": true
+    }
+  ],
+  "failures": []
+}
