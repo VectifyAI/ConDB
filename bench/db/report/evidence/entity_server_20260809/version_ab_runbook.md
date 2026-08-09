@@ -91,3 +91,26 @@ the delta is robust to it, but the absolute numbers are only meaningful pinned.
 The quiet run is the one quoted. Its 7.0.34 arm at 45.00 us sits 0.4 us from the 45.354 us the
 containerised instance measures by a different instrument, which is the check that the host
 reproduction is faithful.
+
+
+## Profiling both versions, and a mistake worth recording
+
+The server-side target list in `get_entity.md` §2a and §2b was built from a 7.0.34 capture, because
+that is what the instance holding the dataset runs. That is the wrong binary to aim a patch at:
+master serves this operation through `EXPRESS_IXSCAN`, not `PROJECTION_SIMPLE → IDHACK`, and has
+already removed one of the items the list contains (M6). So both versions are profiled here, and
+for the same reason the two arms of the timing comparison are host processes — a container capture
+and a host capture do not have the same transport and their transport terms cannot be compared.
+
+`bench/db/drive_entity_workload.py` runs the shape at one server on a single connection and reports
+that connection's server-side thread id, so `perf record --tid` attaches to the thread doing the
+work. It picks the thread by which `conn` thread actually burns CPU rather than assuming there is
+one: the client also opens connections for the topology monitor and the RTT sampler.
+
+**Two captures were thrown away rather than used.** The first was taken at load average 104 while a
+sibling build ran; it is retained as `.underload.perf.data` and nothing is drawn from it except one
+observation that does not depend on load — `nft_do_chain` appears on host loopback, so the
+netfilter cost the origin split attributed to the container is not container-only. The second pair
+was lost to my own mistake: two capture jobs were left queued at once, and both ran, each
+contaminating the other's profile with its own workload. Both were deleted and the capture script
+now takes a lock and refuses to run alongside another.
