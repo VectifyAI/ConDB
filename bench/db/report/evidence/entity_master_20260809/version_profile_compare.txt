@@ -1,0 +1,60 @@
+# 7.0.34: 108,467 samples at 45.0 us/op
+# master: 108,417 samples at 38.11 us/op
+
+decompression, which must be alike or the captures are not:
+  7.0.34      0.000 us      master      0.000 us
+
+origin          7.0.34      master     delta
+mongod          23.865      18.392    -5.474
+kernel          10.043       9.427    -0.616
+wt               6.322       4.842    -1.480
+edr              2.637       2.567    -0.070
+alloc            2.132       2.882    +0.749
+MongoDB         32.320      26.116    -6.204
+
+top 25 leaf frames of MongoDB's own code on master
+   2.163 us  ( 1.56 on 7.0.34, +0.60)  [wt    ] __wt_row_search
+   0.932 us  ( 0.78 on 7.0.34, +0.15)  [mongod] __memmove_avx512_unaligned_erms
+   0.755 us  ( 0.00 on 7.0.34, +0.75)  [wt    ] __wt_row_leaf_key
+   0.749 us  ( 0.00 on 7.0.34, +0.75)  [alloc ] tcmalloc::tcmalloc_internal::TCMallocPolicy<tcmalloc::tcmalloc_interna
+   0.484 us  ( 0.00 on 7.0.34, +0.48)  [alloc ] tcmalloc::tcmalloc_internal::FreeWithHooksOrPerThread
+   0.482 us  ( 0.46 on 7.0.34, +0.02)  [wt    ] __wt_page_in_func
+   0.452 us  ( 0.74 on 7.0.34, -0.28)  [alloc ] operator delete[]
+   0.431 us  ( 0.00 on 7.0.34, +0.43)  [alloc ] tcmalloc::tcmalloc_internal::TCMallocPolicy<tcmalloc::tcmalloc_interna
+   0.371 us  ( 1.15 on 7.0.34, -0.78)  [alloc ] operator new[]
+   0.355 us  ( 0.00 on 7.0.34, +0.36)  [alloc ] tcmalloc::tcmalloc_internal::FreeSmallSlow
+   0.327 us  ( 0.18 on 7.0.34, +0.14)  [mongod] mongo::(anonymous namespace)::FindCmd::Invocation::run
+   0.249 us  ( 0.06 on 7.0.34, +0.19)  [mongod] mongo::(anonymous namespace)::executeCommand
+   0.234 us  ( 0.00 on 7.0.34, +0.23)  [mongod] mongo::decorable_detail::DecorationBuffer<mongo::OperationContext>::_t
+   0.200 us  ( 0.00 on 7.0.34, +0.20)  [mongod] mongo::decorable_detail::DecorationBuffer<mongo::OperationContext>::_c
+   0.156 us  ( 0.17 on 7.0.34, -0.01)  [mongod] mongo::FindCommandRequestBase::parseProtected
+   0.147 us  ( 0.10 on 7.0.34, +0.05)  [mongod] mongo::FieldPath::FieldPath
+   0.140 us  ( 0.30 on 7.0.34, -0.16)  [mongod] pthread_mutex_unlock@@GLIBC_2.2.5
+   0.131 us  ( 0.00 on 7.0.34, +0.13)  [mongod] mongo::DatabaseName::Storage::Storage
+   0.123 us  ( 0.00 on 7.0.34, +0.12)  [mongod] mongo::shard_role_details::acquireCollectionsOrViewsLockFree
+   0.120 us  ( 0.00 on 7.0.34, +0.12)  [mongod] mongo::otel::metrics::ScalarMetricImpl<long>::add
+   0.118 us  ( 0.40 on 7.0.34, -0.28)  [mongod] pthread_mutex_lock@@GLIBC_2.2.5
+   0.116 us  ( 0.07 on 7.0.34, +0.05)  [mongod] mongo::recordCurOpMetrics
+   0.112 us  ( 0.00 on 7.0.34, +0.11)  [mongod] mongo::fieldPathWithValidationStatus
+   0.099 us  ( 0.13 on 7.0.34, -0.03)  [mongod] __memchr_evex
+   0.097 us  ( 0.04 on 7.0.34, +0.06)  [wt    ] __wt_session_gen_leave
+
+largest movers, 7.0.34 -> master
+  down most on master:
+    -0.915 us  __wt_row_leaf_key.constprop.0
+    -0.783 us  operator new[]
+    -0.694 us  __wt_lex_compare_short
+    -0.647 us  [[kernel.kallsyms]]
+    -0.620 us  __strlen_evex
+    -0.590 us  __config_next
+    -0.446 us  std::_Sp_counted_base<(__gnu_cxx::_Lock_policy)2>::_M_release
+    -0.337 us  mongo::intrusive_ptr_release
+  up most on master:
+    +0.755 us  __wt_row_leaf_key
+    +0.749 us  tcmalloc::tcmalloc_internal::TCMallocPolicy<tcmalloc::tcmalloc_internal::C
+    +0.601 us  __wt_row_search
+    +0.484 us  tcmalloc::tcmalloc_internal::FreeWithHooksOrPerThread
+    +0.431 us  tcmalloc::tcmalloc_internal::TCMallocPolicy<tcmalloc::tcmalloc_internal::C
+    +0.355 us  tcmalloc::tcmalloc_internal::FreeSmallSlow
+    +0.234 us  mongo::decorable_detail::DecorationBuffer<mongo::OperationContext>::_tearD
+    +0.200 us  mongo::decorable_detail::DecorationBuffer<mongo::OperationContext>::_const

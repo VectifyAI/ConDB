@@ -223,6 +223,62 @@ of uncompressed documents in an 8 GB cache, meant whichever arm ran first paid t
 the ids for the second — 90-117 µs against 44, flipping with the block parity. With a warmed fixed
 working set the null test reports **+0.00 µs**, and only then was the comparison run.
 
+### 2c.1 Where master's 6.74 µs went, and what it left behind
+
+Both versions profiled the same way — host processes, same collection, same 40,000-id working set,
+both driven for 60 seconds before perf attached, both captured at load average under 3. Scaled by
+the server CPU each was measured at. `bench/db/compare_version_profiles.py`, evidence in
+`report/evidence/entity_master_20260809/`.
+
+By origin (µs of the 45.00 and 38.11):
+
+| origin | 7.0.34 | master | delta |
+|---|---|---|---|
+| `mongod` | 23.865 | 18.392 | −5.474 |
+| WiredTiger | 6.322 | 4.842 | −1.480 |
+| allocator | 2.132 | 2.882 | **+0.749** |
+| **MongoDB's own code** | **32.320** | **26.116** | **−6.204** |
+| kernel | 10.043 | 9.427 | −0.616 |
+| EDR / netfilter | 2.637 | 2.567 | −0.070 |
+
+**The whole saving is MongoDB's own code.** Kernel and netfilter move by 0.69 µs between them,
+which is what says the two arms really are on the same transport.
+
+Grouped by what the work is, with symbols that only split because master inlines them differently
+merged — `__wt_row_leaf_key.constprop.0` becoming `__wt_row_leaf_key`, and tcmalloc's `operator
+new[]` becoming its `TCMallocPolicy` template, are renamings and not changes:
+
+| | 7.0.34 | master | delta |
+|---|---|---|---|
+| reference counting | 1.074 | 0.065 | **−1.008** |
+| WiredTiger config parsing | 0.793 | 0.043 | **−0.750** |
+| document copy | 1.432 | 0.963 | −0.469 |
+| WiredTiger row lookup | 3.632 | 3.399 | −0.233 |
+| **`OperationContext` decorations** | 0.000 | 0.608 | **+0.608** |
+| **allocator** | 1.992 | 2.881 | **+0.889** |
+
+- **Reference counting is nearly gone.** `_Sp_counted_base::_M_release`, `_M_add_ref_copy` and
+  `intrusive_ptr_release` are 1.07 µs on 7.0.34 and 0.07 on master. That is the largest single
+  component of the saving and it was not predicted by anything in §2a.
+- **M6 is confirmed by measurement, not just by reading the source**: WiredTiger config parsing
+  falls from 0.793 µs to 0.043. The compiled-configuration change does what §2's source reading said
+  it would.
+- **Two things master pays that 7.0.34 does not.** `DecorationBuffer<OperationContext>` construction
+  and teardown is 0.608 µs, absent from 7.0.34's profile entirely, and the allocator is 0.889 µs
+  more expensive. Both are on the path of every operation, not only this one.
+
+**So the target list for master — the binary a patch would land in — is not the one §2a produced
+for 7.0.34.** The largest MongoDB-attributable item on master is the allocator at 2.88 µs, 7.6% of
+the operation, followed by WiredTiger's row lookup at 3.40 µs, which is the actual index traversal
+and not obviously removable. It is still flat: nothing on master is worth more than about 3 µs.
+
+**One capture was thrown away to get here.** The first pair had master long-running and 7.0.34
+freshly loaded, and 7.0.34's profile carried 2.211 µs of snappy decompression against master's
+*exactly* zero — and exactly zero is not a shape a version difference produces. Re-captured with
+both driven 60 seconds before attaching, decompression is 0.000 on both sides and the
+MongoDB-code delta is unchanged at −6.204 µs against −6.178. The artifact moved where the time was
+attributed inside `mongod` without changing the total, which is the reassuring outcome.
+
 ## 3. Two version traps
 
 - **`get_entity` does not use the `EXPRESS` executor.** Express is 8.0+ and the measured server is
