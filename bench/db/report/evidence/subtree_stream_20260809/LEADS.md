@@ -829,3 +829,41 @@ Status: **settled, positive, and the most actionable result in this log.** Recom
 not a mongod change but a question to the drivers team: what is the restriction actually protecting
 against, given the server streams correctly through a two-shard merge?
 
+Packaged for someone else to run at `mongos_exhaust_repro/` — a cluster script parameterised by
+`MONGO_BIN`, a probe whose only dependency is PyMongo's `bson` module, and a README stating the
+question, the evidence and its limits. Verified by running the packaged scripts from a clean state
+rather than assuming they work; on an idle machine the two-shard run came out at −24.31% over 6/6
+blocks, tighter than the −19.40% taken while the machine was busy. Both are reported.
+
+---
+
+## L6 — the recommendation against building it, now backed by a count rather than an impression
+
+The earlier entry called this "express-executor-scale surgery" on impression. Two things now make
+that concrete.
+
+**Scope, counted.** Capturing the Document round-trip means changing what a `WorkingSetMember`
+carries for an owned object. `member->doc` has **38 references across 20 files**, all of them core
+query execution — `update_stage`, `delete_stage`, `batched_delete_stage`, `timeseries_modify`,
+`geo_near`, `sort`, `shard_filter`, `return_key`, `idhack`, `distinct_scan`, `text_match`,
+`unpack_timeseries_bucket` and the rest. The type is already marked
+`[[MONGO_MOD_NEEDS_REPLACEMENT]]`. Adding a second representation alongside the existing one would
+give a core type two sources of truth, which is worse than changing it outright.
+
+**Payoff, discounted by a measured calibration.** The profile attributes ~6% of server CPU to the
+round-trip (`DocumentStorage::reset` 3.30, `Document::toBson` 1.29, `transitionMemberToOwnedObj`
+0.91, metadata assignment ~0.86). But L4a gives a calibration for how much of a profile's self time
+is actually *removable*: it attacked the `Document::toBson` half, which the profile put at 1.29%,
+and the measured saving was **0.68%** — the replacement path is not free either. Applying that
+roughly 2× discount, the Document round-trip is worth about **3% of server CPU, under 2% of wall.**
+
+Full L6 — also eliminating the `BSONArrayBuilder` copy into the reply, 3.24% plus a share of
+`__memmove_avx512` — needs the reply sink threaded down through the executor on top of that, and
+would land somewhere near 6% of wall at best.
+
+**Recommendation stands: do not build it.** Two to six percent of wall, for a change across 20 files
+of core query execution to a type the codebase has already flagged for replacement, on an operation
+where 44% of the time is outside the server's reach entirely. The same effort spent on the driver
+question in L7 is worth an order of magnitude more.
+
+
