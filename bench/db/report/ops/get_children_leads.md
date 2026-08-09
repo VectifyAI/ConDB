@@ -670,6 +670,88 @@ construct an executor. On this shape the cache costs slightly more than it saves
 collection — a collection with fewer would discriminate more cheaply and the sign could flip. One
 shape, one build.
 
+## L7 — built it: express prefix scan, **−20.8% instructions / −35.5% server CPU / −18.5% wall**
+
+Implemented, verified and measured. Branch `express-prefix-scan`, Draft PR
+`carsontung666/mongo#6`. Artifacts `runs/getchildren_plancache_20260809/express_rot{0,1,2}.json`
+and `express_instructions.json`.
+
+### Result
+
+Three campaigns, 20 blocks x 40 sweeps x 64 parents, gate rotated across three ports and three
+byte-identical dbpath copies, on a box verified quiet first.
+
+| instrument | effect | control floor |
+|---|---|---|
+| **retired instructions** | **−20.81%** (blocks [−22.20, −20.17]) | −0.16% |
+| **server CPU** | **−35.48% / −35.44% / −36.09%** | +0.91% / −0.30% / +1.37% |
+| **client wall** | −18.27% / −18.48% / −19.57% | — |
+
+**60 of 60 blocks improved.** Absolute server CPU falls from 93.5–97.8 µs to 60.0–64.6 µs.
+
+Instructions and CPU are separate quantities and are not combined. Instructions is the figure that
+transfers between machines; CPU is what this server actually spends. **CPU falls further than
+instructions** — about 35% against 21% — which means express also raises instructions-per-cycle by
+roughly a fifth. The stage tree's virtual dispatch and `WorkingSet` indirection have worse locality
+than straight-line code. Both numbers are real; neither is the "right" one on its own.
+
+### Correctness gate, run before any number was believed
+
+`bench/db/verify_express_prefix_scan.py`, gated against ungated on byte-identical data:
+`explain` shows `EXPRESS_IXSCAN` against `PROJECTION_SIMPLE`/`FETCH`/`IXSCAN`; 660 rows over 64
+parents identical element-wise and in order; absent parent returns nothing; a 5,000-row scan across
+~49 batches identical with no duplicates; **the same under `internalQueryExecYieldIterations=1`**,
+which yields between essentially every document; and five shapes the eligibility must refuse fall
+back correctly. All passed.
+
+The first of those is the one that matters most: without asserting express is actually selected,
+every other check passes while measuring nothing.
+
+### I was wrong about the size, in the conservative direction
+
+L4a derived an envelope of ≈24 µs from the `_id` express-vs-hinted lever and said, in as many words,
+that a bounded-scan fast path "would recover **less** than 24 µs — never more". **The measured
+saving is ≈33 µs.** The reasoning error is worth recording because it was not a rounding matter:
+
+the lever measured a **one-row** query, so it priced only the *fixed* per-command cost express
+removes. For an eleven-row shape express additionally removes the per-row stage machinery — the
+`PROJECTION_SIMPLE` and `FETCH` stages and the `PlanStage::work()` dispatch for every row. L3's own
+profile had that in it all along: `PlanExecutorImpl::getNextBatch` at **14.87% inclusive**, with
+`PlanStage::work` 13.82% and `ProjectionStage::doWork` 13.78% underneath. I read those as "the
+per-row side is closed" when they were in fact more of what a fast path deletes.
+
+So the transfer rule "fixed cost transfers between shapes" was right, but incomplete: the fast path
+does not only remove fixed cost.
+
+### What the change is
+
+Most of it already existed, which is why it is small. `LookupViaUserIndex::consumeOne` already seeks
+an equality *range* with an end position, and `PlanExecutorExpress::getNext` already loops. The
+restriction was the iterator setting `_exhausted` after one document and rebuilding its cursor
+locally each call.
+
+Three things were needed beyond that:
+
+1. **`PrefixScanViaUserIndex`**, a new iterator rather than a change to `LookupViaUserIndex`, so the
+   point-lookup path is untouched and so this does not collide with the `get_node` agent's
+   compound-equality work in the same class.
+2. **No cursor across a yield.** `releaseResources()` drops it; the next call re-seeks past the last
+   key returned. `PlanExecutorExpress::detachFromOperationContext` only swaps its `OperationContext`
+   pointer and does not reach into the plan, so a held cursor would keep a dangling one. This is the
+   hazard L4c flagged, sidestepped rather than solved.
+3. **`stashResult()` implemented.** It was `MONGO_UNREACHABLE_TASSERT(8375808)` — sound for a plan
+   that cannot overflow a batch, fatal for one that can. This is the concrete form of the
+   ClientCursor problem the `get_node` agent identified, and why the shipped eligibility rejects
+   `batchSize`.
+
+### Limits
+
+One shape, one workload, one build. Eligibility rejects `batchSize`, so a client that sets one gets
+the old path — lifting that needs the ClientCursor question settled, not just `stashResult`.
+Multikey indexes are refused outright rather than reasoned about. The resume semantics are "after
+the last key returned", which matches an index scan across a yield but has not been tested against
+concurrent writers beyond the yield-forcing test. No jstest yet.
+
 ## Still to run
 
 - **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver
