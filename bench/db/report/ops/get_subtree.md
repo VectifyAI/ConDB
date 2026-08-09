@@ -8,6 +8,13 @@ only in §6, as evidence bounding what a server change is worth.
 **MongoDB 18.1 / 208.1 ms against PostgreSQL 13.6 / 164.9 ms (P50 / P95), 1.33×** — the narrowest
 headline ratio of the four, and the only gap measured in milliseconds.
 
+> **Two findings supersede the original recommendation; §9 lists every correction.** The change this
+> document asked for — mongod transmitting before a batch is full — cannot be built, for reasons
+> that are protocol-level rather than effort-level. The overlap it was meant to deliver is already
+> available through an exhaust cursor, **including behind `mongos`**, which this document previously
+> and wrongly said was impossible. The server change that *was* built and measured is M1b:
+> −13.1% server CPU, −6.4% client wall at the cohort P50.
+
 The query is a hinted root lookup followed by a hinted range scan over
 `layout2_rootcause_exact_cover`, an exactly-covering index on `(path, node_id, title, summary)`,
 projecting `{node_id, title, summary}` sorted `(path, node_id)`. It runs `PROJECTION_COVERED` over
@@ -40,6 +47,9 @@ wall time**. The difference is not work. It is that MongoDB's server and client 
 time.
 
 ## 2. The mechanism: batch assembly serializes the two sides
+
+*The measurements in this section stand. The conclusion originally drawn from them — that `mongod`
+should transmit before the batch is full — does not; see M1 and §9.*
 
 `mongod` assembles a `find`/`getMore` batch **to completion** before any of it reaches the transport.
 `src/mongo/db/query/find_common.cpp:63` sets `kMaxBytesToReturnToClientAtOnce` to
@@ -102,24 +112,94 @@ is not established either way.
 
 ## 4. What MongoDB should change
 
-### M1 — Transmit before the batch is full · `mongod` · ~40% of wall · **the largest single item in this project**
+### M1 — Let sharded deployments use the exhaust cursor they already have · **no server work needed**
 
-The machinery already exists: `src/mongo/transport/session_workflow.cpp:292`, `makeExhaustMessage`,
-sets `kMoreToCome` (at `:328`) and makes the server produce without waiting for a `getMore`. What is
-missing is that it only happens when the client asks for an exhaust cursor, and exhaust is
-unavailable behind `mongos`. **A server that began transmitting before the batch filled would deliver
-the same overlap to every driver and to sharded deployments**, with none of §6's restrictions.
+*Replaces an earlier recommendation that mongod be changed to transmit before a batch is full. That
+recommendation was wrong twice over; both errors are recorded in §9.*
 
-Bound, from the driver-side proxy in §6, measured **against MongoDB's own baseline** (§6's table uses
-the same phrase for a comparison against PostgreSQL — they are different quantities): **−40.5%
-cohort-weighted** over 200 subtrees (pass 2: −41.7%), **−28.2% at the per-subtree median**, and −40
-to −46% on individual large reads.
+The overlap an exhaust cursor buys — bounded at about 40% of wall in §6 — was treated here as
+unreachable for sharded deployments because exhaust "is refused behind `mongos`". **It is not.
+`mongos` implements exhaust in full**, and the refusal is imposed by the driver before anything
+reaches the wire:
 
-The bound is imperfect in one respect: the proxy moves two levers, and §6 item 1 shows exhaust alone
-is +2.0% at the median. A streaming server would plausibly make batch size moot, but nothing measured
-here establishes that.
+- `src/mongo/s/commands/strategy.cpp:488` — `opCtx->setExhaust(OpMsg::isFlagSet(m,
+  OpMsg::kExhaustSupported))`
+- `src/mongo/s/commands/query_cmd/cluster_getmore_cmd.h:111-115` — `if (opCtx->isExhaust() &&
+  response.getCursorId() != 0) reply->setNextInvocation(boost::none);`
+- `src/mongo/s/commands/strategy.cpp:1332-1337` — propagates `shouldRunAgainForExhaust` into the
+  `DbResponse`
 
-Target version: master; cannot be prototyped on 7.0.34 without back-porting.
+against PyMongo 4.12.0:
+
+```python
+if self._cursor_type == CursorType.EXHAUST:
+    if self._collection.database.client.is_mongos:
+        raise InvalidOperation("Exhaust cursors are not supported by mongos")
+```
+
+Every measurement in this project went through PyMongo, and no experiment run through PyMongo can
+distinguish "mongos cannot do this" from "the driver will not ask". That is why the claim survived.
+
+**Verified on the wire.** `bench/db/exhaust_through_mongos.py` speaks OP_MSG over a raw socket, sets
+`exhaustAllowed` itself, and counts replies to a *single* `getMore` by decoding `flagBits`; nothing
+is inferred from timing. Cluster from `bench/db/setup_sharded_for_exhaust.sh`.
+
+| endpoint | replies to one `getMore` | unsolicited | rows |
+|---|---|---|---|
+| standalone `mongod` (instrument check) | 11 | 10 | 11,686 |
+| **`mongos`, one shard** | **20** | **19** | 20,000 |
+| **`mongos`, two shards, merged** | **20** | **19** | 20,000 |
+
+It streams through a router, and keeps streaming when `mongos` merges two shards — the case most
+likely to have broken.
+
+**What it is worth.** Same client, same socket, same batch size; only the `exhaustAllowed` flag
+differs. Paired, arms alternating within blocks:
+
+| cluster | paired delta | blocks faster | median |
+|---|---|---|---|
+| one shard | **−23.41%** [−26.65, −8.91] | 8/8 | 20.2 ms vs 26.0 ms |
+| two shards | −19.40% [−56.15, +7.86] | 6/8 | 39.3 ms vs 52.0 ms |
+
+The single-shard figure is the trustworthy one; the two-shard run is directionally the same but far
+noisier and is corroboration of direction only.
+
+**The ask is not a mongod change.** It is a question for whoever owns the driver restriction: what
+is it protecting against, given the server streams correctly through a two-shard merge? An exhaust
+cursor monopolises its connection for the cursor's lifetime, which has pooling consequences behind a
+router fronting many shards, and interaction with retryable reads, load-balancer mode and failover
+is untested here. Any of those may be a good reason. **"Exhaust cursors are not supported by
+mongos" is not one, because the server supports them.**
+
+Scope: one `mongos`, two single-node shards, no auth, no load balancer, no failover, a synthetic
+collection, and a client that is not a production driver. Sized to answer a protocol question, not
+to produce a throughput number.
+
+### M1b — Fold the covered projection into the index scan · `mongod` · **implemented and measured**
+
+The one server change from this work that was built and kept. A `PROJECTION_COVERED` directly above
+an `IXSCAN` reads a key the scan has just materialised in full and copies it again: the storage
+cursor decodes every component into a `BSONObj` with placeholder field names, the projection stage
+walks it and builds a second object with real names, and components the projection does not want
+were decoded for nothing.
+
+When nothing else consumes the materialised key, the scan decodes straight into the projected object
+via `SortedDataKeyValueView` — the zero-copy API SBE and express already use and classic `IndexScan`
+did not. Excluded components are still decoded, into a reused scratch buffer, because
+`key_string::TypeBits::Reader` is positional and skipping one desynchronises the rest.
+
+Measured on 10M documents, paired per block, arms alternating in one process against one dbpath:
+
+| rows | retired instructions | server CPU | client wall |
+|---|---|---|---|
+| 11,686 | −13.80% | −13.12% | −6.36% |
+| 97,773 | −14.58% | −11.95% | −5.18% |
+| 1,404,566 | −14.47% | −13.04% | −5.23% |
+
+Every block improved on every measurement; no output differences. Shapes that cannot fuse cost
++0.06% and +0.02% of retired instructions. **Wall improves by less than CPU because the server is
+only ~55% of this operation** — transmission and client-side BSON decode are untouched. Off by
+default behind `internalQueryEnableFusedCoveredProjection`.
 
 ### M2 — Non-key payload columns in indexes · `mongod` · attacks 36.6% of server CPU · **feature, not a patch**
 
@@ -133,7 +213,12 @@ to "why is MongoDB's covered scan more expensive than PostgreSQL's" and because 
 stored payload uninterpreted would also make M3 unnecessary. It is a storage-format change, which is
 a different class of work from the rest of this list.
 
-### M3 — Fuse the covered-projection decode · `mongod` · −4 to −6% CPU on a microbenchmark
+### M3 — Fuse the covered-projection decode · **superseded by M1b**
+
+*Kept as the record of what was known before the work was done. M1b is this idea built against
+the real operation; it measures −13.1% of server CPU at the cohort P50, not the −4 to −6% a
+microbenchmark suggested, because the implemented version also removes the intermediate key
+object rather than only the second copy.*
 
 `mongodb_recheck_20260806/covered_fused/` implements `key_string::toBsonProjectedSafe()`, decoding
 components in order while emitting only the wanted ones — the intermediate BSON object the current
@@ -185,11 +270,13 @@ three → **−0.9%**; the 18 inputs above 100k rows → **+8.0%**. By band the 
 PostgreSQL below 10k rows, +10.1% from 10–20k, −13.5% from 50–100k, −14.3% above 100k. **The typical
 request remains 8–10% slower than PostgreSQL.**
 
-**Why a MongoDB user cannot be told to do this.** Exhaust cursors are refused behind `mongos`
-(`pymongo/synchronous/cursor.py:253`, `:398`) and incompatible with automatic encryption (`:1099`) —
-excluding every sharded deployment and every cluster fronted by a router. They cannot be combined
-with `limit()` (`:456`). **That exclusion is the argument for M1**: the capability exists in the
-server and is reachable only through a client option most deployments cannot use.
+**Why this looked unusable — and the part of that which is wrong.** PyMongo refuses exhaust behind
+`mongos` (`pymongo/synchronous/cursor.py`), refuses it with automatic encryption (`:1099`), and will
+not combine it with `limit()` (`:456`). The encryption and `limit()` restrictions stand. **The
+`mongos` restriction is the driver's, not the server's**: `mongos` implements exhaust and streams
+correctly through a two-shard merge, verified on the wire in M1. The earlier text here — that this
+"excludes every sharded deployment", and that the exclusion is the argument for a server-side
+streaming change — was wrong on both counts.
 
 On abandonment the retained evidence is definite in both directions. `mongo_client.py:2087-2092`
 closes the socket when a partly consumed exhaust cursor is abandoned; but `exhaust_semantics.json`
@@ -249,10 +336,65 @@ PostgreSQL — and loses on wall time anyway, by 43%, because it fills an entire
 transmitting while PostgreSQL streams row by row. **40–45% of the baseline's wall time is the client
 blocked waiting for a first byte.**
 
-**M1 — transmit before the batch is full — is the largest single change identified anywhere in this
-project**, bounded at about 40% of wall, and the machinery for it already exists in the exhaust path;
-what is missing is that it requires a client option most production deployments cannot use.
-Underneath sits **M2**, the absence of non-key payload columns in indexes, which is 36.6% of this
-operation's server CPU and the reason a covered tree scan costs more in MongoDB than in PostgreSQL —
-a storage-format question rather than a patch. **M3** attacks a slice of the same term for −4 to −6%
-of CPU on a microbenchmark that was never run against this operation.
+Three things changed in the course of acting on that.
+
+**The largest item needs no server work.** The overlap that closes most of this gap is an exhaust
+cursor, and this report previously held that sharded deployments could not have one. `mongos`
+implements exhaust in full and streams correctly through a two-shard merge — verified on the wire,
+19 unsolicited replies to a single `getMore`, worth −23.4% on the shape tested. What blocks it is a
+client-side check in PyMongo whose error message is not true of the server it names. **M1 is now a
+question for the drivers team, not a feature request for the query team.**
+
+**The server-side streaming change that was recommended cannot be built.** A client that did not ask
+for exhaust reads exactly one reply per request, so emitting several is not available to `mongod`
+unilaterally; and a single reply cannot be streamed either, because its length is patched into byte
+0 after the body is complete. That was worth measuring before abandoning: transmission of the P50
+reply costs ~2,800 µs, about 20% of wall. It is unreachable from the reply path. See §9.
+
+**What was built instead is worth roughly a third of what M1 would be.** M1b folds the covered
+projection into the index scan: **−13.1% server CPU, −6.4% client wall** at the cohort P50, flat
+across a 120× range of input sizes, no output differences. It is honest to state the wall figure as
+single-digit: the server is only ~55% of this operation after the change, and transmission (~21%)
+and client-side BSON decode (~23%) are untouched and out of reach from `mongod`.
+
+Underneath sits **M2**, the absence of non-key payload columns in indexes. A ceiling probe puts the
+whole cost of carrying the payload through the key at 37% of server CPU, but that is a loose upper
+bound — `INCLUDE` would keep the payload in the index and still copy it, and the narrow-index arm
+walks a 0.28 GB B-tree against 4.66 GB. What `INCLUDE` actually removes is the escape scan and
+TypeBits for payload components, a few percent of server CPU. **Not recommended for this workload.**
+
+---
+
+## 9. Corrections to earlier versions of this document
+
+Recorded because each was acted on, and because the reasoning that produced them is the part worth
+not repeating.
+
+**"Exhaust is refused behind `mongos`, excluding every sharded deployment."** Wrong. That is
+PyMongo's refusal, not the server's. It survived because every measurement in this project ran
+through PyMongo, and no experiment run through PyMongo can distinguish server incapability from
+driver refusal. Settled by speaking OP_MSG directly. See M1.
+
+**"A server that began transmitting before the batch filled would deliver the same overlap to every
+driver."** Not reachable. `makeExhaustMessage` (`transport/session_workflow.cpp:299`) gates
+`kMoreToCome` on `kExhaustSupported`, a flag the *client* sets; a second reply to a client that did
+not set it desynchronises the connection. And a single OP_MSG reply cannot be streamed, because
+`Message` is one buffer whose header length is written by `OpMsgBuilder::finish()` after the body is
+complete (`rpc/message.h:327`, `rpc/op_msg.cpp:432`). Both were established by reading the code and
+then measuring what the change would have been worth — ~20% of wall — rather than by assertion.
+
+**"`batch_size` alone is −11.2% at 96,238 rows."** Does not reproduce. Re-measured server-side as a
+batch byte cap: retired instructions move under 1% for every batch size tried, while server CPU
+worsens 4–8.6% from the extra round trips. The first re-measurement produced a false −5.20% that was
+an artifact of the probe having no per-arm settle, which is itself worth recording — the block
+sequence ran −35%, −28%, … , −1.6% as the cache warmed.
+
+**"`KeyString::toBson` 24.4% + `ProjectionStageCovered::transform` 12.3% = 36.6% of server CPU."**
+Reproduces on master (21.46% + 13.90% = 35.36%) but is an *inclusive* figure, and was being read as
+though it were removable. Self time for the two is 3.14% and 3.96%; the irreducible read underneath
+them is 7.22% inclusive. The implemented fusion removes ~13% of server CPU, not ~36%.
+
+**"The `shouldDedup` guard is not reachable through a covered projection."** Wrong, and recorded in
+the implementation's lead log rather than here: an index that is multikey overall can still fully
+provide a field whose own path is not multikey, so a covered projection over a deduplicating scan is
+reachable, and fusing it would return one row per index entry instead of one per document.
