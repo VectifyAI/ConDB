@@ -58,7 +58,8 @@ COVER_INDEX = "layout2_rootcause_exact_cover"
 CHILD_PROJECTION = {"_id": 0, "node_id": 1, "title": 1, "summary": 1}
 CHILD_SORT = [("path", 1), ("node_id", 1)]
 
-GATE_ENV = "MONGO_PROBE_HINTED_PLAN_MEMO"
+DEFAULT_GATE_ENV = "MONGO_PROBE_HINTED_PLAN_MEMO"
+GATE_ENV = DEFAULT_GATE_ENV  # overridden by --gate-env
 
 ARM_NAMES = ("baseline", "probe", "control")
 ARM_GATES = {"baseline": "0", "probe": "1", "control": "0"}
@@ -283,10 +284,15 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--reuse-data", action="store_true",
                         help="skip populate; reuse the prepared dbpath copies")
+    parser.add_argument("--gate-env", default=DEFAULT_GATE_ENV,
+                        help="startup environment variable that switches the change under test")
     parser.add_argument("--port-rotation", type=int, default=0, choices=(0, 1, 2),
                         help="rotate which physical port and dbpath each arm runs on, to "
                              "separate a server-specific bias from a real effect")
     args = parser.parse_args()
+
+    global GATE_ENV
+    GATE_ENV = args.gate_env
 
     binary = Path(args.binary).resolve()
     scratch = Path(args.scratch)
@@ -297,6 +303,7 @@ def main() -> None:
         "run": {"generated_unix_s": time.time(), "binary": str(binary),
                 "doc_limit": args.doc_limit, "blocks": args.blocks,
                 "sweeps_per_block": args.sweeps, "cache_gb": args.cache_gb,
+                "gate_env": args.gate_env,
                 "port_rotation": args.port_rotation,
                 "arm_ports": arm_ports(args.port_rotation)},
         "units": {"server_cpu_us": "mongod CPU on the arm's own connection thread "
