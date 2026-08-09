@@ -111,26 +111,32 @@ The tests now assert the fast path is taken and not taken, compare key order, an
 **Against the bar this is still a partial result.** 15.6% of client CPU clears it; 6.2% of the
 operation's wall does not. C2 alone is not enough, which is why the leads below were opened.
 
-### C1a — reuse the last server selection · **kept, but below the bar**
+### C1a — reuse the last server selection · **withdrawn**
 
-Selection runs per operation and, against an unchanged topology, re-derives the answer it reached
-last time. Remembering `(description, selector, server)` for single-candidate selections is sound:
+Remembering `(description, selector, server)` for single-candidate selections looked sound:
 `TopologyDescription` is replaced rather than mutated on any change, and a `Server` is created once
-per address for as long as that address is in the description.
+per address. Measured 14,313 instructions, 4.0%, 12/12 blocks.
 
-Paired in-process, cache invalidated before each uncached call, 12 blocks × 400:
-**14,313 instructions, 4.0%, 12/12 blocks.** Roughly 3.2 µs of client CPU.
+**A blank-context review killed it, and was right to.** Three findings, of which the first is
+enough:
 
-It also **broke an observable, which was caught and fixed**: skipping the description scan skips the
-selection STARTED log message, so after the first operation every subsequent one lost it. Measured
-directly — 0 STARTED against 5 SUCCEEDED over five cached operations. The shortcut is now off
-whenever server-selection logging is enabled. The driver's own
-`test_server_selection_logging` could not have caught this here: those tests fail identically on
-stock master in this environment, for reasons unrelated to the change.
+- **It silently bypasses `MongoClient(server_selector=...)`**, a public option since 3.4, which is
+  passed as `custom_selector` into `apply_selector`. It is not in the cache key and is not invoked
+  on a hit, so "called on every selection" becomes "called once per `TopologyDescription`".
+  Measured: 50 `find_one` calls invoked the selector **once** against 50 on the parent commit; a
+  round-robin selector over three mongoses sent all 60 selections to one server instead of 20 each.
+- A hit can hand out a `Server` whose pool `close()` has already closed, because the unlocked read
+  skips the lock that used to serialise selection against `close()` — turning a documented
+  `InvalidOperation` into an internal `_PoolClosedError`.
+- **The benefit does not generalise.** Reads use the client's `Primary()` instance and writes the
+  module-level `writable_server_selector`; a one-entry cache keyed by identity evicts on every
+  alternation. Measured: 100 pure `find_one` calls hit 99 times, 50 interleaved read/write calls hit
+  **once in 100**. And the `len(servers) == 1` guard means it never populates for a multi-node
+  replica set read or a multi-mongos cluster — the deployments where selection cost matters.
 
-Branch `cache-server-selection`, draft PR `#2`. On its own it is below the bar and the PR says so;
-it is proposed because §2b shows the three compose to 14.3% of the operation, which is not below
-the bar. Judged alone it is probably not worth a reviewer's time; judged as one of three, it is.
+So the 4.0% was measured on the one workload shape that hits, and the change breaks a public API on
+the others. PR closed with these reasons. **Every combined figure below that included C1a has been
+withdrawn with it.**
 
 ### C1b — pool checkout and checkin · **attempted; 3.0%, and the layer turns out not to be removable**
 
@@ -243,78 +249,81 @@ are small — together 5.7% of server CPU, about 1.8% of the operation.
 Syscall fusing (−0.50%, inside noise) and hot-spot hunting (240 functions, largest non-socket frame
 0.026 s of 1.066 s) were settled before this session and were not revisited.
 
-## 2b. The three together
+## 2b. The three together — **withdrawn**
 
-Each change above was measured on its own. `bench/db/bench_entity_driver_all.py` measures them
-together, toggling all three in place inside one process — the upstream `find_one` body inlined, the
-selection memo cleared before each control call, `Pool._checkout_idle` replaced by one that declines
-— with the toggles applied in *both* arms so their cost cancels in the paired delta. 14 blocks × 500,
-`runs/entity_driver_20260809/all_three_ab_v2.json`:
+This section reported that the three changes measured together removed 21.1 µs of client CPU
+(24.1%) and 28.4 µs of wall (14.3%), and that the three measured separately summed to within 0.2%
+of the combined figure. **Both claims are withdrawn.** An audit found three things wrong with them
+and each on its own is disqualifying.
 
-| instrument | control | all three | saved | blocks |
+**The 0.2% agreement was run selection.** Two combined runs exist,
+`all_three_ab.json` and `all_three_ab_v2.json` — same harness, same driver build, same 14 × 500,
+same entity id, one minute apart:
+
+| | instructions saved | client CPU | wall | wall blocks |
 |---|---|---|---|---|
-| retired instructions | 366,526 | 268,151 | 98,372 (**26.8%**) | 14/14 |
-| client CPU | 87.4 µs | 66.4 µs | **21.1 µs (24.1%)** | 14/14 |
-| wall | 199.4 µs | 170.8 µs | **28.4 µs (14.3%)** | 14/14 |
+| run 1 | 104,433 (28.0%) | 25.6 µs | 29.4 µs (15.0%) | 13/14 |
+| run 2 | 98,372 (26.8%) | 21.1 µs | 28.4 µs (14.3%) | 14/14 |
 
-**The cross-check that makes this trustworthy**: the three measured separately come to
-72,696 + 14,313 + 11,184 = **98,193 instructions**, against 98,372 measured together — agreement to
-0.2%. The parts compose, nothing is double-counted, and the control arm's residual cost (it still
-pays the disabled fast paths' entry checks) is inside that 0.2%.
+Only run 2 was reported. Against the same parts-sum, run 1 disagrees by **6.0%**, thirty times the
+claimed agreement. The parts-sum itself used **11,184** instructions for C1b where §2 of this same
+document reports **11,116**; 11,184 appears nowhere else. And the check was close to tautological
+anyway: the three changes touch disjoint code paths, so additivity was expected before measuring.
 
-**Together they clear the bar: 14.3% of the operation's wall, where no single one of them does.**
-That is the case for taking all three rather than only the first.
+**The control arm is not the stock driver.** `bench_entity_driver_all.py` writes a class attribute
+on `Pool` on every iteration in both arms, which bumps the type's version tag and defeats CPython's
+attribute specialisation for every later `Pool` lookup; the control additionally pays an extra
+Python frame and a declining `_checkout_idle` call that a stock driver would not have. The
+absolutes the percentages are ratios against are therefore not the driver's cost.
 
-Two cautions on the table. The absolute columns are not comparable with the per-change tables above
-— those were different processes, and only the paired delta within a run is claimed. And the wall
-saving (28.4 µs) exceeds the client-CPU saving (21.1 µs) by more than is comfortably explained;
-the wall spread is wide, [11.2, 44.5], so **21.1 µs of client CPU is the conservative figure** and
-14.3% of wall the optimistic one.
+**And one of the three is now withdrawn** — C1a bypasses a public option, above. A combined figure
+that includes it does not describe anything that could be proposed.
+
+**What is left standing is the one measurement that was built as a paired A/B against a faithful
+control**: C2 alone, 12.1 µs of client CPU, 15.6%, 14/14 blocks
+(`fastpath_ab_v2.json`), whose control arm is `find_one`'s own body inlined and checked against the
+driver's source at startup. C1b's 3.0% stands as an instruction-count measurement of that change in
+isolation. **The two have never been measured together against a faithful control, and no combined
+figure is claimed.**
 
 ## 3. What the driver lane can and cannot deliver
 
-The operation is 167.7 µs of wall in this harness, of which 77.5 µs is client CPU and 17.6 µs is the
-irreducible hand-written OP_MSG exchange. **The whole driver term is about 60 µs, so removing all of
-it would move the operation by roughly 35%.**
+The operation is about 167 µs of wall in this harness, of which 77.5 µs is client CPU and 17.6 µs is
+the irreducible hand-written OP_MSG exchange, so the whole driver term is about 60 µs.
 
-What was actually available:
+**What survives review:**
 
-| lead | client CPU | % of operation | kept |
+| lead | measured | instrument | status |
 |---|---|---|---|
-| C2 `find_one` without a cursor | 12.1 µs | 6.2% | yes, PR opened |
-| C1a server-selection reuse | ~3.2 µs | ~1.9% | yes, PR opened |
-| C1b pool mutex taken once | ~2.4 µs | ~1.4% | yes, PR opened |
-| **all three together, measured** | **21.1 µs** | **14.3% of wall** | |
-| everything else identified | ≤1 µs each | | no |
+| C2 `find_one` without a cursor | **12.1 µs client CPU, 15.6%**, 14/14 blocks | paired A/B, faithful control | PR open |
+| C1b pool mutex taken once | 3.0% of instructions, 12/12 blocks | in-process toggle, no retained harness | PR open |
+| C1a server-selection reuse | 4.0% of instructions | in-process toggle, no retained harness | **withdrawn** |
 
-**No single change clears the bar; the three together do** — §2b, 14.3% of the operation's wall,
-14/14 blocks, with the sum of the parts agreeing with the combined measurement to 0.2%.
+**Three honest limits on that table.**
 
-The plan projected 51.7 µs from C1 and C2. The shortfall has one documented cause and one measured
-one. The documented cause is that **the plan's figures were taken on PyMongo 4.12 and driver master
-has already absorbed much of them** — the generator-based context managers and the ungated telemetry
-that made checkout expensive in 4.12 are gone. The measured one is that **what remains in checkout
-is not overhead but accounting**: merging all eight mutex acquisitions into two recovered only 18.5%
-of that layer.
+*The units are not addable and are not added here.* C2's figure is client CPU; C1b's is retired
+instructions. Converting one into the other assumes the removed code has the same instructions per
+cycle as the operation as a whole, which is exactly the conversion §0 says is never performed. An
+earlier version of this file did it anyway to produce a "5.6 µs combined" for M1; that figure is
+withdrawn.
 
-**And the server side has moved further than the driver side.** `get_entity.md` §2c measures a clean
-build of driver-era master against 7.0.34 on the same collection, same box, both host processes,
-both pinned to one NUMA node: **45.00 → 38.11 µs of server CPU, 6.74 µs, 15.0%, 14/14 blocks**,
-because master takes `EXPRESS_IXSCAN` where 7.0.34 takes `PROJECTION_SIMPLE → IDHACK`. That is 46%
-of the server-CPU gap against the matched unprepared PostgreSQL arm, already closed, with nothing
-for this project to propose.
+*C1b's numbers are not reproducible from anything retained.* They were taken with ad-hoc in-process
+scripts that were never saved, so nothing in `bench/db/` re-derives 11,116 or 3.0%. The C2 figure
+does not have this problem — `bench_find_one_fastpath.py` and its JSON are both committed. This is a
+process failure, and the C1b figure should be read as unverified until a harness exists.
 
-Put beside it, the three driver changes are 21.1 µs of client CPU and 28.4 µs of wall. The two are
-different quantities and are not added here, but the ordering is worth stating: **on this operation
-the largest single movement available is upgrading the server, and the second largest is the driver
-work in this file.**
+*`exclude_kernel` inflates every instruction-derived percentage.* The counter omits the operation's
+syscall work from both numerator and denominator, which is why the same blocks read 26.8% in
+instructions and 24.1% in CPU. An instruction percentage is therefore an upper bound on the CPU
+percentage, not an estimate of it.
 
-So the conclusion for this lane is that the driver is no longer where the `get_entity` gap lives.
-After C2, client CPU is 66.4 µs against a 17.6 µs floor, and the 49 µs between them is spread across
-the retryable-read wrapper, the connection pool's accounting, implicit session creation and
-`conn.command` — four spec-governed subsystems, none worth more than 9 µs, each carrying real
-correctness obligations. §2a of `get_entity.md` says the same thing from the server side: 60% of the
-server's 45.4 µs is transport and dispatch, not query work.
+**The shape of the conclusion is unchanged.** After C2, client CPU is about 66 µs against a 17.6 µs
+floor, and the ~49 µs between them is spread across the retryable-read wrapper, the connection
+pool's accounting, implicit session creation and `conn.command` — four spec-governed subsystems,
+none worth more than 9 µs. `get_entity.md` §2b says the same thing from the server side.
+
+**And the largest single movement available on this operation is not in this file.** Upgrading the
+server from 7.0.34 to master is 6.74 µs of server CPU, 15.0%, measured — `get_entity.md` §2c.
 
 ## 4. Artefacts
 

@@ -23,6 +23,15 @@ it is 2.1× the floor.
 Provenance: server figures are CPU, client figures are wall, never subtracted from one another. All
 MongoDB figures are from the logging-off arm (`bottleneck_20260806/mongo_cpu_arms_nolog.json`).
 
+**One known bias in MongoDB's favour, in every server-CPU figure here.** The instrument counts only
+threads whose name begins with `conn`. In the same artifact, `get_entity_hit` reports
+`conn_cpu_us_per_op` 45.321 against `total_cpu_us_per_op` 48.653, with `Service.Fixed-0` alone
+contributing 2.65 µs/op against an idle baseline of 0.66. PostgreSQL's contract is the CPU burned by
+the backend *process*. So roughly 2.6 µs/op — 5.8% — of load-proportional server CPU is excluded on
+the MongoDB side only, and every MongoDB-versus-PostgreSQL ratio below is that much too kind to
+MongoDB. The version comparison in §2c uses the same filter, so it is blind to any work either
+version does off the connection thread.
+
 ---
 
 ## 1. Where the gap is
@@ -81,9 +90,11 @@ same `phases.py` leaf-to-root classifier that produced `get_node_phases.txt`, ov
 samples, summing to 100.000% / 45.354 µs. Earlier versions of this file and of the hand-off said the
 pass had never been run; that was wrong, and the two proposals below follow from it.
 
-Its rows agree with the independent inclusive pass to three decimals where the two overlap —
-projection `parseAndAnalyze` 1.998% against 2.00%, collection acquisition 8.027% against 7.99%,
-release 2.044% against 2.04% — which is what says both ran over the same sample set.
+Two of its rows reproduce the independent inclusive pass exactly — projection `parseAndAnalyze`
+1.998% and release 2.044% — which is what says both ran over the same sample set. The third does
+not: collection acquisition is 8.027% exclusive against **7.985%** inclusive, and an exclusive
+figure cannot exceed an inclusive one for the same frame. An earlier version of this paragraph
+quoted the inclusive to two decimals ("7.99") so that a 0.042-point disagreement read as rounding.
 
 By group, exclusive, µs of 45.354:
 
@@ -117,14 +128,18 @@ Whole operation, 83,543 samples, 45.354 µs:
 
 | origin | µs | % |
 |---|---|---|
-| `mongod` — MongoDB's own C++ | 21.761 | 48.0 |
+| `mongod` — resolved, non-WiredTiger, non-allocator | 21.761 | 48.0 |
 | kernel | 10.803 | 23.8 |
-| **EDR / container networking — this box only** | **3.994** | **8.8** |
+| endpoint protection + container networking | 3.994 | 8.8 |
 | unresolved | 3.365 | 7.4 |
 | WiredTiger | 3.288 | 7.3 |
 | allocator | 2.142 | 4.7 |
 
-**MongoDB's own code (mongod + WiredTiger + allocator) is 27.19 µs, 60% of the operation.**
+**MongoDB's own code (mongod + WiredTiger + allocator) is 27.19 µs, 60% of the operation** — in
+*this* capture. The host-process capture in §2c.1 puts the same quantity at 71.8%, and the two are
+not reconciled by anything below. The difference is symbol resolution, not code: perf cannot resolve
+glibc inside the container, so glibc leaves fall into `unres` here (3.365 µs, 7.4%) and into the
+`mongod` bucket there. Treat 60% as a floor and 72% as a ceiling on the same quantity.
 
 But it is not where the phase table's biggest number is. Splitting the two transport phases:
 
@@ -133,10 +148,13 @@ But it is not where the phase table's biggest number is. Splitting the two trans
 | `_sendResponse` — send reply | 10.163 | **0.210 (2.1%)** | 6.357 | 3.354 |
 | `_getNextWork` — receive request | 4.282 | 0.513 (12.0%) | 3.226 | 0.368 |
 
-**Of the 14.4 µs the phase table calls transport, 0.72 µs is MongoDB's code.** The rest is the
-kernel socket path and, for 3.72 µs of it, modules that would not be loaded on a normal deployment.
-So the 39.6% transport term is almost entirely not MongoDB's to optimise — while the other 60% of
-the operation is.
+**Of the 14.4 µs in those two phases, 0.72 µs is MongoDB's code.** Two qualifications the earlier
+version of this paragraph did not make. The `tx` group is **17.954 µs**, not 14.4 — its other
+members (`~OperationContext`, `acceptResponse`, `scheduleIteration`, `doOneIteration`) contribute
+about 3.0 µs more of MongoDB's own code. And "not MongoDB's code" is not "not MongoDB's to
+optimise": the syscall count, the framing and the copies are MongoDB's choices and they drive the
+kernel term. What the split does support is narrower — **most of the transport phase is not code a
+patch to mongod could delete.**
 
 **Where MongoDB's 27.19 µs actually sits.** It is flat: the largest single mongod leaf frame is
 `operator new` at 1.106 µs, 2.4%. Grouped:
@@ -171,10 +189,15 @@ all-default case outright (`if (config == 0) continue`), and passes a compiled t
 string. So this is not a proposal — it is a measurement of what a 7.0 deployment still pays and what
 upgrading recovers: **0.59 µs per read, on every read the server serves.**
 
-**Environment note.** 8.39% of self samples land in EDR and container-networking kernel modules
-(`dsa_filter`, `bmhook`, `tmhook`, `nf_tables`, `nf_conntrack`, `nf_nat`, `bridge`, `nft_compat`)
-inside `mongod`'s connection thread. That inflates the transport terms and is a property of this box,
-not of MongoDB. It is common-mode with the PostgreSQL psycopg arm.
+**Environment note, corrected.** 8.39% of self samples land in kernel modules inside `mongod`'s
+connection thread, and an earlier version of this note called all of them "a property of this box".
+Only about half are: `dsa_filter`, `bmhook` and `tmhook` (1.776 µs of the send-reply phase) are
+endpoint protection. `nf_tables`, `nf_conntrack`, `nf_nat` and `bridge` (1.310 µs) are the standard
+Docker and Kubernetes networking path and are present on very ordinary MongoDB deployments;
+`decomp_origin.py` merges the two categories into one bucket. The runbook records that
+`nft_do_chain` fires on host loopback as well, so this is not container-only either. 8.39% is also
+a floor rather than the total: `tmhook` appears on 29.5% of chains *inclusive*, so the transport
+inflation is larger than a leaf split can bound. It is common-mode with the PostgreSQL psycopg arm.
 
 ## 2c. What master has already recovered
 
@@ -203,10 +226,22 @@ The plans, printed by the harness rather than asserted:
 - master `EXPRESS_IXSCAN`, with the projection folded into the express stage and no separate
   projection stage (`projectionCovered: false`, since `text` is not in the index)
 
-**Against the gap this report is about**, using the matched unprepared PostgreSQL arm at 30.0 µs:
-7.0.34 is 15.0 µs above it, master 8.1 µs. **Master has already closed 46% of the server-CPU gap
-this document opened with** — 27% of it if the prepared PostgreSQL arm at 19.5 µs is the comparison
-instead.
+**Against the unprepared PostgreSQL arm at 30.0 µs**: 7.0.34 is 15.0 µs above it, master 8.1 µs, so
+master has closed **46%** of that particular gap. Four things have to be said with that number, and
+an earlier version of this paragraph said none of them:
+
+- **Against the *prepared* arm at 19.5 µs the same arithmetic gives 27%.** This document opens with
+  1.9×, which §1 identifies as the *prepared* ratio — so "the gap this document opened with" is the
+  27% one, not the 46% one.
+- **The unprepared arm is the generous choice here.** §5 justifies it with "MongoDB re-plans on
+  every call", which is an argument about `get_node`. On `get_entity` §2a puts planning at 2.164 µs
+  of 45.354, and §1 and §5 both say planning is already skipped. Unprepared PostgreSQL pays about
+  12 µs of parse, rewrite and plan against MongoDB's 6.27 µs.
+- **The transports differ.** 45.00 and 38.11 are host processes on loopback; 30.0 is the psycopg arm
+  through a container-local socket.
+- **PostgreSQL's number is quantised.** Its CPU comes in 10 ms clock ticks — the two unprepared
+  repeats are 31.5 and 30.0 µs/op. ±1.5 µs on that one figure moves the closure between about 42%
+  and 51%.
 
 Three things to hold against this figure:
 
@@ -241,36 +276,57 @@ By origin (µs of the 45.00 and 38.11):
 | kernel | 10.043 | 9.427 | −0.616 |
 | EDR / netfilter | 2.637 | 2.567 | −0.070 |
 
-**The whole saving is MongoDB's own code.** Kernel and netfilter move by 0.69 µs between them,
-which is what says the two arms really are on the same transport.
+**The whole saving is MongoDB's own code** — that is what this table shows and it is worth saying.
+What it does not do is *demonstrate* the 6.74 µs: `compare_version_profiles.py` scales each profile
+by the µs/op the A/B measured, so the 6.89 µs difference is imported from that run and apportioned
+here, not re-derived. The two captures have near-identical sample counts (108,467 and 108,417), i.e.
+the same CPU-seconds. For the same reason an earlier version of this paragraph had the transport
+argument backwards: on an identical transport the kernel and netfilter *absolute* terms should move
+by about zero, and they move by 0.69 µs only because of the scale factor. By share they rise, from
+28.2% to 30.2%.
 
-Grouped by what the work is, with symbols that only split because master inlines them differently
-merged — `__wt_row_leaf_key.constprop.0` becoming `__wt_row_leaf_key`, and tcmalloc's `operator
-new[]` becoming its `TCMallocPolicy` template, are renamings and not changes:
+**Below the origin table, leaf-frame attribution mostly does not survive.** The two binaries are
+built differently — 7.0.34 is MongoDB's release build out of the `mongo:7` image, master is a local
+`bazel --config=opt` build — so a symbol can move without any work moving. An earlier version of
+this section reported two "regressions" that were exactly that, and the corrections are worth more
+than the claims were:
+
+- **`OperationContext` decorations were reported as +0.608 µs, "absent from 7.0.34 entirely". That
+  was wrong.** 7.0.34 carries **0.604 µs** of the same work, spread across 84 templated
+  `DecorationRegistry<...>::constructAt/destroyAt` symbols, none larger than 0.026 µs; master
+  consolidates it into 17 symbols. Grouped, it is 0.604 → 0.644, **+0.04 µs**. The claim is
+  withdrawn.
+- **"document copy 1.432 → 0.963, −0.469" was wrong in both label and sign.** The group was
+  `__memmove` plus glibc `__strlen`. `__memmove_avx512_unaligned_erms` — the only frame that copies
+  the document — goes 0.781 → **0.932**, i.e. up 0.151. The saving was all `__strlen_evex`
+  (0.651 → 0.031), which is not document copying.
+
+What survives grouping, each checked by summing every symbol matching the family rather than the one
+symbol that happened to be largest:
 
 | | 7.0.34 | master | delta |
 |---|---|---|---|
-| reference counting | 1.074 | 0.065 | **−1.008** |
-| WiredTiger config parsing | 0.793 | 0.043 | **−0.750** |
-| document copy | 1.432 | 0.963 | −0.469 |
-| WiredTiger row lookup | 3.632 | 3.399 | −0.233 |
-| **`OperationContext` decorations** | 0.000 | 0.608 | **+0.608** |
-| **allocator** | 1.992 | 2.881 | **+0.889** |
+| reference counting (`shared_ptr` + `intrusive_ptr`) | 1.431 | 0.428 | −1.003 |
+| WiredTiger config parsing | 0.793 | 0.043 | −0.750 |
+| glibc `strlen` | 0.651 | 0.031 | −0.620 |
+| allocator | 2.132 | 2.882 | +0.749 |
+| `__memmove` | 0.781 | 0.932 | +0.151 |
+| `OperationContext` decorations | 0.604 | 0.644 | +0.040 |
 
-- **Reference counting is nearly gone.** `_Sp_counted_base::_M_release`, `_M_add_ref_copy` and
-  `intrusive_ptr_release` are 1.07 µs on 7.0.34 and 0.07 on master. That is the largest single
-  component of the saving and it was not predicted by anything in §2a.
-- **M6 is confirmed by measurement, not just by reading the source**: WiredTiger config parsing
-  falls from 0.793 µs to 0.043. The compiled-configuration change does what §2's source reading said
-  it would.
-- **Two things master pays that 7.0.34 does not.** `DecorationBuffer<OperationContext>` construction
-  and teardown is 0.608 µs, absent from 7.0.34's profile entirely, and the allocator is 0.889 µs
-  more expensive. Both are on the path of every operation, not only this one.
+**These six net to −1.433 µs against the −6.204 the origin table decomposes: they account for 23% of
+the saving, and the other 77% is a long tail.** This is not a decomposition of where master's saving
+went, and it should not be read as one. Two things in it are worth saying on their own:
 
-**So the target list for master — the binary a patch would land in — is not the one §2a produced
-for 7.0.34.** The largest MongoDB-attributable item on master is the allocator at 2.88 µs, 7.6% of
-the operation, followed by WiredTiger's row lookup at 3.40 µs, which is the actual index traversal
-and not obviously removable. It is still flat: nothing on master is worth more than about 3 µs.
+- **M6 is confirmed by measurement rather than by reading the source**: WiredTiger config parsing
+  falls from 0.793 µs to 0.043, which is what the compiled-configuration change in §2 predicted.
+- **The allocator got 0.749 µs dearer on master.** That figure is the `alloc` origin bucket, which
+  is a classifier over every allocator symbol and so is not vulnerable to the renaming above. It is
+  the one "master made this worse" claim here that survives scrutiny.
+
+**A target list for master, with that caveat attached.** The largest MongoDB-attributable groups on
+master are WiredTiger's row lookup at 3.40 µs — the actual index traversal, and not obviously
+removable — and the allocator at 2.88 µs. Nothing on master is worth more than about 3.4 µs, so the
+shape of the conclusion is unchanged from 7.0.34 even though the individual items are not the same.
 
 **One capture was thrown away to get here.** The first pair had master long-running and 7.0.34
 freshly loaded, and 7.0.34's profile carried 2.211 µs of snappy decompression against master's
@@ -295,21 +351,25 @@ attributed inside `mongod` without changing the total, which is the reassuring o
 The list is short, and that is the finding: **the server-side levers proposed for the other two
 operations do not apply here.** What remains is the driver and the fixed command path.
 
-### M1 — Pool checkout and server selection · PyMongo · **done, 5.6 µs per command combined**
+### M1 — Pool checkout and server selection · PyMongo · **partly done, and not 5.6 µs**
 
 **The 27.3 µs this line used to quote was measured on PyMongo 4.12 and no longer holds**:
 re-measured on driver master the checkout layer is 13.5 µs, because master replaced the
 `@contextlib.contextmanager` generators with context-manager classes and put the CMAP telemetry
 behind an enablement check.
 
-Both halves are built. Taking the pool mutex once instead of eight times (`Pool.lock`,
-`Pool.size_cond` and `Pool._max_connecting_cond` are three `Condition` views over one mutex) is
-3.0%; reusing the last server selection while the topology description is unchanged is 4.0%. Draft
-PRs `carsontung666/mongo-python-driver#3` and `#2`.
+Taking the pool mutex once instead of eight times (`Pool.lock`, `Pool.size_cond` and
+`Pool._max_connecting_cond` are three `Condition` views over one mutex) is 3.0% of retired
+instructions — draft PR `carsontung666/mongo-python-driver#3`.
 
-Neither clears the bar alone. **With M2 they do: 21.1 µs of client CPU and 14.3% of the operation's
-wall, 14/14 blocks**, with the parts summing to the whole within 0.2%. Details:
-`get_entity_driver.md` §2b.
+**The server-selection half is withdrawn**: it silently bypassed `MongoClient(server_selector=...)`,
+a public option, and its 4.0% held only on a workload of pure `find_one` — see
+`get_entity_driver.md` §2 C1a.
+
+**An earlier version of this line quoted "5.6 µs per command combined". That is withdrawn**: it was
+3.2 + 2.4, each obtained by applying an *instruction* percentage to a client-CPU number, which is
+the conversion `get_entity_driver.md` §0 says is never performed. No combined figure for the pool
+and selection changes is claimed.
 
 ### M2 — Skip `Cursor` construction for single-batch replies · PyMongo · **done, 12.1 µs per command**
 
