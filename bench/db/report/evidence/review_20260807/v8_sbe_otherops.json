@@ -1,0 +1,229 @@
+{
+  "blocks": 8,
+  "extra": {
+    "correctness": {
+      "get_subtree": {
+        "mismatches": 0,
+        "rows": 98922
+      },
+      "get_entity": {
+        "mismatches": 0,
+        "rows": 8
+      }
+    },
+    "plan_subtree_forceClassicEngine": {
+      "explainVersion": "1",
+      "plan": "{\"stage\": \"PROJECTION_COVERED\", \"transformBy\": {\"_id\": 0, \"node_id\": 1, \"title\": 1, \"summary\": 1}, \"inputStage\": {\"stage\": \"IXSCAN\", \"keyPattern\": {\"path\": 1, \"node_id\": 1, \"title\": 1, \"summary\": 1}, \"indexName\": \"layout2_rootcause_exact_cover\", \"isMultiKey\": false, \"multiKeyPaths\": {\"path\": [], \"no"
+    },
+    "plan_entity_forceClassicEngine": {
+      "explainVersion": "1",
+      "plan": "{\"stage\": \"PROJECTION_SIMPLE\", \"transformBy\": {\"_id\": 1, \"text\": 1}, \"inputStage\": {\"stage\": \"IDHACK\"}}"
+    },
+    "plan_subtree_trySbeEngine": {
+      "explainVersion": "2",
+      "plan": "{\"queryPlan\": {\"stage\": \"PROJECTION_COVERED\", \"planNodeId\": 2, \"transformBy\": {\"_id\": false, \"node_id\": true, \"title\": true, \"summary\": true}, \"inputStage\": {\"stage\": \"IXSCAN\", \"planNodeId\": 1, \"keyPattern\": {\"path\": 1, \"node_id\": 1, \"title\": 1, \"summary\": 1}, \"indexName\": \"layout2_rootcause_exact_c"
+    },
+    "plan_entity_trySbeEngine": {
+      "explainVersion": "1",
+      "plan": "{\"stage\": \"PROJECTION_SIMPLE\", \"transformBy\": {\"_id\": 1, \"text\": 1}, \"inputStage\": {\"stage\": \"IDHACK\"}}"
+    }
+  },
+  "raw": {
+    "forceClassicEngine": {
+      "get_subtree": [
+        {
+          "wall_us": 38377.71612840394,
+          "scpu_us": 18552.606666666667
+        },
+        {
+          "wall_us": 34087.15175464749,
+          "scpu_us": 16236.235416666668
+        },
+        {
+          "wall_us": 33973.542119686805,
+          "scpu_us": 16072.300416666667
+        },
+        {
+          "wall_us": 33362.677010397114,
+          "scpu_us": 16081.475666666667
+        },
+        {
+          "wall_us": 33216.38454993566,
+          "scpu_us": 16019.119
+        },
+        {
+          "wall_us": 33513.63609544933,
+          "scpu_us": 15992.174833333333
+        },
+        {
+          "wall_us": 35799.90651148061,
+          "scpu_us": 16912.27866666667
+        },
+        {
+          "wall_us": 34986.59849477311,
+          "scpu_us": 16500.908583333334
+        }
+      ],
+      "get_entity": [
+        {
+          "wall_us": 108.2846219651401,
+          "scpu_us": 42.250287500000006
+        },
+        {
+          "wall_us": 104.68038730323315,
+          "scpu_us": 40.212044999999996
+        },
+        {
+          "wall_us": 116.25282000750303,
+          "scpu_us": 43.6490625
+        },
+        {
+          "wall_us": 104.7781016677618,
+          "scpu_us": 40.3915175
+        },
+        {
+          "wall_us": 113.7840049341321,
+          "scpu_us": 43.9179275
+        },
+        {
+          "wall_us": 105.02243414521217,
+          "scpu_us": 41.143637500000004
+        },
+        {
+          "wall_us": 116.41072575002909,
+          "scpu_us": 44.9301875
+        },
+        {
+          "wall_us": 115.01546716317534,
+          "scpu_us": 44.8497275
+        }
+      ]
+    },
+    "trySbeEngine": {
+      "get_subtree": [
+        {
+          "wall_us": 35089.04040791094,
+          "scpu_us": 16485.523250000002
+        },
+        {
+          "wall_us": 33219.982481872044,
+          "scpu_us": 15984.474333333334
+        },
+        {
+          "wall_us": 33741.03340320289,
+          "scpu_us": 15862.968666666668
+        },
+        {
+          "wall_us": 34810.12675911188,
+          "scpu_us": 16450.857583333334
+        },
+        {
+          "wall_us": 32553.83879877627,
+          "scpu_us": 15781.197666666667
+        },
+        {
+          "wall_us": 35475.13508237898,
+          "scpu_us": 16593.834333333332
+        },
+        {
+          "wall_us": 33414.8285134385,
+          "scpu_us": 15667.604
+        },
+        {
+          "wall_us": 33901.846424366035,
+          "scpu_us": 16388.563916666666
+        }
+      ],
+      "get_entity": [
+        {
+          "wall_us": 123.87245194986463,
+          "scpu_us": 44.078784999999996
+        },
+        {
+          "wall_us": 109.79419574141502,
+          "scpu_us": 42.744885000000004
+        },
+        {
+          "wall_us": 111.0807154327631,
+          "scpu_us": 42.547607500000005
+        },
+        {
+          "wall_us": 105.1581441424787,
+          "scpu_us": 40.53926
+        },
+        {
+          "wall_us": 104.61655911058187,
+          "scpu_us": 40.271412500000004
+        },
+        {
+          "wall_us": 122.78007110580802,
+          "scpu_us": 49.317777500000005
+        },
+        {
+          "wall_us": 115.97588891163468,
+          "scpu_us": 44.724385000000005
+        },
+        {
+          "wall_us": 108.82965987548232,
+          "scpu_us": 41.850125
+        }
+      ]
+    }
+  },
+  "summary": {
+    "forceClassicEngine": {
+      "get_subtree": {
+        "wall_us": 34030.35,
+        "scpu_us": 16158.86
+      },
+      "get_entity": {
+        "wall_us": 111.03,
+        "scpu_us": 42.95
+      }
+    },
+    "trySbeEngine": {
+      "get_subtree": {
+        "wall_us": 33821.44,
+        "scpu_us": 16186.52
+      },
+      "get_entity": {
+        "wall_us": 110.44,
+        "scpu_us": 42.65
+      }
+    }
+  },
+  "paired": {
+    "get_subtree": {
+      "wall_us": {
+        "med_us": -764.86,
+        "med_pct": -2.27,
+        "min_pct": -8.57,
+        "max_pct": 5.85,
+        "n_favour_sbe": 6
+      },
+      "scpu_us": {
+        "med_us": -223.63,
+        "med_pct": -1.39,
+        "min_pct": -11.14,
+        "max_pct": 3.76,
+        "n_favour_sbe": 6
+      }
+    },
+    "get_entity": {
+      "wall_us": {
+        "med_us": -0.03,
+        "med_pct": -0.01,
+        "min_pct": -8.06,
+        "max_pct": 16.91,
+        "n_favour_sbe": 4
+      },
+      "scpu_us": {
+        "med_us": -0.03,
+        "med_pct": -0.05,
+        "min_pct": -8.3,
+        "max_pct": 19.87,
+        "n_favour_sbe": 4
+      }
+    }
+  }
+}

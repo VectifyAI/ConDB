@@ -78,7 +78,11 @@ def postgres_verify(be, table):
 def postgres_cover(be):
     be.conn.execute("CREATE INDEX ix_cover ON nodes (path) INCLUDE (node_id)")
     log("      VACUUM ANALYZE nodes (visibility map for index-only scan)...")
-    be.conn.execute("VACUUM ANALYZE nodes")
+    # Docker's default /dev/shm is 64 MiB.  Parallel VACUUM can exceed that
+    # limit on the 3M-node relation even though the data volume has ample disk
+    # space.  PARALLEL 0 changes only visibility-map preparation, not the
+    # measured SELECT plan.
+    be.conn.execute("VACUUM (ANALYZE, PARALLEL 0) nodes")
     return postgres_verify(be, "nodes")
 
 
@@ -172,7 +176,7 @@ def main():
             be.conn.execute(
                 "CREATE INDEX ix_struct_cover ON fair_struct (path) INCLUDE (node_id)")
             log("      VACUUM ANALYZE fair_struct (visibility map for index-only scan)...")
-            be.conn.execute("VACUUM ANALYZE fair_struct")
+            be.conn.execute("VACUUM (ANALYZE, PARALLEL 0) fair_struct")
             out["struct_build_s"] = round(time.time() - t0, 1)
         elif args.engine == "sqlite":
             log("[sqlite] ingest deployed structure table ...")

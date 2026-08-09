@@ -1,0 +1,50 @@
+connection ids: pymongo pub=1463 con=1465 raw pub=1466 con=1467
+verifying output equality element-wise
+  node: 8 arms x 64 inputs, 448 elements, all equal
+  children: 6 arms x 64 inputs, 1971 elements, all equal
+block 1/10 done
+block 2/10 done
+block 3/10 done
+block 4/10 done
+block 5/10 done
+block 6/10 done
+block 7/10 done
+block 8/10 done
+block 9/10 done
+block 10/10 done
+
+arm                            wall     ccpu     scpu   other  note
+node_base                     215.4     80.5    120.2    0.00  BASELINE: pymongo find_one, hint, published 
+node_ip                       191.2     79.9    120.1    0.00  same, container IP direct (no docker-proxy)
+node_nohint                   213.6     77.3    116.6    0.00  hint dropped, published port
+node_idhack                   172.0     77.5     76.6    0.00  query by _id -> IDHACK, published port
+node_idhack_ip                150.2     79.2     76.9    0.00  IDHACK + container IP
+node_raw                      154.0     18.2    115.8    0.00  raw OP_MSG, no lsid, published port
+node_raw_ip                   121.5     18.0    108.0    0.00  raw OP_MSG, container IP
+node_raw_idhack_ip             87.1     18.7     70.7    0.00  raw OP_MSG + IDHACK + container IP (stacked)
+children_base                 263.7     94.3    153.7    0.00  BASELINE: pymongo find+sort+hint, published 
+children_ip                   236.6     94.5    152.7    0.00  same, container IP direct
+children_nosort               254.8     90.7    143.5    0.00  explicit sort dropped (index already supplie
+children_raw                  193.5     25.4    148.4    0.00  raw OP_MSG, published port
+children_raw_ip               159.6     27.3    138.3    0.00  raw OP_MSG, container IP
+children_raw_nosort_ip        152.5     27.2    131.8    0.00  raw OP_MSG, no sort, container IP
+ping_base                     105.6     51.0     31.6    0.00  pymongo ping, published port
+ping_ip                        78.3     50.7     31.3    0.00  pymongo ping, container IP
+ping_raw                       68.4     13.9     29.9    0.00  raw OP_MSG ping, published port
+ping_raw_ip                    44.2     15.0     29.7    0.00  raw OP_MSG ping, container IP
+
+node_ip                    vs node_base        wall  -12.06% [-22.7,-2.7] scpu   -2.01% ccpu   -0.80%
+node_nohint                vs node_base        wall   -2.11% [-10.3,3.8] scpu   -3.47% ccpu   -1.86%
+node_idhack                vs node_base        wall  -20.00% [-26.2,-14.4] scpu  -35.46% ccpu   -3.16%
+node_idhack_ip             vs node_base        wall  -30.31% [-34.4,-28.7] scpu  -34.59% ccpu   -2.64%
+node_raw                   vs node_base        wall  -31.41% [-38.7,-21.5] scpu   -6.46% ccpu  -77.30%
+node_raw_ip                vs node_base        wall  -43.26% [-50.1,-41.6] scpu   -9.66% ccpu  -77.67%
+node_raw_idhack_ip         vs node_base        wall  -59.49% [-63.1,-57.1] scpu  -40.07% ccpu  -76.67%
+children_ip                vs children_base    wall   -8.93% [-23.9,-6.4] scpu   -0.13% ccpu   -1.16%
+children_nosort            vs children_base    wall   -4.09% [-16.7,2.3] scpu   -6.83% ccpu   -2.92%
+children_raw               vs children_base    wall  -29.51% [-36.9,7.0] scpu   -6.99% ccpu  -73.08%
+children_raw_ip            vs children_base    wall  -39.52% [-47.5,-33.8] scpu   -9.36% ccpu  -71.01%
+children_raw_nosort_ip     vs children_base    wall  -41.69% [-50.0,-33.7] scpu  -13.85% ccpu  -70.86%
+ping_ip                    vs ping_base        wall  -24.91% [-30.2,-20.3] scpu   -0.70% ccpu    0.29%
+ping_raw                   vs ping_base        wall  -35.29% [-38.9,-30.6] scpu   -6.01% ccpu  -72.78%
+ping_raw_ip                vs ping_base        wall  -58.37% [-63.7,-54.0] scpu   -6.43% ccpu  -70.22%

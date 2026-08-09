@@ -1,0 +1,28 @@
+slowms set {'was': 0, 'slowms': 0, 'sampleRate': 1.0, 'ok': 1.0}
+framework control at start: forceClassicEngine
+verifying children_nosort is element-wise equal to children
+  64 parents, 1971 elements, equal
+block 1/8
+block 2/8
+block 3/8
+block 4/8
+block 5/8
+block 6/8
+block 7/8
+block 8/8
+framework control restored to: forceClassicEngine
+
+forceClassicEngine  node               wall    82.8 scpu    66.5
+forceClassicEngine  children           wall   117.9 scpu    94.8
+forceClassicEngine  children_nosort    wall   113.9 scpu    90.9
+trySbeEngine        node               wall    79.5 scpu    62.4
+trySbeEngine        children           wall   102.3 scpu    79.6
+trySbeEngine        children_nosort    wall   101.0 scpu    78.4
+
+SBE vs classic node               wall   -5.42% scpu   -7.57% [-14.5,-1.2]
+SBE vs classic children           wall  -11.50% scpu  -14.68% [-26.1,11.3]
+SBE vs classic children_nosort    wall   -8.83% scpu  -11.35% [-24.0,0.6]
+sort removal (classic) scpu   -4.33% (-4.07 us) [-14.9,11.5] 6/8 blocks favour nosort
+forceClassicEngine: {'node': '{"queryFramework": "1", "winningPlan": {"stage": "FETCH", "inputStage": {"stage": "IXSCAN", "keyPattern": {"tree_id": 1, "node_id": 1}, "indexName": "allops_tree_node", "isMultiKey": false, "multiKeyPaths": {"tree_id": [], "node_id": []}, "isUnique": true, "isSparse": false, "isPartial": false, "ind', 'children': '{"queryFramework": "1", "winningPlan": {"stage": "FETCH", "inputStage": {"stage": "IXSCAN", "keyPattern": {"tree_id": 1, "parent_id": 1, "path": 1, "node_id": 1}, "indexName": "allops_tree_parent_path", "isMultiKey": false, "multiKeyPaths": {"tree_id": [], "parent_id": [], "path": [], "node_id": []}'}
+trySbeEngine: {'node': '{"queryFramework": "2", "winningPlan": {"queryPlan": {"stage": "FETCH", "planNodeId": 2, "inputStage": {"stage": "IXSCAN", "planNodeId": 1, "keyPattern": {"tree_id": 1, "node_id": 1}, "indexName": "allops_tree_node", "isMultiKey": false, "multiKeyPaths": {"tree_id": [], "node_id": []}, "isUnique": t', 'children': '{"queryFramework": "2", "winningPlan": {"queryPlan": {"stage": "FETCH", "planNodeId": 2, "inputStage": {"stage": "IXSCAN", "planNodeId": 1, "keyPattern": {"tree_id": 1, "parent_id": 1, "path": 1, "node_id": 1}, "indexName": "allops_tree_parent_path", "isMultiKey": false, "multiKeyPaths": {"tree_id":'}
+slowms restore {'was': 0, 'slowms': 100, 'sampleRate': 1.0, 'ok': 1.0}

@@ -32,6 +32,6 @@ run "$PY" bench/db/bench_operators.py --doc bench/db/data/medium.json --out "$OU
 
 echo "=== concurrency benchmark ==="
 run "$PY" bench/db/bench_concurrency.py --doc bench/db/data/medium.json --duration 5 \
-    --concurrency 1 2 4 8 16 32 64 --out "$OUT/concurrency_medium.json"
+    --concurrency 1 2 4 8 16 --out "$OUT/concurrency_medium.json"
 
 echo "=== done ==="

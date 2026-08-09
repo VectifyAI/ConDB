@@ -1,0 +1,239 @@
+{
+ "campaign": "cross-cutting configuration levers for the four ConDB reads",
+ "date": "2026-08-07",
+ "target": {
+  "mongodb": "7.0.34 standalone, docker image mongo:7, container condb_mongo, argv [mongod, --bind_ip_all], no auth",
+  "postgresql": "16, docker image postgres:16, container condb_pg",
+  "driver": "pymongo 4.12.0, psycopg 3.3.4",
+  "data": "bench.layout2_view 10,000,000 docs; bench.layout_shared_text 9,000,301 docs",
+  "host": "2-socket Intel Xeon Gold 6418H, 96 threads, 2 NUMA nodes, 1007 GiB RAM, shared box"
+ },
+ "scope": "configuration, connection settings, driver options, index/schema choices, server parameters, deployment topology. No change to mongod source. No application redesign. No server setting was altered by this campaign.",
+ "server_state_read_only": {
+  "changed_anything": false,
+  "indexes_before_and_after": {
+   "layout2_view": ["_id_", "allops_tree_node", "allops_tree_parent_path", "layout2_rootcause_exact_cover", "path_1_node_id_1"],
+   "layout_shared_text": ["_id_"]
+  },
+  "profiling": {"was": 0, "slowms": 0, "sampleRate": 1.0},
+  "parameters_read": {
+   "internalQueryExecYieldIterations": 1000,
+   "internalQueryExecYieldPeriodMS": 10,
+   "internalQueryFrameworkControl": "forceClassicEngine",
+   "internalQueryPlanEvaluationWorks": 10000,
+   "internalQueryPlanEvaluationCollFraction": 0.3,
+   "internalQueryCacheMaxEntriesPerCollection": 5000,
+   "cursorTimeoutMillis": 600000,
+   "clientCursorMonitorFrequencySecs": 4,
+   "internalQueryMaxBlockingSortMemoryUsageBytes": 104857600,
+   "notablescan": false,
+   "internalQueryFindCommandBatchSize": "not present in 7.0.34"
+  }
+ },
+
+ "denominators": {
+  "source": "report.tex tab:all-ops, bench/db/runs/all_ops_layouts_20260723/all_ops_10m.json",
+  "note": "P50 ms, MongoDB materialized path vs PostgreSQL materialized path",
+  "get_node": {"mongo": 0.19611, "pg": 0.091803, "gap_us": 104.3},
+  "get_children": {"mongo": 0.251761, "pg": 0.100197, "gap_us": 151.6},
+  "get_subtree": {"mongo": 18.0728, "pg": 13.6136, "gap_us": 4459.2,
+                  "mongo_p95": 208.1017, "pg_p95": 164.8544, "gap_p95_us": 43247.2},
+  "get_entity": {"mongo": 0.141906, "pg": 0.074336, "gap_us": 67.6}
+ },
+
+ "noise_floor": {
+  "shared_connection_design": {
+   "value_pct": 0.2,
+   "how": "get_entity is byte-identical across all arms of bench_crosscut_queryopts.py, so it is a built-in null control; observed +0.09% and +0.02% with sem 0.085 over 40 blocks",
+   "evidence": ["queryopts_short.json"]
+  },
+  "fresh_connection_design": {
+   "value_pct": 1.3,
+   "how": "mongo_base@null is a byte-identical second arm with its own connection; observed -0.24%/+0.56%/+0.41% with sem 1.32/0.76/0.49 over 100 blocks",
+   "evidence": ["transport_paired.json"]
+  },
+  "held_connection_design": {
+   "value_pct": 20.0,
+   "how": "six byte-identical arms each holding one connection for a whole run; one arm drifted monotonically to +20.6% on get_children",
+   "evidence": ["null_control_held_connections.json"]
+  }
+ },
+
+ "findings": [
+  {
+   "rank": 1,
+   "lever": "Do not reach mongod through Docker's published-port userland proxy",
+   "layer": "deployment topology / connection string",
+   "change": "connect to the container address (mongodb://172.17.0.3:27017) instead of the published host port (mongodb://localhost:57017); equivalently run the container with --network host, or publish a unix domain socket via a bind mount",
+   "mechanism": "ss shows that every client socket 127.0.0.1:X -> 127.0.0.1:57017 has a matching unowned socket 127.0.0.1:57017 -> 127.0.0.1:X plus a 172.17.0.1:Y -> 172.17.0.3:27017 leg. The listener on the published port is /usr/bin/docker-proxy, which relays every request and every reply through userspace. It has accumulated 15h39m of CPU since 13 July.",
+   "measured": {
+    "get_node": {"pct": -8.55, "sem": 0.50, "abs_us": -19.5, "blocks_faster": "93/100"},
+    "get_children": {"pct": -7.81, "sem": 0.73, "abs_us": -22.4, "blocks_faster": "95/100"},
+    "get_entity": {"pct": -11.92, "sem": 0.31, "abs_us": -21.8, "blocks_faster": "100/100"},
+    "get_subtree": {"pct": -1.80, "sem": 0.94, "abs_us": -370, "blocks_faster": "8/12"}
+   },
+   "fairness": "PostgreSQL is published the same way and pays the same tax: -23.4 us on get_node, -24.6 us on get_children, -24.6 us on get_entity. The tax is a per-round-trip constant of 20-25 us that is independent of engine. Because PostgreSQL's operations are 2-3x shorter, the same constant is 26-33% of a PostgreSQL short read against 8-12% of a MongoDB one. Removing it on both sides therefore WIDENS the MongoDB-PostgreSQL gap by 2.1-3.9 us. It is a real win for MongoDB in absolute terms and NOT a source of the published gap.",
+   "cost": "none to correctness. Container-IP addressing is not stable across container restarts; --network host or a unix socket are the durable forms. A unix socket also removes the TCP stack, which this campaign did not measure.",
+   "falsified_by": "showing that the published-port path does not traverse docker-proxy on the reader's host (some Docker configurations DNAT loopback instead), or measuring the same arms with the proxy removed and finding no difference",
+   "evidence": ["transport_mongo_2arm.json", "transport_pg_2arm.json", "transport_paired.json", "connection_subtree.json", "connection_lottery_bridge.json"]
+  },
+  {
+   "rank": 2,
+   "lever": "Exhaust cursors for get_subtree",
+   "layer": "driver option",
+   "change": "pass cursor_type=CursorType.EXHAUST to find() for the subtree range scan only",
+   "mechanism": "the server streams every batch without waiting for a getMore request, removing one client-to-server round trip per batch. The effect is proportional to batch count, so it is invisible on the median subtree and large on the ones that need many batches.",
+   "measured": {
+    "get_subtree_shared_connection": {"d50": 0.85, "d90": -28.07, "d95": -29.91, "dmean": -29.97, "top_decile_of_inputs": -30.27, "blocks": 12},
+    "get_subtree_fresh_connections": {"d50": -0.56, "d90": -23.94, "d95": -28.59, "dmean": -26.80, "top_decile_of_inputs": -29.47, "blocks": 12},
+    "get_children": {"d50": 3.50, "sem": 0.17, "blocks_faster": "0/40", "note": "exhaust HURTS the 10-row read"}
+   },
+   "gap_share": "-29.91% of the published 208.10 ms P95 is -62.2 ms against a 43.25 ms P95 gap, i.e. 144% of the P95 gap. It does not move the P50 gap at all.",
+   "cost": "an exhaust cursor owns its socket until the reply is fully drained, so nothing else can be multiplexed on that connection meanwhile; it is unsupported behind a load balancer and in load-balanced mongos deployments; and it costs +3.5% on get_children, so it must be applied per operation, not per client.",
+   "falsified_by": "a workload whose subtrees all fit in one batch, or a deployment behind a load balancer where the option is unavailable",
+   "reproduced_independently": "two campaigns with different connection regimes (one shared connection vs fresh connections per block) and different input sets agree within 2 points on d95",
+   "evidence": ["queryopts_subtree.json", "connection_subtree.json"]
+  },
+  {
+   "rank": 3,
+   "lever": "Drop the pinned index hint on get_node",
+   "layer": "query option",
+   "change": "remove hint='allops_tree_node' from the get_node find_one",
+   "measured": {
+    "get_node": {"pct": -1.29, "sem": 0.12, "blocks_faster": "40/40", "abs_us": -2.9},
+    "get_children": {"pct": 0.30, "sem": 0.19, "blocks_faster": "17/40"},
+    "get_subtree": {"pct": 1.79, "sem": 0.77, "blocks_faster": "4/12"},
+    "get_entity": {"pct": 0.09, "sem": 0.08, "note": "null control, get_entity is unhinted in both arms"}
+   },
+   "gap_share": "2.4% of the 104.3 us get_node gap. Nothing on the other three operations.",
+   "revises": "report.tex states a hint costs about 19 us (roughly 9%) per lookup against an unhinted IDHACK on 7.0.34. That figure is specific to _id-equality shapes where IDHACK is available. get_node is a compound secondary-index equality on (tree_id,node_id); no IDHACK path exists for it, and removing the hint is worth 2.9 us, not 19 us. On get_children and get_subtree removing the hint is neutral or negative.",
+   "plan_stability_cost": "unhinted get_node has one rejected plan, so it multi-plans on every plan-cache miss and replans whenever the entry is evicted or deactivated. Unhinted get_subtree still selects PROJECTION_COVERED -> IXSCAN(layout2_rootcause_exact_cover) on all six samples explained, rejecting FETCH -> IXSCAN(path_1_node_id_1), so the covered plan is not at risk for this shape.",
+   "falsified_by": "a collection where the planner's cost model prefers a different index for the same shape, or a plan-cache eviction rate high enough that multi-planning cost exceeds the 2.9 us saved",
+   "evidence": ["queryopts_short.json", "queryopts_subtree.json"]
+  },
+  {
+   "rank": 4,
+   "lever": "Keep the covering index; it earns its 4.66 GB",
+   "layer": "index choice",
+   "change": "none - this prices the existing choice",
+   "measured": {"get_subtree_narrow_index_plus_FETCH": {"d50": 21.78, "sem": 2.87, "d95": 20.07, "blocks_faster": "0/8"}},
+   "refutes": "the premise that MongoDB is disadvantaged because it order-encodes covering fields into the KeyString while PostgreSQL has INCLUDE. Measured on this data the MongoDB covering index (path,node_id,title,summary) is 4,662,206,464 bytes and the PostgreSQL equivalent (tree_id,path,node_id) INCLUDE (title,summary) is 5,506,342,912 bytes - PostgreSQL's is 18% LARGER. Whole-dataset footprint: MongoDB 1.67 GB collection + 5.45 GB indexes = 7.12 GB; PostgreSQL 4.78 GB heap + 12 GB total relation size.",
+   "evidence": ["queryopts_covering_index.json"]
+  }
+ ],
+
+ "priced_and_not_worth_it": [
+  {
+   "lever": "wire compression (snappy / zstd / zlib)",
+   "verdict": "strongly negative on every operation; the worst lever measured",
+   "measured_pct_d50": {
+    "snappy": {"get_node": 12.99, "get_children": 15.90, "get_entity": 14.96, "get_subtree": 57.71},
+    "zstd": {"get_node": 28.98, "get_children": 32.97, "get_entity": 33.34, "get_subtree": 84.09},
+    "zlib_level1": {"get_node": 36.84, "get_children": 65.99, "get_entity": 44.64}
+   },
+   "denominator_first": "the median subtree reply is 5,037,950 bytes of BSON. Compressing it costs 7.1 ms (snappy) or 13.3 ms (zstd-3) or 36.1 ms (zlib-1) on the server, plus 5.8 / 3.3 / 19.6 ms to decompress on the client, against an 18-20 ms operation, to avoid moving about 3.6 MB over loopback or a local bridge - worth on the order of 1-2 ms. The lever cannot pay on a co-located deployment, and the measurement confirms the arithmetic.",
+   "falsified_by": "a real network. At 1 GbE 3.6 MB costs about 30 ms, which is more than any of these compressors costs. Compression is a WAN lever, not a localhost lever. Server counters confirmed the compressors actually engaged (network.compression bytesIn/bytesOut moved from zero).",
+   "evidence": ["connection_short.json", "connection_subtree.json"]
+  },
+  {
+   "lever": "directConnection=true",
+   "verdict": "within the 1.3% noise floor of the fresh-connection design",
+   "measured_pct_d50": {"get_node": -1.17, "get_children": -0.20, "get_entity": -1.05},
+   "sem": {"get_node": 1.35, "get_children": 1.00, "get_entity": 1.93},
+   "evidence": ["connection_short.json"]
+  },
+  {
+   "lever": "retryReads=false",
+   "verdict": "null; sign is inconsistent across operations",
+   "measured_pct_d50": {"get_node": -0.12, "get_children": 1.44, "get_entity": 0.67},
+   "sem": {"get_node": 1.57, "get_children": 1.16, "get_entity": 1.80},
+   "evidence": ["connection_short.json"]
+  },
+  {
+   "lever": "heartbeatFrequencyMS=3600000 with directConnection (suppress topology monitoring)",
+   "verdict": "null; the client pays nothing measurable per operation for topology monitoring",
+   "measured_pct_d50": {"get_node": -0.83, "get_children": -0.45, "get_entity": -2.06},
+   "sem": {"get_node": 1.49, "get_children": 1.16, "get_entity": 1.56},
+   "evidence": ["connection_short.json"]
+  },
+  {
+   "lever": "readConcern=available",
+   "verdict": "negative or null; never faster",
+   "measured_pct_d50": {"get_node": 0.42, "get_children": 4.24, "get_entity": 3.23},
+   "evidence": ["connection_short.json"]
+  },
+  {
+   "lever": "exhaust cursors on get_children",
+   "verdict": "negative, +3.50% with sem 0.17, 0/40 blocks faster",
+   "evidence": ["queryopts_short.json"]
+  },
+  {
+   "lever": "pinning the client process to one NUMA node",
+   "verdict": "no effect; the per-connection latency dispersion is server-side, not client-side",
+   "measured": {"unpinned_median_p50_ms": 0.2303, "numa_node0_median_p50_ms": 0.2260, "numa_node1_median_p50_ms": 0.2247, "spread_pct_unpinned": 23.0, "spread_pct_node0": 25.0, "spread_pct_node1": 26.2},
+   "evidence": ["connection_lottery_unpinned.json", "connection_lottery_numa_node0.json", "connection_lottery_numa_node1.json"]
+  },
+  {
+   "lever": "WiredTiger cache sizing",
+   "verdict": "not a lever on this box; the working set is entirely resident and there is no eviction pressure",
+   "measured": {"cache_max_gib": 503.28, "cache_used_gib": 50.68, "pages_requested": 943996509, "pages_read_into_cache": 1459631, "hit_rate_pct": 99.85, "eviction_server_unable_to_reach_goal": 0, "host_ram_gib": 1007},
+   "evidence": ["read from serverStatus.wiredTiger.cache, recorded here"]
+  },
+  {
+   "lever": "changing the arm ordering from cyclic rotation to an independent shuffle",
+   "verdict": "no measurable difference, contrary to an early hypothesis",
+   "measured": "five byte-identical arms on one shared connection, 200 inputs x 30 blocks: under cyclic rotation the four non-baseline arms land at -0.14/-0.11/-0.09/+0.02% on get_node and -0.01/-0.01/-0.17/-0.03% on get_children; under an independent shuffle, -0.08/-0.16/-0.14/-0.03% and -0.21/+0.03/-0.09/-0.18%. Both designs are inside +-0.2%.",
+   "withdrawn_claim": "an early six-arm smoke appeared to show cyclic rotation fabricating a 30% difference between two byte-identical arms. That was the per-connection placement lottery at two blocks, not the ordering. The claim is withdrawn and this null result is retained in its place.",
+   "evidence": ["armorder_rotation.json", "armorder_shuffled.json"]
+  }
+ ],
+
+ "methodological_findings": [
+  {
+   "finding": "per-connection latency lottery",
+   "statement": "fresh TCP connections to the same standalone mongod, doing the same hot loop, differ by 20-26% in P50. Over 40 unpinned trials of 400 operations each the per-connection P50 ranged from 0.2120 to 0.2608 ms, CV 4.95%, IQR 6.37%. Pinning the client to either NUMA node does not reduce the spread, so the draw is server-side worker-thread placement on this 2-socket box.",
+   "consequences": [
+    "any A/B that gives each arm its own long-lived connection is worth +-10% before the arms differ at all; the six-arm held-connection null control had one arm drift monotonically to +20.6%",
+    "the published all-operations harness holds one connection per engine for the whole run, so each published absolute latency rests on a single draw",
+    "a pooled application can be stuck with a slow connection for its lifetime; recycling connections (maxIdleTimeMS) converts a persistent penalty into transient noise"
+   ],
+   "evidence": ["connection_lottery_unpinned.json", "connection_lottery_numa_node0.json", "connection_lottery_numa_node1.json", "connection_lottery_bridge.json", "null_control_held_connections.json", "null_control_fresh_connections.json"]
+  },
+  {
+   "finding": "absolute levels drift on this shared box; only within-block paired deltas are trustworthy",
+   "statement": "two consecutive null-control runs on the same shared connection recorded get_node P50 of 0.3757 and 0.2123 ms while get_children was 0.2481 and 0.2497 ms in the same two runs, so the perturbation was time-localised rather than a property of the connection or the arm. Every number in this campaign is a mean of per-block paired deltas for that reason."
+  }
+ ],
+
+ "not_run_experiments_designed": [
+  {
+   "lever": "slowms",
+   "why_not_run": "changing a server setting was out of scope for this campaign and sibling agents were measuring concurrently",
+   "current_value": 0,
+   "known_effect": "report.tex measures that logging every operation inflates short-read server CPU by 38-40%",
+   "experiment": "with the box quiet, run bench_crosscut_queryopts.py with two arms that are byte-identical, alternating db.setProfilingLevel(0,{slowms:0}) and {slowms:100} between blocks rather than between arms, 40 blocks, 200 inputs, all four operations. Alternating between blocks rather than arms is required because the setting is global and cannot be held per arm. Confirm the setting took effect each block by reading db.getProfilingStatus(). Expect the largest effect on get_entity and get_node and none on get_subtree, whose per-operation log line amortises over 68,000 rows."
+  },
+  {
+   "lever": "internalQueryExecYieldIterations / internalQueryExecYieldPeriodMS",
+   "current_values": {"iterations": 1000, "periodMS": 10},
+   "why_it_might_matter": "the subtree scan advances 68,000 keys on average and up to 1.4 million, so it yields roughly 68 to 1,400 times per operation at the current setting",
+   "experiment": "same alternating-block design, sweeping internalQueryExecYieldIterations over {1000, 10000, 100000} on get_subtree only, 12 blocks per setting, 60 inputs. The read is uncontended and read-only, so raising the yield interval should be safe; the falsifier is any regression in a concurrent arm, which is why the sweep should be repeated with a second client running get_node in a loop."
+  },
+  {
+   "lever": "clustered collection on path (MongoDB 5.3+)",
+   "why_not_run": "requires materialising a second 10M-document collection, which perturbs a shared box mid-campaign",
+   "rationale": "a collection clustered by path stores documents in path order, so the subtree range becomes a sequential clustered scan with no secondary index and no FETCH, removing the 4.66 GB covering index entirely. This is the only structural alternative found that could beat the current index without a bucket redesign.",
+   "experiment": "build bench.layout2_clustered with createCollection(clusteredIndex={key:{_id:1},unique:true}) and _id set to the path string, populated by an aggregation $out from layout2_view. Then run bench_crosscut_queryopts.py with a clustered arm against the current covered arm, 12 blocks, 60 inputs, verifying fingerprints element-wise. Report index footprint alongside latency, since removing 4.66 GB is part of the value."
+  }
+ ],
+
+ "artifacts": {
+  "harnesses": [
+   "bench/db/bench_crosscut_config.py",
+   "bench/db/bench_crosscut_queryopts.py",
+   "bench/db/bench_crosscut_connection_lottery.py",
+   "bench/db/analyze_crosscut_config.py"
+  ],
+  "note": "every JSON in this directory carries the full per-observation timings under results.<op>.raw_ms, indexed [arm][block][input], so every reported delta can be recomputed. Every campaign verified each arm's output element-wise against the baseline arm by SHA-256 fingerprint over all inputs before timing, and re-checked row counts on every timed call."
+ }
+}

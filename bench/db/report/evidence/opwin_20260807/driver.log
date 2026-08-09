@@ -1,0 +1,61 @@
+verifying output equality element-wise
+  node: 6 arms x 64 inputs, 448 elements equal
+block 1/10
+block 2/10
+block 3/10
+block 4/10
+block 5/10
+block 6/10
+block 7/10
+block 8/10
+block 9/10
+block 10/10
+
+arm                          wall     ccpu   note
+A_find_one                  220.7     79.2   BASELINE pymongo Collection.find_one
+B_find_next                 205.2     76.6   Collection.find(...).limit(1) iterated directly
+C_db_command                189.6     54.7   Database.command: skips the Cursor object entirely
+D_find_one_noretry          209.6     78.0   find_one on a client with retryReads=False
+E_db_command_noretry        188.9     57.1   Database.command with retryReads=False
+F_raw_opmsg                 144.4     17.4   FLOOR raw OP_MSG, same C BSON codec, no lsid/session
+
+B_find_next              wall   -2.26% [-10.1,5.1]  ccpu   -0.38% (-0.3 us)
+C_db_command             wall  -13.13% [-20.1,-1.4]  ccpu  -28.44% (-22.5 us)
+D_find_one_noretry       wall   -4.69% [-11.9,6.0]  ccpu   -3.23% (-2.6 us)
+E_db_command_noretry     wall  -14.60% [-21.2,-6.6]  ccpu  -29.62% (-23.1 us)
+F_raw_opmsg              wall  -32.10% [-38.2,-25.6]  ccpu  -77.61% (-61.1 us)
+
+         1284111 function calls (1252200 primitive calls) in 1.081 seconds
+
+   Ordered by: internal time
+   List reduced from 242 to 28 due to restriction <28>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+6002/1102    0.422    0.000    0.075    0.000 {method 'recv_into' of '_socket.socket' objects}
+     3000    0.026    0.000    0.043    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/cursor.py:96(__init__)
+     3000    0.024    0.000    0.651    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/server.py:137(run_operation)
+     3000    0.020    0.000    0.020    0.000 {method 'sendall' of '_socket.socket' objects}
+     3000    0.019    0.000    0.040    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/pool.py:1298(checkin)
+     3000    0.017    0.000    0.977    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/cursor.py:1171(_refresh)
+     3000    0.016    0.000    0.036    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/pool.py:1169(_get_conn)
+     3000    0.014    0.000    0.938    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/cursor.py:1087(_send_message)
+     6000    0.012    0.000    0.455    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/network_layer.py:328(receive_data)
+     3000    0.011    0.000    0.012    0.000 {built-in method pymongo._cmessage._op_msg}
+     6000    0.010    0.000    0.091    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/pool.py:1064(checkout)
+     6000    0.009    0.000    0.060    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/message.py:1641(as_command)
+     6000    0.009    0.000    0.121    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/mongo_client.py:1724(_checkout)
+    24000    0.009    0.000    0.014    0.000 /home/junyao/code/pageindex/ConDB/bench/db/bench_opwin_20260807.py:145(<genexpr>)
+3002/3000    0.009    0.000    1.045    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/collection.py:1724(find_one)
+    54000    0.009    0.000    0.013    0.000 {built-in method builtins.isinstance}
+21000/9000    0.008    0.000    0.139    0.000 {built-in method builtins.next}
+     3000    0.008    0.000    0.008    0.000 {built-in method bson._cbson._decode_all}
+     3000    0.008    0.000    0.472    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/network_layer.py:742(receive_message)
+    15004    0.008    0.000    0.017    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/pool.py:192(set_conn_timeout)
+    12000    0.008    0.000    0.008    0.000 {method 'settimeout' of '_socket.socket' objects}
+    57000    0.007    0.000    0.007    0.000 {method 'get' of 'dict' objects}
+     3000    0.007    0.000    0.034    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/topology.py:261(select_servers)
+     3000    0.007    0.000    0.010    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/message.py:216(_gen_find_command)
+6000/3000    0.007    0.000    0.903    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/_csot.py:112(csot_wrapper)
+    24000    0.007    0.000    0.010    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/_csot.py:35(get_timeout)
+    21000    0.006    0.000    0.010    0.000 /home/junyao/code/pageindex/ConDB/.venv/lib/python3.14/site-packages/pymongo/synchronous/client_session.py:951(in_transaction)
+     3000    0.006    0.000    0.020    0.000 /home/j

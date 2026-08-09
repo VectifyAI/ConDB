@@ -30,7 +30,7 @@ docker start condb_pg condb_mongo >/dev/null 2>&1
 sleep 5
 echo "$(date '+%F %T') idle confirmed (load $(cut -d' ' -f1 /proc/loadavg)), running concurrency" >> "$LOG"
 bench/db/.venv/bin/python bench/db/bench_concurrency.py --doc bench/db/data/medium.json \
-    --duration 5 --concurrency 1 2 4 8 16 32 64 \
+    --duration 5 --concurrency 1 2 4 8 16 \
     --out bench/db/runs/concurrency_medium.json >> "$LOG" 2>&1
 echo "$(date '+%F %T') post-run load1=$(cut -d' ' -f1 /proc/loadavg) bench_rebuilt=$(pgrep -x bench_rebuilt >/dev/null && echo present || echo absent)" >> "$LOG"
 echo "$(date '+%F %T') DONE" >> "$LOG"

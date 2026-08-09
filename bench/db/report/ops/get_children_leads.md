@@ -835,6 +835,42 @@ starts the execution timer, checks the fail point, and calls `checkForInterrupt(
 `_stash` is always empty so it could never fire — but that is safety by luck. Moved inside the
 guarded scope: returning a stashed document must not be a way to dodge a `killOp`.
 
+### A second wrong-results bug, found by MongoDB's own test rather than by mine
+
+Running `jstests/core/index/express*.js` against a gated and an ungated server found one regression:
+`express_id_eq.js`, asserting
+
+```js
+// Assert that equality to null does not use express because 'null' isn't an exact bounds
+// generating type.
+assert(!isExpress(testDB, collection.find({_id: {$eq: null}}).explain()), ...);
+```
+
+`{$eq: null}` also matches a **missing** field, so its index bounds are a superset that a `FETCH` is
+expected to re-filter — and this path does no re-filtering. My eligibility accepted any equality
+value. The shipped express path had solved this already with
+`Indexability::isExactBoundsGenerating`; I had not copied it. Fixed by using the same helper rather
+than reasoning about which types are safe.
+
+**The method lesson, which matters more than the bug.** My fuzz compared *results* over 795 shapes
+and passed — on that data `{a: null}` genuinely returned the same rows, because every document had
+the field present and a missing field indexes as null anyway. Only MongoDB's assertion about the
+*plan* caught it.
+
+> Comparing results shows a path did not go wrong **this time**. Asserting the plan shows it did not
+> take a path that **can** go wrong.
+
+The fuzz now carries plan assertions too, for six shapes that must not express.
+
+### Both bugs came from the same place
+
+`isEqualityExpressEligibleQuery` refuses **every hinted query and every sorted query** outright.
+This change supports both — that is the entire point of it — and **each relaxation grew exactly one
+wrong-results bug.** That is not a coincidence worth glossing: those two rules were load-bearing,
+and relaxing a conservative rule means taking on the reasoning it was standing in for. Both fixes
+ended up delegating to MongoDB's own helper for the thing the rule was protecting, which is where
+they should have started.
+
 ### Non-intrusion audit
 
 The whole change has **two deletions**: `isEOF()`'s body, and `stashResult()`'s
@@ -843,7 +879,26 @@ gate off the surface is three lines, each individually arguable: `_stash` is alw
 `isEOF()` is unchanged, `getNext()`'s new block never runs, and `stashResult()` was previously
 unreachable.
 
-Express unit tests (`//src/mongo/db/exec/express:express_execution_test`): **30/30 pass.**
+### Final state, after both fixes
+
+| check | result |
+|---|---|
+| `jstests/core/index/express*.js` | **0 regressions** (`express_id_eq.js` passes again); 3 fail on both servers under this standalone harness, which lacks resmoke's fixtures |
+| differential fuzz | **795 shapes, no differences**, plus 6 plan assertions |
+| correctness gate | all pass, incl. 5,000 rows over ~49 batches and `internalQueryExecYieldIterations=1` |
+| collated collection | declines correctly, including an index opting out with `{locale: "simple"}` |
+| express unit tests | **30/30** |
+
+Re-measured on a quiet box after the fixes — slightly *better* than before them, because the hint
+check short-circuits the candidate loop earlier:
+
+| instrument | effect | control floor |
+|---|---|---|
+| retired instructions | **−22.79%**, blocks [−22.85, −22.71] | −0.57% |
+| server CPU | **−36.73% / −36.44% / −34.99%** | −0.28% / +0.01% / −0.42% |
+| client wall | −19.39% / −18.61% / −17.27% | — |
+
+**60 of 60 blocks improved.** Absolute server CPU 89.1–93.2 µs falls to 58.0–59.5 µs.
 
 ## Still to run
 

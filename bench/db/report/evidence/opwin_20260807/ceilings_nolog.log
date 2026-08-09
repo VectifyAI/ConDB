@@ -1,0 +1,32 @@
+set {'was': 0, 'slowms': 0, 'sampleRate': 1.0, 'ok': 1.0}
+part 2: IDHACK eligibility of natural-key _id shapes
+  subdoc_id_nohint       winning stage = IDHACK
+  string_id_nohint       winning stage = IDHACK
+  string_id_withhint     winning stage = FETCH
+  get_node unhinted on the real collection: {"stage": "FETCH", "inputStage": {"stage": "IXSCAN", "keyPattern": {"tree_id": 1, "node_id": 1}, "indexName": "allops_tree_node", "isMultiKey": false, "multiKeyPaths": {"tree_id": [], "node_id": []}, 
+part 3: building opwin_children_embedded from path prefix /000000/000010
+  built in 0.5s, 9625 documents
+  opwin_children_embedded: 9625 docs, avgObjSize 4380
+  cohort median fan-out 11.0; 64 matched parents, 64 single-child parents
+timing
+  block 1/8
+  block 2/8
+  block 3/8
+  block 4/8
+  block 5/8
+  block 6/8
+  block 7/8
+  block 8/8
+
+arm                    wall     ccpu     scpu   note
+children_base         119.0     23.8     98.7   REFERENCE contract: node_id,title,summary
+ceil_covered           88.5     19.2     72.2   CEILING covered scan, node_id only, no FETCH
+ceil_count             70.8     15.1     58.0   CEILING count only, COUNT_SCAN
+emb_n                  62.8     22.9     42.1   embedded array, ~11 children, one IDHACK read
+emb_1                  53.7     17.0     38.4   embedded array, 1 child, same keys, one IDHACK rea
+
+ceil_covered       scpu  -25.52% (-24.4 us) [-32.5,-18.9]
+ceil_count         scpu  -41.29% (-39.4 us) [-48.5,-35.3]
+emb_n              scpu  -57.46% (-56.8 us) [-61.4,-53.2]
+emb_1              scpu  -60.79% (-61.1 us) [-64.2,-52.2]
+restore {'was': 0, 'slowms': 100, 'sampleRate': 1.0, 'ok': 1.0}

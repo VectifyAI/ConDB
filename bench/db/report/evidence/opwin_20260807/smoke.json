@@ -1,0 +1,1015 @@
+{
+  "run": {
+    "generated_unix_s": 1786042492.3200936,
+    "blocks": 3,
+    "iters_per_block": 120,
+    "inputs": 16,
+    "mongod_pid": 1041173,
+    "mongodb_version": "7.0.34",
+    "pymongo": "4.12.0",
+    "published": "localhost:57017",
+    "container": "172.17.0.3:27017",
+    "profile_setting": {
+      "was": 0,
+      "slowms": 0,
+      "sampleRate": 1.0,
+      "ok": 1.0
+    }
+  },
+  "contract": {
+    "wall_us": "client wall clock per operation",
+    "ccpu_us": "client python process CPU (user+sys) per operation",
+    "scpu_us": "mongod CPU on this arm's own connection thread only",
+    "other_conn_us": "CPU on every OTHER mongod connection thread during the same window; a contamination gauge, not a cost"
+  },
+  "equality": {
+    "node": {
+      "arms": [
+        "node_base",
+        "node_ip",
+        "node_nohint",
+        "node_idhack",
+        "node_idhack_ip",
+        "node_raw",
+        "node_raw_ip",
+        "node_raw_idhack_ip"
+      ],
+      "inputs": 16,
+      "elements_compared": 112,
+      "all_equal": true
+    },
+    "children": {
+      "arms": [
+        "children_base",
+        "children_ip",
+        "children_nosort",
+        "children_raw",
+        "children_raw_ip",
+        "children_raw_nosort_ip"
+      ],
+      "inputs": 16,
+      "elements_compared": 513,
+      "all_equal": true
+    }
+  },
+  "summary": {
+    "node_base": {
+      "family": "node",
+      "note": "BASELINE: pymongo find_one, hint, published docker port",
+      "wall_us": 235.18,
+      "wall_min": 225.16,
+      "wall_max": 243.02,
+      "ccpu_us": 88.78,
+      "scpu_us": 129.9,
+      "other_conn_us": 0.0
+    },
+    "node_ip": {
+      "family": "node",
+      "note": "same, container IP direct (no docker-proxy)",
+      "wall_us": 203.63,
+      "wall_min": 198.17,
+      "wall_max": 216.79,
+      "ccpu_us": 86.37,
+      "scpu_us": 126.21,
+      "other_conn_us": 0.0
+    },
+    "node_nohint": {
+      "family": "node",
+      "note": "hint dropped, published port",
+      "wall_us": 214.96,
+      "wall_min": 211.02,
+      "wall_max": 229.81,
+      "ccpu_us": 78.39,
+      "scpu_us": 117.87,
+      "other_conn_us": 0.0
+    },
+    "node_idhack": {
+      "family": "node",
+      "note": "query by _id -> IDHACK, published port",
+      "wall_us": 173.8,
+      "wall_min": 172.79,
+      "wall_max": 198.98,
+      "ccpu_us": 78.8,
+      "scpu_us": 77.69,
+      "other_conn_us": 0.0
+    },
+    "node_idhack_ip": {
+      "family": "node",
+      "note": "IDHACK + container IP",
+      "wall_us": 158.33,
+      "wall_min": 156.06,
+      "wall_max": 165.99,
+      "ccpu_us": 81.16,
+      "scpu_us": 82.52,
+      "other_conn_us": 0.0
+    },
+    "node_raw": {
+      "family": "node",
+      "note": "raw OP_MSG, no lsid, published port",
+      "wall_us": 164.46,
+      "wall_min": 154.99,
+      "wall_max": 164.73,
+      "ccpu_us": 17.7,
+      "scpu_us": 124.23,
+      "other_conn_us": 0.0
+    },
+    "node_raw_ip": {
+      "family": "node",
+      "note": "raw OP_MSG, container IP",
+      "wall_us": 123.05,
+      "wall_min": 122.07,
+      "wall_max": 149.2,
+      "ccpu_us": 18.15,
+      "scpu_us": 108.65,
+      "other_conn_us": 0.0
+    },
+    "node_raw_idhack_ip": {
+      "family": "node",
+      "note": "raw OP_MSG + IDHACK + container IP (stacked)",
+      "wall_us": 85.27,
+      "wall_min": 85.27,
+      "wall_max": 96.5,
+      "ccpu_us": 18.46,
+      "scpu_us": 69.27,
+      "other_conn_us": 0.0
+    },
+    "children_base": {
+      "family": "children",
+      "note": "BASELINE: pymongo find+sort+hint, published docker port",
+      "wall_us": 258.45,
+      "wall_min": 249.78,
+      "wall_max": 280.51,
+      "ccpu_us": 91.38,
+      "scpu_us": 147.8,
+      "other_conn_us": 0.0
+    },
+    "children_ip": {
+      "family": "children",
+      "note": "same, container IP direct",
+      "wall_us": 228.21,
+      "wall_min": 223.81,
+      "wall_max": 237.7,
+      "ccpu_us": 91.44,
+      "scpu_us": 146.13,
+      "other_conn_us": 0.0
+    },
+    "children_nosort": {
+      "family": "children",
+      "note": "explicit sort dropped (index already supplies the order)",
+      "wall_us": 259.5,
+      "wall_min": 247.93,
+      "wall_max": 270.24,
+      "ccpu_us": 90.23,
+      "scpu_us": 152.61,
+      "other_conn_us": 0.0
+    },
+    "children_raw": {
+      "family": "children",
+      "note": "raw OP_MSG, published port",
+      "wall_us": 196.38,
+      "wall_min": 184.35,
+      "wall_max": 199.3,
+      "ccpu_us": 24.53,
+      "scpu_us": 149.97,
+      "other_conn_us": 0.0
+    },
+    "children_raw_ip": {
+      "family": "children",
+      "note": "raw OP_MSG, container IP",
+      "wall_us": 165.94,
+      "wall_min": 157.74,
+      "wall_max": 168.5,
+      "ccpu_us": 26.99,
+      "scpu_us": 145.57,
+      "other_conn_us": 0.0
+    },
+    "children_raw_nosort_ip": {
+      "family": "children",
+      "note": "raw OP_MSG, no sort, container IP",
+      "wall_us": 154.5,
+      "wall_min": 150.1,
+      "wall_max": 163.36,
+      "ccpu_us": 26.73,
+      "scpu_us": 133.65,
+      "other_conn_us": 0.0
+    },
+    "ping_base": {
+      "family": "ping",
+      "note": "pymongo ping, published port",
+      "wall_us": 108.12,
+      "wall_min": 107.22,
+      "wall_max": 109.99,
+      "ccpu_us": 52.34,
+      "scpu_us": 32.6,
+      "other_conn_us": 0.0
+    },
+    "ping_ip": {
+      "family": "ping",
+      "note": "pymongo ping, container IP",
+      "wall_us": 83.81,
+      "wall_min": 82.14,
+      "wall_max": 87.25,
+      "ccpu_us": 53.17,
+      "scpu_us": 33.16,
+      "other_conn_us": 0.0
+    },
+    "ping_raw": {
+      "family": "ping",
+      "note": "raw OP_MSG ping, published port",
+      "wall_us": 70.41,
+      "wall_min": 68.01,
+      "wall_max": 72.12,
+      "ccpu_us": 13.01,
+      "scpu_us": 30.59,
+      "other_conn_us": 0.0
+    },
+    "ping_raw_ip": {
+      "family": "ping",
+      "note": "raw OP_MSG ping, container IP",
+      "wall_us": 43.77,
+      "wall_min": 42.21,
+      "wall_max": 44.49,
+      "ccpu_us": 14.79,
+      "scpu_us": 29.5,
+      "other_conn_us": 0.0
+    }
+  },
+  "paired": {
+    "node_ip": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -26.99,
+        "median_pct": -11.99,
+        "min_pct": -13.42,
+        "max_pct": -10.79,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": 0.31,
+        "median_pct": 0.37,
+        "min_pct": -2.71,
+        "max_pct": 3.26,
+        "blocks_favouring_arm": 1
+      },
+      "scpu_us": {
+        "median_delta_us": -2.6,
+        "median_pct": -1.9,
+        "min_pct": -2.84,
+        "max_pct": -1.6,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "node_nohint": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -20.21,
+        "median_pct": -8.59,
+        "min_pct": -13.17,
+        "max_pct": 2.06,
+        "blocks_favouring_arm": 2
+      },
+      "ccpu_us": {
+        "median_delta_us": -8.19,
+        "median_pct": -9.22,
+        "min_pct": -12.55,
+        "max_pct": -8.85,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -12.03,
+        "median_pct": -9.26,
+        "min_pct": -16.17,
+        "max_pct": 12.5,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "node_idhack": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -61.38,
+        "median_pct": -26.1,
+        "min_pct": -28.9,
+        "max_pct": -11.63,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -9.98,
+        "median_pct": -11.24,
+        "min_pct": -12.82,
+        "max_pct": -3.24,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -52.21,
+        "median_pct": -40.19,
+        "min_pct": -44.63,
+        "max_pct": -19.99,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "node_idhack_ip": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -77.04,
+        "median_pct": -31.7,
+        "min_pct": -33.64,
+        "max_pct": -29.68,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -2.46,
+        "median_pct": -2.94,
+        "min_pct": -8.82,
+        "max_pct": -2.64,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -48.91,
+        "median_pct": -37.65,
+        "min_pct": -37.96,
+        "max_pct": -33.32,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "node_raw": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -70.45,
+        "median_pct": -29.95,
+        "min_pct": -36.22,
+        "max_pct": -26.96,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -68.45,
+        "median_pct": -79.94,
+        "min_pct": -80.25,
+        "max_pct": -77.1,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -5.67,
+        "median_pct": -4.36,
+        "min_pct": -15.76,
+        "max_pct": 6.76,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "node_raw_ip": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -103.09,
+        "median_pct": -45.78,
+        "min_pct": -49.37,
+        "max_pct": -36.56,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -66.73,
+        "median_pct": -78.55,
+        "min_pct": -79.75,
+        "max_pct": -75.16,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -15.29,
+        "median_pct": -12.36,
+        "min_pct": -20.6,
+        "max_pct": 3.02,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "node_raw_idhack_ip": {
+      "vs": "node_base",
+      "wall_us": {
+        "median_delta_us": -139.9,
+        "median_pct": -62.13,
+        "min_pct": -64.91,
+        "max_pct": -58.97,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -69.33,
+        "median_pct": -78.09,
+        "min_pct": -79.65,
+        "max_pct": -77.93,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -54.47,
+        "median_pct": -44.02,
+        "min_pct": -49.44,
+        "max_pct": -38.81,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "children_ip": {
+      "vs": "children_base",
+      "wall_us": {
+        "median_delta_us": -34.63,
+        "median_pct": -13.4,
+        "min_pct": -15.26,
+        "max_pct": -8.64,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -2.09,
+        "median_pct": -2.28,
+        "min_pct": -3.54,
+        "max_pct": 3.89,
+        "blocks_favouring_arm": 2
+      },
+      "scpu_us": {
+        "median_delta_us": -4.2,
+        "median_pct": -2.84,
+        "min_pct": -7.23,
+        "max_pct": 2.81,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "children_nosort": {
+      "vs": "children_base",
+      "wall_us": {
+        "median_delta_us": -10.52,
+        "median_pct": -4.07,
+        "min_pct": -7.49,
+        "max_pct": 8.19,
+        "blocks_favouring_arm": 2
+      },
+      "ccpu_us": {
+        "median_delta_us": -4.48,
+        "median_pct": -4.9,
+        "min_pct": -8.57,
+        "max_pct": 2.51,
+        "blocks_favouring_arm": 2
+      },
+      "scpu_us": {
+        "median_delta_us": -7.25,
+        "median_pct": -4.9,
+        "min_pct": -6.08,
+        "max_pct": 14.5,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "children_raw": {
+      "vs": "children_base",
+      "wall_us": {
+        "median_delta_us": -74.1,
+        "median_pct": -28.67,
+        "min_pct": -29.99,
+        "max_pct": -20.21,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -66.85,
+        "median_pct": -73.22,
+        "min_pct": -73.82,
+        "max_pct": -73.16,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -6.77,
+        "median_pct": -4.58,
+        "min_pct": -7.7,
+        "max_pct": 13.03,
+        "blocks_favouring_arm": 2
+      }
+    },
+    "children_raw_ip": {
+      "vs": "children_base",
+      "wall_us": {
+        "median_delta_us": -92.5,
+        "median_pct": -36.85,
+        "min_pct": -39.93,
+        "max_pct": -35.79,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -64.39,
+        "median_pct": -70.72,
+        "min_pct": -72.57,
+        "max_pct": -70.46,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -3.97,
+        "median_pct": -2.8,
+        "min_pct": -9.31,
+        "max_pct": -1.51,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "children_raw_nosort_ip": {
+      "vs": "children_base",
+      "wall_us": {
+        "median_delta_us": -108.35,
+        "median_pct": -41.77,
+        "min_pct": -41.92,
+        "max_pct": -38.15,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -65.62,
+        "median_pct": -71.8,
+        "min_pct": -71.88,
+        "max_pct": -69.63,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -17.57,
+        "median_pct": -11.89,
+        "min_pct": -12.75,
+        "max_pct": -5.97,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "ping_ip": {
+      "vs": "ping_base",
+      "wall_us": {
+        "median_delta_us": -24.31,
+        "median_pct": -22.49,
+        "min_pct": -23.39,
+        "max_pct": -20.68,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": 2.14,
+        "median_pct": 4.0,
+        "min_pct": 1.58,
+        "max_pct": 6.02,
+        "blocks_favouring_arm": 0
+      },
+      "scpu_us": {
+        "median_delta_us": 0.14,
+        "median_pct": 0.42,
+        "min_pct": -0.96,
+        "max_pct": 5.06,
+        "blocks_favouring_arm": 1
+      }
+    },
+    "ping_raw": {
+      "vs": "ping_base",
+      "wall_us": {
+        "median_delta_us": -39.21,
+        "median_pct": -35.99,
+        "min_pct": -36.57,
+        "max_pct": -33.3,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -39.33,
+        "median_pct": -74.64,
+        "min_pct": -75.15,
+        "max_pct": -74.61,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -1.96,
+        "median_pct": -6.02,
+        "min_pct": -10.43,
+        "max_pct": -0.73,
+        "blocks_favouring_arm": 3
+      }
+    },
+    "ping_raw_ip": {
+      "vs": "ping_base",
+      "wall_us": {
+        "median_delta_us": -65.01,
+        "median_pct": -60.21,
+        "min_pct": -60.64,
+        "max_pct": -58.85,
+        "blocks_favouring_arm": 3
+      },
+      "ccpu_us": {
+        "median_delta_us": -37.54,
+        "median_pct": -71.73,
+        "min_pct": -72.34,
+        "max_pct": -71.11,
+        "blocks_favouring_arm": 3
+      },
+      "scpu_us": {
+        "median_delta_us": -3.05,
+        "median_pct": -9.37,
+        "min_pct": -14.29,
+        "max_pct": -8.38,
+        "blocks_favouring_arm": 3
+      }
+    }
+  },
+  "raw": {
+    "node_base": [
+      {
+        "block": 0,
+        "wall_us": 235.17778608947992,
+        "ccpu_us": 88.78102500000003,
+        "scpu_us": 129.89541666666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 225.16401950269938,
+        "ccpu_us": 83.62060833333277,
+        "scpu_us": 123.74383333333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 243.02465996394554,
+        "ccpu_us": 89.64444166666696,
+        "scpu_us": 136.83379166666666,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_ip": [
+      {
+        "block": 0,
+        "wall_us": 203.62526023139557,
+        "ccpu_us": 86.37297500000001,
+        "scpu_us": 126.210575,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 198.1718853736917,
+        "ccpu_us": 83.92920000000007,
+        "scpu_us": 121.76937500000001,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 216.79111135502657,
+        "ccpu_us": 92.56903333333307,
+        "scpu_us": 134.23865,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_nohint": [
+      {
+        "block": 0,
+        "wall_us": 214.96493524561325,
+        "ccpu_us": 80.59112499999993,
+        "scpu_us": 117.86503333333333,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 229.80642970651388,
+        "ccpu_us": 76.2212250000005,
+        "scpu_us": 139.21263333333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 211.01691915343204,
+        "ccpu_us": 78.39014999999986,
+        "scpu_us": 114.7023,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_idhack": [
+      {
+        "block": 0,
+        "wall_us": 173.79618560274443,
+        "ccpu_us": 78.80430833333331,
+        "scpu_us": 77.68701666666666,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 198.98395209262767,
+        "ccpu_us": 80.91110000000012,
+        "scpu_us": 99.01096666666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 172.78909993668398,
+        "ccpu_us": 78.1483916666668,
+        "scpu_us": 75.77154166666666,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_idhack_ip": [
+      {
+        "block": 0,
+        "wall_us": 156.06201098610958,
+        "ccpu_us": 80.95049999999974,
+        "scpu_us": 80.98840833333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 158.32718927413225,
+        "ccpu_us": 81.15980833333278,
+        "scpu_us": 82.51610833333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 165.98959919065237,
+        "ccpu_us": 87.27541666666653,
+        "scpu_us": 84.88652499999999,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_raw": [
+      {
+        "block": 0,
+        "wall_us": 164.73174716035524,
+        "ccpu_us": 20.330241666666655,
+        "scpu_us": 124.22569166666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 164.4587144255638,
+        "ccpu_us": 16.771666666666,
+        "scpu_us": 132.10724166666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 154.99331057071686,
+        "ccpu_us": 17.703950000000358,
+        "scpu_us": 115.26931666666665,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_raw_ip": [
+      {
+        "block": 0,
+        "wall_us": 149.20413183669248,
+        "ccpu_us": 22.053683333333552,
+        "scpu_us": 133.81251666666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 122.0731142287453,
+        "ccpu_us": 17.93370000000016,
+        "scpu_us": 108.4542,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 123.045911702017,
+        "ccpu_us": 18.151141666665943,
+        "scpu_us": 108.652075,
+        "other_conn_us": 0.0
+      }
+    ],
+    "node_raw_idhack_ip": [
+      {
+        "block": 0,
+        "wall_us": 96.5037460749348,
+        "ccpu_us": 19.44919999999998,
+        "scpu_us": 79.48508333333332,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 85.26835590600967,
+        "ccpu_us": 18.456616666666832,
+        "scpu_us": 69.27199166666666,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 85.27084719389677,
+        "ccpu_us": 18.238308333333915,
+        "scpu_us": 69.18613333333333,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_base": [
+      {
+        "block": 0,
+        "wall_us": 280.51343591262895,
+        "ccpu_us": 100.35254166666645,
+        "scpu_us": 162.48639166666666,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 249.78378787636757,
+        "ccpu_us": 88.01915833333378,
+        "scpu_us": 142.13845833333335,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 258.44705135871965,
+        "ccpu_us": 91.38077500000045,
+        "scpu_us": 147.80018333333334,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_ip": [
+      {
+        "block": 0,
+        "wall_us": 237.7048290024201,
+        "ccpu_us": 96.80405000000032,
+        "scpu_us": 150.73883333333333,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 228.21297558645406,
+        "ccpu_us": 91.44326666666592,
+        "scpu_us": 146.12769166666666,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 223.81472711761793,
+        "ccpu_us": 89.29501666666654,
+        "scpu_us": 143.59891666666667,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_nosort": [
+      {
+        "block": 0,
+        "wall_us": 259.49832051992416,
+        "ccpu_us": 91.75424166666669,
+        "scpu_us": 152.6059,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 270.2421120678385,
+        "ccpu_us": 90.22830000000037,
+        "scpu_us": 162.74900833333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 247.9252793515722,
+        "ccpu_us": 86.90009166666587,
+        "scpu_us": 140.551925,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_raw": [
+      {
+        "block": 0,
+        "wall_us": 196.37864703933397,
+        "ccpu_us": 26.267583333333214,
+        "scpu_us": 149.96838333333332,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 199.3043115362525,
+        "ccpu_us": 23.575341666666933,
+        "scpu_us": 160.660425,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 184.34530744949976,
+        "ccpu_us": 24.526841666666634,
+        "scpu_us": 141.02558333333334,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_raw_ip": [
+      {
+        "block": 0,
+        "wall_us": 168.49783714860678,
+        "ccpu_us": 27.525641666666562,
+        "scpu_us": 147.353525,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 157.73955577363571,
+        "ccpu_us": 25.77560833333381,
+        "scpu_us": 138.16554166666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 165.9449345121781,
+        "ccpu_us": 26.990874999999196,
+        "scpu_us": 145.5711916666667,
+        "other_conn_us": 0.0
+      }
+    ],
+    "children_raw_nosort_ip": [
+      {
+        "block": 0,
+        "wall_us": 163.35610610743365,
+        "ccpu_us": 28.223249999999773,
+        "scpu_us": 141.7655,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 154.49558850377798,
+        "ccpu_us": 26.73130000000005,
+        "scpu_us": 133.65119166666668,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 150.09734003494182,
+        "ccpu_us": 25.76553333333287,
+        "scpu_us": 130.22568333333334,
+        "other_conn_us": 0.0
+      }
+    ],
+    "ping_base": [
+      {
+        "block": 0,
+        "wall_us": 108.12097073843081,
+        "ccpu_us": 52.33779166666647,
+        "scpu_us": 33.0191,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 107.21761112411816,
+        "ccpu_us": 49.850941666666294,
+        "scpu_us": 32.59984166666667,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 109.9937129765749,
+        "ccpu_us": 53.49602500000032,
+        "scpu_us": 32.54385,
+        "other_conn_us": 0.0
+      }
+    ],
+    "ping_ip": [
+      {
+        "block": 0,
+        "wall_us": 83.80675377945106,
+        "ccpu_us": 53.16707499999999,
+        "scpu_us": 33.15736666666667,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 82.1393293639024,
+        "ccpu_us": 52.85113333333332,
+        "scpu_us": 32.28684166666667,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 87.2498145326972,
+        "ccpu_us": 55.635433333334205,
+        "scpu_us": 34.189991666666664,
+        "other_conn_us": 0.0
+      }
+    ],
+    "ping_raw": [
+      {
+        "block": 0,
+        "wall_us": 72.11859337985516,
+        "ccpu_us": 13.007208333333057,
+        "scpu_us": 32.776983333333334,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 68.00932654490073,
+        "ccpu_us": 12.65921666666614,
+        "scpu_us": 29.199575,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 70.40589116513729,
+        "ccpu_us": 13.56530000000041,
+        "scpu_us": 30.586275,
+        "other_conn_us": 0.0
+      }
+    ],
+    "ping_raw_ip": [
+      {
+        "block": 0,
+        "wall_us": 44.48664064208666,
+        "ccpu_us": 14.797616666666531,
+        "scpu_us": 30.252275,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 1,
+        "wall_us": 42.205878222982086,
+        "ccpu_us": 14.399558333333395,
+        "scpu_us": 27.940883333333332,
+        "other_conn_us": 0.0
+      },
+      {
+        "block": 2,
+        "wall_us": 43.77078730612993,
+        "ccpu_us": 14.794783333333763,
+        "scpu_us": 29.495925,
+        "other_conn_us": 0.0
+      }
+    ]
+  }
+}

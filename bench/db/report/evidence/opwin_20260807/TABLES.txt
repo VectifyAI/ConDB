@@ -1,0 +1,237 @@
+====================================================================================================
+get_node / get_children: where the microsecond goes, and what can be taken back
+MongoDB 7.0.34 (git ed9a6630253d) at localhost:57017, db bench, layout2_view (10M docs)
+PyMongo 4.12.0, CPython 3.14.5.  Host load average 1.5 on 96 cores throughout.
+Harnesses: bench_opwin_20260807.py, bench_opwin_driver_20260807.py,
+           bench_opwin_ceilings_20260807.py, bench_opwin_framework_20260807.py
+====================================================================================================
+
+THREE QUANTITIES, NEVER MIXED
+  wall_us  client wall clock per operation (time.perf_counter)
+  scpu_us  mongod CPU on THIS ARM'S OWN connection thread, /proc/<pid>/task/<tid>/schedstat
+           field 1.  The thread is identified by the connectionId the server returns in its
+           hello reply, so a sibling agent's traffic on another connection cannot leak in.
+           Every run recorded the CPU on all other conn* threads as a contamination gauge;
+           it was 0.00 us/op in every block of every run.
+  ccpu_us  client Python process CPU, user+sys (time.process_time)
+
+DESIGN.  Every arm runs once per block, block order rotates, and every reported effect is the
+median of the PER-BLOCK PAIRED delta with its min/max across blocks.  Output equality is checked
+element-wise against the baseline in a separate pass before any timing.
+
+
+====================================================================================================
+0. BASELINE, AND THAT IT REPRODUCES THE EXISTING ARTIFACT
+====================================================================================================
+Logging off (slowms=100 for the run window, restored to the server's configured slowms=0 after).
+10 blocks x 300 iterations x 64 inputs, pymongo, published docker port.
+source: main_nolog.json
+
+operation        wall     scpu     ccpu   residual |  bottleneck_20260806 wall / scpu
+get_node        166.9     71.6     75.5     19.8   |        165.77 / 72.36
+get_children    207.5     98.5     88.3     20.7   |        196.94 / 96.43
+ping             90.1     21.2     45.8     23.1   |         93.37 / 21.58
+
+get_node and ping agree with the existing artifact to within 1%.  get_children differs by 5%
+because this cohort is 64 parents (median fan-out 11) rather than a single parent.
+The residual column is wall - scpu - ccpu.  It is NOT idle time: the docker-proxy relay is a
+third process whose CPU appears in neither term (see section 3).
+
+Logging on (slowms=0, the server's configured state) for the same arms: main_logon.json.
+get_node 215.4 / 120.2, get_children 263.7 / 153.7.  All fractions below use logging off,
+because that is what the report's headline table uses.
+
+
+====================================================================================================
+1. THE CLIENT HALF IS PYMONGO'S PYTHON, NOT THE PROTOCOL
+source: main_nolog.json, driver.json
+====================================================================================================
+"raw OP_MSG" is a 40-line synchronous client in the same process: same C BSON codec
+(bson._cbson), same two socket calls, same command document minus lsid.  It is a floor
+measurement, not a proposal.
+
+                                     wall     ccpu       paired vs pymongo baseline
+get_node   pymongo find_one         166.9     75.5
+get_node   raw OP_MSG               110.3     17.2   wall -34.37% [-38.4,-30.4]  ccpu -77.36%
+get_children pymongo                207.5     88.3
+get_children raw OP_MSG             142.9     24.9   wall -30.63% [-38.4,-21.4]  ccpu -71.24%
+ping       pymongo                   90.1     45.8
+ping       raw OP_MSG                59.0     13.3   wall -34.98% [-38.6,-30.2]  ccpu -71.37%
+
+PyMongo spends 58.3 us of client CPU per get_node beyond what this exact wire exchange needs.
+The client-side term of the MongoDB-PostgreSQL gap for get_node is 93.8 - 50.4 = 43.4 us.
+58.3 > 43.4.
+
+WHICH LAYERS.  driver.json, 10 blocks x 300, published port, all arms output-equal.
+arm                                       wall     ccpu    paired ccpu vs find_one
+A_find_one            (baseline)         220.7     79.2
+B_find_next           find().limit(1)    205.2     76.6     -0.38%   (-0.3 us)
+C_db_command          Database.command   189.6     54.7    -28.44%  (-22.5 us)
+D_find_one            retryReads=False   209.6     78.0     -3.23%   (-2.6 us)
+E_db_command          retryReads=False   188.9     57.1    -29.62%  (-23.1 us)
+F_raw_opmsg           floor              144.4     17.4    -77.61%  (-61.1 us)
+
+  79.2 us total  =  17.4 floor
+                 +  24.5 Cursor construction / _refresh / _send_message / as_command
+                        (removable today by calling Database.command)
+                 +  37.3 session checkout, pool checkout/checkin, topology.select_servers,
+                        _csot wrappers, 4 settimeout syscalls per operation, command monitoring
+                        (not removable through the public API)
+cProfile call counts behind that split are stored verbatim in driver.json under
+"cprofile_find_one"; its timings are wall, not CPU, and must not be quoted as CPU.
+
+
+====================================================================================================
+2. SCHEMA: _id AS THE NATURAL KEY BUYS IDHACK
+source: main_nolog.json, ceilings_nolog.json
+====================================================================================================
+Paired on the real 10M collection: same documents, same 7-field projection, byte-identical
+result verified element-wise; only the access path differs.
+
+arm                                       wall     scpu     paired vs node_base
+node_base   {tree_id,node_id} + hint     166.9     71.6
+node_idhack {_id: <ObjectId>}            137.9     45.7   wall -18.62%  scpu -37.21%
+node_idhack + container IP               113.7     45.7   wall -32.23%  scpu -36.33%
+raw + idhack + container IP               60.3     43.8   wall -64.39%  scpu -39.86%
+
+ELIGIBILITY, confirmed by explain against a probe collection, not by reading source alone:
+   {_id: {tree_id:"base", node_id:"000500"}}   -> IDHACK    (literal sub-document is accepted)
+   {_id: "base|000500"}                        -> IDHACK
+   {_id: "base|000500"} with hint:"_id_"       -> FETCH     (ANY hint disqualifies IDHACK)
+   get_node's own filter, unhinted, real coll  -> FETCH/IXSCAN allops_tree_node -- NOT IDHACK
+Source, 7.0.34: query_utils.cpp:52-59 requires findCommand.getHint().isEmpty();
+canonical_query.cpp:288-315 accepts an _id whose value is a literal object.
+
+
+====================================================================================================
+3. TRANSPORT: THE PUBLISHED DOCKER PORT COSTS 24-33 us PER ROUND TRIP -- ON BOTH ENGINES
+source: main_nolog.json, ps
+====================================================================================================
+                    published 57017        container IP 172.17.0.3:27017      paired wall
+ping                 90.1 / 21.2 / 45.8      66.3 / 21.0 / 48.0              -27.79%  (-23.8 us)
+get_node            166.9 / 71.6 / 75.5     135.5 / 68.6 / 72.2              -18.70%  (-31.4 us)
+get_children        207.5 / 98.5 / 88.3     174.7 / 93.7 / 86.4              -16.19%  (-32.8 us)
+                    (wall / scpu / ccpu)
+
+Server CPU moves -1.9% / -5.4% / -5.5% and client CPU +0.9% / -4.6% / -1.2%: the change is
+almost entirely outside both processes.  It is a userspace relay:
+
+  root 1041268 /usr/bin/docker-proxy -host-ip 0.0.0.0 -host-port 57017 -container-ip 172.17.0.3
+  root 2219851 /usr/bin/docker-proxy -host-ip 0.0.0.0 -host-port 55432 -container-ip 172.17.0.2
+
+The PostgreSQL relay has accumulated 8m27s of CPU since 13 July, so PostgreSQL's arm pays the
+same tax.  THIS CANDIDATE SHRINKS THE OPERATION AND NOT THE GAP.
+
+
+====================================================================================================
+4. get_children SERVER-SIDE CEILINGS AND THE EMBEDDED-ARRAY SHAPE
+source: ceilings_nolog.json.  8 blocks x 300, raw client, container IP, logging off.
+====================================================================================================
+The ceiling arms return DIFFERENT rows on purpose.  They are upper bounds, never candidates.
+
+arm                    wall     scpu    paired scpu vs children_base
+children_base         119.0     98.7     reference: node_id,title,summary, IXSCAN->FETCH
+ceil_covered           88.5     72.2    -25.52% (-24.4 us) [-32.5,-18.9]  node_id only, no FETCH
+ceil_count             70.8     58.0    -41.29% (-39.4 us) [-48.5,-35.3]  COUNT_SCAN
+emb_n  ~11 children     62.8     42.1   -57.46% (-56.8 us) [-61.4,-53.2]  one IDHACK read
+emb_1   1 child         53.7     38.4   -60.79% (-61.1 us) [-64.2,-52.2]  same keys, truncated
+
+opwin_children_embedded: 9,625 documents, avgObjSize 4,380 B, built by $group/$out over the
+real rows under path prefix /000000/000010 (96,238 nodes).  Its twin _1 holds the same _ids
+with the array sliced to one element, so emb_n - emb_1 = 3.7 us is a clean per-payload cost on
+identical keys.
+
+The 42.1 us is NOT transferable to a 10M-document collection: this probe's _id index is
+shallower.  The transferable composition is
+   IDHACK point read measured on the real 10M collection      45.7 us   (section 2)
+ + payload increment for ~11 children, matched keys            3.7 us
+ = 49.4 us  against a get_children baseline of 98.5 us     ->  -49.8% server CPU
+which is deliberately more conservative than the 42.1 us measured directly.
+
+
+====================================================================================================
+5. CONFIGURATION: internalQueryFrameworkControl = trySbeEngine
+source: framework_nolog.json (8 blocks), framework_nolog_r2.json (14 blocks)
+====================================================================================================
+The parameter is global, so the arms alternate BETWEEN blocks with a 300-operation re-warm
+after each switch.  Restored to forceClassicEngine in a finally block; the restored value is
+recorded in both artifacts.  Raw client, container IP, logging off.
+
+                        run 1 scpu            run 2 scpu           run1/run2 wall
+get_node             -7.57% [-14.5,-1.2]  -12.00% [-50.6,20.0]    -5.42% / -8.25%
+get_children        -14.68% [-26.1,11.3]  -13.87% [-36.6,-5.8]   -11.50% /-11.32%
+get_children nosort -11.35% [-24.0, 0.6]   -9.28% [-23.3,34.0]    -8.83% / -7.28%
+
+MECHANISM, verified directly.  200 identical hinted get_children under trySbeEngine:
+   serverStatus metrics.query.planCache   classic {hits 0, misses 0}   sbe {hits 200, misses 0}
+Under the classic engine the same shape produces 0 hits and no cache entry ever
+(bottleneck_20260806/plan_cache_per_shape_raw.txt).  classic_plan_cache.cpp:135-142 in 7.0.34
+declines to cache any hinted query that is not SBE-compatible, and its own comment says the SBE
+plan cache stores the plan and so could serve one.  explain reports explainVersion 2 under
+trySbeEngine and 1 under forceClassicEngine, both on the same winning FETCH/IXSCAN plan.
+
+
+====================================================================================================
+6. THINGS THAT DO NOT PAY
+source: main_nolog.json, framework_nolog*.json, driver.json
+====================================================================================================
+DROPPING THE INDEX HINT ON get_node
+   paired wall -3.36% [-10.5,+22.1], scpu -3.19%.  Not distinguishable from the spread.
+   bottleneck_20260806 independently: get_node_hit 72.36 vs get_node_hit_nohint 72.54 us.
+   report.tex line 676 puts the hint at "about 19 us (roughly 9%) per lookup against an
+   unhinted IDHACK on 7.0.34".  That statement is about an _id lookup.  get_node's filter is
+   {tree_id, node_id}, which is not IDHACK-eligible with or without a hint -- confirmed by
+   explain in section 2.  The 19 us does not transfer to get_node or get_children.
+   It DOES become collectable, in full, if the _id change in section 2 is made, because IDHACK
+   then requires the hint to be absent.
+
+DROPPING THE EXPLICIT SORT FROM get_children (the index already supplies path,node_id order;
+1,971 elements verified equal)
+   run 1  -4.33% scpu [-14.9,+11.5],  6/8 blocks favour nosort
+   run 2  -5.02% scpu [-30.2,+ 2.9], 13/14 blocks favour nosort
+   Consistent in sign (19 of 22 blocks) but the per-block spread exceeds the effect.  Call it
+   <=5% of server CPU, <=2.5% of the operation.
+
+retryReads=False                 -3.23% client CPU.  Within the spread.
+PyMongo RawBSONDocument          2.4x SLOWER, already measured:
+                                 report/evidence/driver_decode_20260807/subtree_p90.json
+Larger batchSize for get_children  no effect: the reply already carries cursor id 0
+                                 (asserted every iteration in the raw arms).
+A covered index for get_children   ceiling -24.4 us (-25% of server CPU), but a covering index
+                                 must carry title and summary in the key, so the IXSCAN would
+                                 decode roughly a whole document out of a KeyString, and the
+                                 index would grow from 267 MB to the ~4.7 GB scale of the
+                                 existing 4-field layout2_rootcause_exact_cover (4.66 GB).
+
+
+====================================================================================================
+7. FLOORS -- WHAT ESTABLISHES THAT NOTHING ELSE LARGE IS AVAILABLE
+source: main_nolog.json
+====================================================================================================
+   raw OP_MSG ping over the container IP:  35.5 us wall = 21.3 scpu + 14.6 ccpu + ~0 residual.
+   That is one MongoDB round trip from Python on this host with everything removed.
+   get_node's stacked best is 60.3 us, i.e. 24.8 us above that floor, and 22.5 us of the 24.8
+   is the IDHACK read itself (43.8 - 21.3).
+
+   mongod cannot serve ANY command below ~21.2 us of connection-thread CPU (the ping arm), so
+   at most 50.4 of get_node's 71.6 us is addressable by query-side change.  IDHACK already
+   takes 25.9 of that 50.4.
+
+   Against PostgreSQL's floor of 16.0 us (bottleneck_20260806/TABLES.txt), the bare command
+   round trip differs by only 5.2 us.  Above the floor: MongoDB 50.1 us, PostgreSQL 4.5 us.
+   After IDHACK, MongoDB 24.2 us.  The residual is the find-command path -- parse,
+   canonicalize, acquire, build executor -- which MongoDB deliberately does not cache for
+   single-solution classic plans (get_executor_helpers.cpp:220-238, SERVER-13341, SERVER-90880).
+
+
+====================================================================================================
+8. STATE LEFT BEHIND
+====================================================================================================
+   profile slowms                   restored to 0 (verified)
+   internalQueryFrameworkControl    restored to forceClassicEngine (verified)
+   collections created              bench.opwin_children_embedded      9,625 docs, ~42 MB
+                                    bench.opwin_children_embedded_1    9,625 docs
+                                    bench.opwin_idhack_probe           created and dropped
+   Nothing was compiling during any run.  Two sibling agents share the host; the other-connection
+   CPU gauge read 0.00 us/op in every block, and the slowms and framework-control windows were
+   3-8 minutes each and are recorded in the artifacts.

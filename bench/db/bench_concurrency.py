@@ -25,6 +25,8 @@ from pathlib import Path
 
 from bench_databases import build_backend, flatten
 
+MAX_CONCURRENT_WORKERS = 16
+
 
 def worker(payload):
     engine = payload["engine"]
@@ -97,6 +99,10 @@ def worker(payload):
 
 
 def run_level(engine, params, tree_id, ids, concurrency, duration, seed):
+    if not 1 <= concurrency <= MAX_CONCURRENT_WORKERS:
+        raise ValueError(
+            f"concurrency must be between 1 and {MAX_CONCURRENT_WORKERS}"
+        )
     payloads = [{"engine": engine, "params": params, "tree_id": tree_id, "ids": ids,
                  "duration": duration, "seed": seed + i} for i in range(concurrency)]
     with ProcessPoolExecutor(max_workers=concurrency) as ex:
@@ -145,7 +151,13 @@ def main():
     ap = argparse.ArgumentParser(description="Concurrency benchmark (point-lookup QPS vs processes).")
     ap.add_argument("--doc", required=True)
     ap.add_argument("--engines", nargs="+", default=["sqlite", "duckdb", "postgres", "mongo"])
-    ap.add_argument("--concurrency", nargs="+", type=int, default=[1, 2, 4, 8, 16, 32, 64])
+    ap.add_argument(
+        "--concurrency",
+        nargs="+",
+        type=int,
+        default=[1, 2, 4, 8, 16],
+        help=f"concurrent client processes (maximum {MAX_CONCURRENT_WORKERS})",
+    )
     ap.add_argument("--duration", type=float, default=5.0, help="seconds per concurrency level")
     ap.add_argument("--seed", type=int, default=13)
     ap.add_argument("--out")
@@ -154,6 +166,14 @@ def main():
     ap.add_argument("--sqlite-path", default="bench/db/runs/_sqlite_c.db")
     ap.add_argument("--duckdb-path", default="bench/db/runs/_duck_c.db")
     args = ap.parse_args()
+    if not args.concurrency or any(
+        level < 1 or level > MAX_CONCURRENT_WORKERS
+        for level in args.concurrency
+    ):
+        raise SystemExit(
+            f"concurrency levels must be between 1 and "
+            f"{MAX_CONCURRENT_WORKERS}"
+        )
 
     doc = json.load(open(args.doc))
     recs = flatten(doc, tree_id=Path(args.doc).stem)

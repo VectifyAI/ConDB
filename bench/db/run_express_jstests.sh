@@ -14,8 +14,8 @@ set -u
 
 BINARY=${1:?usage: run_express_jstests.sh <mongod> <mongo-shell> [scratch]}
 SHELL_BIN=${2:?usage: run_express_jstests.sh <mongod> <mongo-shell> [scratch]}
-SCRATCH=${3:-/tmp/mongo-getchildren-jstest}
-SRC=$(cd "$(dirname "$BINARY")/../../../.." && pwd)
+SRC=${3:?usage: run_express_jstests.sh <mongod> <mongo-shell> <src-root> [scratch]}
+SCRATCH=${4:-/tmp/mongo-getchildren-jstest}
 
 TESTS=$(cd "$SRC" && ls jstests/core/index/express*.js 2>/dev/null)
 [ -z "$TESTS" ] && { echo "no express jstests found under $SRC"; exit 1; }

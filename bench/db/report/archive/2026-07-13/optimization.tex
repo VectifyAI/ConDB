@@ -1,0 +1,404 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+% Libertine text/math when available.
+\IfFileExists{libertine.sty}{%
+  \usepackage{libertine}%
+  \IfFileExists{newtxmath.sty}{\usepackage[libertine]{newtxmath}}{}%
+}{}
+% Light monospace for inline code.
+\IfFileExists{inconsolata.sty}{\usepackage[scaled=0.95]{inconsolata}}{%
+  \IfFileExists{zi4.sty}{\usepackage[varqu,scaled=0.95]{zi4}}{}}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\usepackage{caption}
+
+\captionsetup{font=small,labelfont=bf,skip=4pt}
+\definecolor{hdrgray}{gray}{0.92}
+\definecolor{keyrow}{RGB}{226,239,246}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\hdr}{\rowcolor{hdrgray}}
+\newcommand{\key}{\rowcolor{keyrow}}
+\setlength{\emergencystretch}{3em}
+
+\newenvironment{ctab}{\par\medskip\centering\small
+  \setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.12}}{\par\medskip}
+
+% Full-width abstract aligned with the body margins.
+\renewenvironment{abstract}{%
+  \par\medskip\noindent{\bfseries\abstractname.}\enspace\ignorespaces
+}{\par\medskip}
+
+\title{\textbf{The \code{get\_subtree} Tail on MongoDB Community Edition:\\
+A Measured Optimization Study for the PageIndex Retrieval Workload}}
+\author{Junyao Dong}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A companion benchmark first reported MongoDB's \code{get\_subtree} P95 on a
+ten-million-node tree at 2.5\,s, an order of magnitude above PostgreSQL, DuckDB,
+and SQLite, and framed it as MongoDB's one weak spot on the PageIndex retrieval
+workload. This report set out to turn that finding into an optimization plan
+and then, because the benchmark harness was already in place, to \emph{measure}
+the plan rather than argue it from documentation alone. Two results reshaped the
+conclusion. First, the 2.5\,s figure does not reproduce: re-measured in
+isolation and under concurrent load, with the collection resident in cache,
+\code{get\_subtree} holds a stable P95 of roughly $0.3$--$0.4$\,s---about
+$3\times$ PostgreSQL, not the $20\times$ the first run implied. The original tail
+was an artifact of whole-system contention during the multi-engine run. Second,
+the intuitive fix does not behave the way documented mechanism predicts.
+Splitting the large \code{text} field into its own collection (the Subset
+Pattern), the move we expected to matter most, leaves the P95 unchanged, because
+on a host whose cache holds the whole collection the scan is gated by the
+\emph{number} of per-document fetches, not their size. The one lever that helps
+is the covering index we had initially demoted: served index-only it removes the
+fetch and buys ${\sim}1.4\times$, though extending it to cover the multi-kilobyte
+\code{summary} key inflates it to the size of the collection's own data. The
+corrected picture is that \code{get\_subtree} is a sub-second,
+${\sim}3\times$-PostgreSQL operation with a narrow optimization space; a larger
+win needs structural denormalization (Nested Sets, a tree-order \code{\_id}, or a
+pre-computed subtree document), which the write-once shape of the tree makes
+viable but which we did not measure. Everything here stays on Community Edition,
+no engine change.
+\end{abstract}
+
+\section{The problem, as first reported}
+
+The PageIndex retriever reaches storage through four calls: a point lookup, an
+expand-children, a content fetch, and \code{get\_subtree}, which pulls a node's
+descendants to render the tree view and hand a block to the language model. On
+the ten-million-node dataset the first three are sub-millisecond on MongoDB and
+need no work. \code{get\_subtree} was the exception. A large subtree matches
+about 36{,}000 nodes, and there the initial multi-engine run posted a MongoDB P50
+of 30.9\,ms and a P95 of 2{,}478\,ms, against PostgreSQL at 10.7/123\,ms, SQLite
+at 11.8/135\,ms, and DuckDB at 9.9/47\,ms (Table~\ref{tab:gap}). The median was
+within a small factor of the others; the tail read more than an order of
+magnitude worse, and that tail became the optimization target.
+
+\begin{table}[h]
+\caption{\code{get\_subtree} latency as first recorded, large dataset
+(${\sim}$36k-node subtree, ms). The P95 shown here is the figure this report
+re-examines.}
+\label{tab:gap}
+\begin{ctab}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\hdr & MongoDB & PostgreSQL & DuckDB & SQLite \\
+\midrule
+P50 & 30.9  & 10.7 & \best{9.9} & 11.8 \\
+\key P95 & 2{,}478 & 123  & \best{47} & 135 \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+Two things then changed the story. The 2{,}478\,ms did not survive a controlled
+re-measurement (Section~\ref{sec:remeasure}), and the fixes, once run rather than
+reasoned about, did not rank the way the documentation suggested
+(Section~\ref{sec:plan}). This report is the corrected account.
+
+\section{Re-measuring the tail}\label{sec:remeasure}
+
+The 2{,}478\,ms was recorded while the other three engines, the write benchmark,
+and the concurrency sweep ran on the same host. To separate the query's own cost
+from that contention we re-ran \code{get\_subtree} on the ten-million-node tree
+under controlled conditions: one measuring client, the collection freshly loaded
+and fully resident, the same 200 seeded subtree paths, optionally with $N$
+background processes hammering point lookups at the same \code{mongod}.
+
+In isolation the P95 lands at ${\sim}0.30$--$0.42$\,s (P50 ${\sim}30$--$40$\,ms)
+and is stable across repeated runs---an order of magnitude below the first
+figure. Driving the query while 16, 32, then 64 processes contend for the same
+server barely moves it (Table~\ref{tab:remeasure}): P95 rises from 331 to
+376\,ms, $1.1\times$, never approaching seconds. Throughout, the WiredTiger cache
+holds the whole collection (${\sim}17$\,GB resident) and reports zero
+application-thread evictions, so the tail is neither eviction nor ordinary read
+contention.
+
+\begin{table}[h]
+\caption{\code{get\_subtree} re-measured on the 10M tree (one measuring client,
+id-only projection, ms) while $N$ background processes drive concurrent point
+lookups.}
+\label{tab:remeasure}
+\begin{ctab}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\hdr Concurrent load $N$ & P50 & P95 & P99 & WT evictions \\
+\midrule
+0  & 31.4 & 331 & 476 & 0 \\
+16 & 39.4 & 357 & 555 & 0 \\
+32 & 44.1 & 415 & 534 & 0 \\
+64 & 39.0 & 376 & 627 & 0 \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+The corrected magnitude is milder than the first run implied: steady-state,
+\code{get\_subtree} is ${\sim}0.4$\,s at P95 and ${\sim}30$--$40$\,ms at the
+median, roughly $3\times$ PostgreSQL at \emph{both} (its 123\,ms tail and 11\,ms
+median), not the ${\sim}20\times$ the original P95 alone suggested. The 2{,}478\,ms
+was a property of the loaded machine---most likely whole-system resource
+contention, or a cold-cache first touch before the collection was warm---not of
+the query in steady state. The mechanism below still holds; its magnitude is
+sub-second.
+
+\section{Root cause: the count of fetches, not their size}
+
+A secondary index in MongoDB (here on \code{path}) is a separate B-tree holding
+only the indexed value and a record id. To return any other field, WiredTiger
+must \emph{fetch} the full BSON document and apply the projection to it. A point
+lookup is one such fetch and is cheap. \code{get\_subtree} is tens of thousands
+of them. The data is cache-resident---and pages in the WiredTiger cache are held
+\emph{uncompressed}---so the cost is neither disk I/O nor decompression. It is the
+per-document work of locating each record, materializing the document, applying
+the projection, and streaming the result through the cursor, multiplied by
+subtree size.
+
+The initial hypothesis pinned that per-document cost on the wide leaf
+\code{text}: each fetch materializes the whole document, \code{text} payload and
+all, only to project it away, so removing \code{text} should make each fetch
+cheap. The measurement in the next section refutes that reading. Shrinking each
+document by ${\sim}75\%$ leaves \code{get\_subtree} unchanged, because on this host
+document \emph{size} never gates the scan---document \emph{count} does. The cost
+is the ${\sim}36$k separate \code{FETCH} operations, and each one is dominated by
+locating the record and threading it through the cursor, not by the number of
+bytes in it once it is already resident and uncompressed in cache. The
+consequence for optimization is sharp: only \emph{removing} fetches helps.
+Shrinking them does not, and neither does changing the query operator.
+
+This is also why the relational engines win the operation specifically: a row
+store visits each matching row but materializes only the requested
+column---PostgreSQL does not even decompress the JSONB datum, since
+\code{node\_id} is a separate column---and a column store reads only the requested
+column in vectorized batches. They do less work per node, and there are tens of
+thousands of nodes. The same document model that costs here is what makes MongoDB
+fast everywhere else: storing a node's fields together makes ``fetch one whole
+entity'' cheap (point and children reads), makes in-place updates cheap (no vacuum
+debt), and keeps the on-disk form compact. The workload plays to that model on
+every operation but this one.
+
+\section{The optimization plan, measured}\label{sec:plan}
+
+Because the harness was already in place, we did not stop at recommending fixes;
+we ran them on the ten-million-node tree and measured (Table~\ref{tab:opt}). Each
+stays on Community Edition with no engine change. The results invert the intuitive
+ranking: the Subset Pattern, the move we expected to lead, does nothing here, and
+the covering index we had demoted is the only lever that moves the number.
+
+\begin{table}[h]
+\caption{\code{get\_subtree} fixes measured on the 10M tree (one client). ``view''
+returns \code{node\_id}+\code{title}+\code{summary} (what the tree view renders);
+``id'' returns \code{node\_id} only. P50/P95 in ms.}
+\label{tab:opt}
+\begin{ctab}
+\begin{tabular}{@{}p{6.0cm}rrl@{}}
+\toprule
+\hdr Variant & P50 & P95 & Result \\
+\midrule
+\key Baseline, view (\code{text} inline) & 39.6 & 419 & reference \\
+Subset Pattern (split \code{text}), view & 39.2 & 419 & \best{no change} \\
+Lean covering \code{\{path,node\_id\}}, id & 19.3 & 191 & ${\sim}1.4\times$, covered \\
+Fat covering \code{+title,summary}, view & 33.5 & 350 & ${\sim}1.2\times$; 4.66\,GB index \\
+Lean covering ${+}$ batched \code{\$in}, view & 137 & 1314 & ${\sim}3\times$ slower \\
+\bottomrule
+\end{tabular}
+\end{ctab}
+\end{table}
+
+\subsection{Splitting the \code{text} field does nothing (here)}
+
+The single most intuitive move---the Subset Pattern, splitting \code{text} into
+its own collection keyed by node id so the scanned documents are small---was the
+leading hypothesis, and on this host it is wrong. It shrinks the collection by
+${\sim}75\%$ ($4.97\to1.25$\,GB of data) yet leaves \code{get\_subtree} P95
+exactly where it was ($419\to419$\,ms for the view, $301\to284$\,ms for id-only,
+within run-to-run noise). The reason is the one from the previous section: the
+cache holds the whole collection either way, so document size never gates the
+scan and the ${\sim}36$k fetches remain ${\sim}36$k fetches.
+
+The design still costs the hot path nothing---\code{get\_subtree} never needs
+\code{text}, and the body is read later and separately by \code{get\_entity}, on
+the few nodes the model selects---so it remains a reasonable schema choice on its
+own merits (a smaller working set, a lighter write path). What it is \emph{not},
+on this workload and this host, is a \code{get\_subtree} fix. \emph{Caveat, and it
+is the important one:} the Subset Pattern's entire premise is a working set too
+large for RAM, and this experiment ran with a WiredTiger cache many times the
+collection size, so it could not have exercised that premise. On a
+cache-constrained production host, where the collection with \code{text} spills
+RAM and the version without it fits, the split could matter a great deal. Our
+result says only that document \emph{size} is not the lever \emph{when the data is
+resident}; it does not say the split is worthless in general. This is the one open
+retest worth running (Section~\ref{sec:open}).
+
+\subsection{A covering index is the only real lever, and a modest one}
+
+Removing the \code{FETCH} is the one thing that helps. A lean
+\code{\{path,node\_id\}} index answers the id-only subtree query index-only---
+\code{explain} confirms \code{PROJECTION\_COVERED}, \code{totalDocsExamined:\,0},
+\code{keysExamined:\,12838}---for ${\sim}1.4\times$ (P95 $301\to191$\,ms). This is
+the fix the earlier hypothesis demoted, on the theory that the multi-kilobyte
+\code{summary} key would defeat a covering index; the id-only index carries no
+\code{summary} and is not defeated.
+
+The complication is that the tree view needs \code{title} and \code{summary}, not
+just \code{node\_id}. Extending the index to cover them
+(\code{\{path,node\_id,title,summary\}}) does work---it is still a fully covered
+scan, \code{totalDocsExamined:\,0}, and it beats the baseline view
+($419\to350$\,ms, ${\sim}1.2\times$)---but it inflates the index to 4.66\,GB, as
+large as the collection's own data, because \code{summary} really is a
+multi-kilobyte key and WiredTiger's index prefix compression deduplicates the
+shared \code{path} prefixes but does nothing for the fat \code{summary} values. So
+the fat-key concern was real: the covering index helps, but the cheap version
+($1.4\times$) covers only the id projection, and covering the actual view
+projection costs an index the size of the data for a $1.2\times$ gain.
+
+Resolving the view a third way---a covered id scan followed by a batched
+\code{\$in} to fetch \code{title} and \code{summary}---is worse, not better
+(${\sim}3\times$ slower, P95 1{,}314\,ms). A ${\sim}36$k-id \code{\$in} overflows
+the 16\,MB command limit, forcing ${\sim}36$ chunked round trips, and each chunk
+re-fetches the same documents the plain scan would have, with cursor overhead on
+top. Keep the anchored materialized-path range as the predicate---an unanchored
+regex cannot form a range and must scan the whole index---and treat cache sizing
+and \code{zstd} as irrelevant here: the data is already resident and held
+uncompressed, so neither touches the per-fetch cost.
+
+\subsection{A larger win needs structural denormalization (untested)}
+
+The covering index shaves fetches at the margin; the structural fixes remove them
+wholesale, and are the only route to closing the remaining ${\sim}3\times$ to
+PostgreSQL. All three below are viable because the tree is largely write-once
+after ingest, so their cost is paid once, at load, not on every read.
+
+\paragraph{Nested Sets.} Assign each node a \code{left}/\code{right} number in a
+depth-first traversal at ingest; a subtree is then a single range query,
+\code{find(\{left:\{\$gt:p.left\}, right:\{\$lt:p.right\}\})}, with no recursion
+and no per-node fetch beyond the range. MongoDB recommends this for static trees
+and warns it is ``inefficient for modifying the tree structure'' because inserts
+and deletes require $O(n)$ renumbering. The workload's incremental-insert path
+(reindexing adds nodes after ingest) means the tree is not \emph{strictly}
+write-once, so this fits a load-then-serve deployment or a batched re-number at
+reindex time, not a steadily growing tree renumbered per insert.
+
+\paragraph{Tree-order \code{\_id} on a clustered collection.} A clustered
+collection stores documents physically ordered by \code{\_id}, in the same file as
+the index, so a subtree range scan becomes a sequential read rather than a series
+of random fetches---provided tree order (a DFS or nested-set number) is encoded
+into \code{\_id}. The optimizer will not auto-select the clustered index when a
+usable secondary index exists, so the query needs a hint.
+
+\paragraph{Pre-computed subtree document.} Because the tree is write-once in the
+common case, the structure-and-summary view of each bounded subtree root can be
+materialized once at ingest and stored as a single document, turning
+\code{get\_subtree} into a point read. It must exclude \code{text} to fit the
+16\,MiB document limit ($1.5$\,kB\,${\times}$\,36k\,${\approx}55$\,MB with
+\code{text}; structure-and-summary buckets of a few levels stay well under it).
+The open cost is storage amplification from overlapping subtrees.
+
+We did not measure any of these. With the baseline already at ${\sim}0.4$\,s on an
+infrequent operation, the honest open question is whether the schema complexity is
+worth shaving a sub-second tail---which is a product decision, not a mechanism
+one. (\code{\$graphLookup} is not a candidate: it re-traverses \code{parent\_id},
+still materializes documents, and in 7.0 is capped at 100\,MB and ignores
+\code{allowDiskUse}.)
+
+\section{A newer MongoDB version does not close the gap}
+
+Upgrading the engine does not fix this without a schema change. Against this
+operation---a projection-heavy range scan over ordinary documents---the 8.0--8.3
+line offers nothing:
+
+\begin{itemize}\itemsep2pt
+\item The 8.0 \textbf{Express execution path} is a fast path for point and
+equality lookups on a single index (\code{EXPRESS\_IXSCAN},
+\code{EXPRESS\_CLUSTERED\_IXSCAN}): \code{\_id}-style queries with no range, sort,
+or skip. It does not apply to a materialized-path range scan.
+\item 8.0 \textbf{block (vectorized) processing} is scoped to time-series
+collections and does not extend to general collections through 8.3.
+\item The \textbf{\code{\$graphLookup} disk-spill fix} (SERVER-23980, lifting the
+100\,MB cap that ignores \code{allowDiskUse}) lands only in 8.2.0---reverted from
+8.1---and even then only helps the recursive-traversal alternative, which loses to
+the indexed range scan here anyway.
+\end{itemize}
+
+\noindent The document-at-a-time \code{FETCH} is unchanged across the line, so the
+remedy is schema and index design, not a version bump.
+
+\section{What Community Edition does not put on the table}
+
+The feature that would solve this most directly is not available without Atlas or
+Enterprise. There is no \textbf{column-store index} (Atlas-only)---the one feature
+that would make a projection-heavy scan read only the projected column, the way
+the relational engines do. But PageIndex retrieval never scans the whole corpus,
+so a column store solves a problem this workload does not have; the schema fixes
+above address the one it does. Self-managed \textbf{Search and Vector Search}
+became runnable on Community in 8.2 (a separate \code{mongot} process, public
+preview, replica set required), but they serve relevance retrieval, not a
+range-projection scan, so they do not address \code{get\_subtree} either.
+Auto-scaling, stream processing, tiered storage, and federated queries are
+Atlas-only; the in-memory engine and auditing are Enterprise-only. \emph{No Atlas-
+or Enterprise-only feature would solve \code{get\_subtree}}: the operation is bound
+by the document-at-a-time read model, and the only levers are schema, index, and
+storage configuration---all present on Community.
+
+\section{What remains open}\label{sec:open}
+
+Two things the measurements did not settle. First, the exact origin of the
+original 2{,}478\,ms: point-lookup contention alone does not reproduce it
+(Section~\ref{sec:remeasure}), so the cause was heavier than the concurrency the
+workload itself generates---whole-system resource pressure during the multi-engine
+run, or a cold-cache first touch. Second, and more useful to close: the Subset
+Pattern under a \emph{cache-constrained} host. This study ran with the collection
+fully resident, which by construction cannot show the split's benefit; a re-run
+with \code{--wiredTigerCacheSizeGB} set below the working set (collection with
+\code{text} spilling RAM, without it fitting) would test the premise the pattern
+actually targets. And the measured payoff of the structural-denormalization
+options remains unquantified. None of these changes the practical conclusion:
+\code{get\_subtree} is a sub-second, ${\sim}3\times$-PostgreSQL operation whose one
+cheap fix---a covering index---has limited upside.
+
+\section{Conclusion}
+
+MongoDB's one weakness on the PageIndex workload, the \code{get\_subtree} tail, is
+real but smaller than first reported. A controlled re-measurement puts its
+steady-state P95 at ${\sim}0.4$\,s, roughly $3\times$ PostgreSQL and ${\sim}3\times$
+at the median too---not the multi-second tail the first run recorded, which traces
+to contention rather than to the query. The cost is the \emph{count} of per-node
+fetches, which is why the intuitive fix fails and the demoted one wins: splitting
+\code{text} shrinks each document but not their number and leaves the P95
+unchanged on a resident collection, while a covering index removes the fetch
+outright and is the only cheap lever---worth just ${\sim}1.4\times$, and only
+${\sim}1.2\times$ once it must carry the fat \code{summary} key. A larger win needs
+structural denormalization the write-once tree makes viable but that we did not
+measure. The write, concurrency, and footprint advantages that make MongoDB
+attractive elsewhere are untouched by any of this. The remaining work is not more
+analysis---it is the cache-constrained Subset retest and the one structural
+before/after that would price the larger win.
+
+\section*{References}
+\small
+\begin{enumerate}\itemsep2pt
+\item Subset Pattern. \url{https://www.mongodb.com/docs/manual/data-modeling/design-patterns/group-data/subset-pattern/}
+\item Model tree structures with Nested Sets. \url{https://www.mongodb.com/docs/v7.0/tutorial/model-tree-structures-with-nested-sets/}
+\item Model tree structures with Materialized Paths. \url{https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/}
+\item Clustered collections. \url{https://www.mongodb.com/docs/v7.0/core/clustered-collections/}
+\item WiredTiger storage engine (cache holds data uncompressed; cache sizing). \url{https://www.mongodb.com/docs/manual/core/wiredtiger/}
+\item Query optimization / covered queries; explain results (covered = IXSCAN with no FETCH). \url{https://www.mongodb.com/docs/manual/reference/explain-results/}
+\item \code{\$graphLookup} memory limit. \url{https://www.mongodb.com/docs/v7.0/reference/operator/aggregation/graphlookup/}
+\item MongoDB 8.0 release notes (Express path; block processing). \url{https://www.mongodb.com/docs/manual/release-notes/8.0/}
+\item SERVER-23980 (\code{\$graphLookup} disk spill, fixed 8.2.0); SERVER-102453 (reverted from 8.1). \url{https://jira.mongodb.org/browse/SERVER-23980}
+\item MongoDB Community Edition feature scope (column-store and analytics are Atlas/Enterprise). \url{https://www.mongodb.com/products/self-managed/community-edition}
+\item Independent PostgreSQL-vs-MongoDB benchmark, off-workload (direction only). \url{https://www.mdpi.com/2504-2289/10/2/66}
+\end{enumerate}
+
+\end{document}

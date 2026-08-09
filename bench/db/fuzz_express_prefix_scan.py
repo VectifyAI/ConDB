@@ -204,6 +204,36 @@ def main() -> None:
                     return [dict(d) for d in cur]
                 compare(gated, plain, lbl, run, ordered=bool(srt))
 
+        log("\n== plans: shapes that must NOT take express ==")
+        # Comparing results alone is not enough, and this is not a hypothetical. {$eq: null} came
+        # back identical on both servers here while the gated one was wrongly taking express --
+        # only MongoDB's own plan assertion caught it. Results prove "did not go wrong this time";
+        # asserting the plan proves "did not take the path that can go wrong".
+        def gated_stages(flt, srt=None):
+            cmd = {"find": COLL, "filter": flt}
+            if srt:
+                cmd["sort"] = dict(srt)
+            wp = gated.command("explain", cmd, verbosity="queryPlanner")["queryPlanner"]["winningPlan"]
+            out, node = [], wp
+            while node:
+                out.append(node.get("stage"))
+                node = node.get("inputStage")
+            return out
+
+        must_not_express = [
+            ({"a": {"$eq": None}}, [("c", 1)], "equality to null (bounds are inexact)"),
+            ({"a": None, "b": None}, [("c", 1)], "two null equalities"),
+            ({"a": {"$eq": [0, 1]}}, None, "equality to an array"),
+            ({"a": {"$eq": {"k": 1}}}, [("c", 1)], "equality to a subdocument"),
+            ({"arr": 1}, [("c", 1)], "equality on a multikey field"),
+            ({"a": "x", "c": {"$gt": 0}}, [("d", 1)], "a range alongside the equality"),
+        ]
+        for flt, srt, why in must_not_express:
+            stages = gated_stages(flt, srt)
+            if any("EXPRESS" in (st or "") for st in stages):
+                failures.append(f"plan:{why}")
+                log(f"  [PLAN] {why}: gated took express -- {stages}")
+
         log("\n== shapes the eligibility must refuse ==")
         refusals = {
             "limit": lambda db: [dict(d) for d in db[COLL].find({"a": "x", "b": 1}, {"_id": 1})
