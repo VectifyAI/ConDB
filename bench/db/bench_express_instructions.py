@@ -30,7 +30,7 @@ DB_NAME, NODES, TREE_ID = "bench", "layout2_view", "base"
 CHILD_INDEX = "allops_tree_parent_path"
 PROJ = {"_id": 0, "node_id": 1, "title": 1, "summary": 1}
 SORT = [("path", 1), ("node_id", 1)]
-GATE = "MONGO_EXPRESS_PREFIX_SCAN"
+GATE = "internalQueryEnableExpressPrefixScan"
 
 
 def log(m: str) -> None:
@@ -39,13 +39,11 @@ def log(m: str) -> None:
 
 def start(binary: Path, dbpath: Path, logpath: Path, port: int, gate: str | None):
     env = dict(os.environ)
-    env.pop(GATE, None)
-    if gate is not None:
-        env[GATE] = gate
     proc = subprocess.Popen(
         [str(binary), "--port", str(port), "--dbpath", str(dbpath), "--bind_ip", "127.0.0.1",
          "--wiredTigerCacheSizeGB", "8", "--logpath", str(logpath),
-         "--setParameter", "diagnosticDataCollectionEnabled=false"],
+         "--setParameter", "diagnosticDataCollectionEnabled=false",
+         "--setParameter", f"{GATE}={'true' if gate == '1' else 'false'}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env)
     uri = f"mongodb://localhost:{port}/?directConnection=true"
     for _ in range(240):

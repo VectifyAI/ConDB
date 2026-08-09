@@ -32,7 +32,7 @@ from pathlib import Path
 
 from pymongo import MongoClient
 
-GATE = "MONGO_EXPRESS_PREFIX_SCAN"
+GATE = "internalQueryEnableExpressPrefixScan"
 DB_NAME = "fuzzdb"
 COLL = "fz"
 
@@ -47,13 +47,11 @@ def log(m: str) -> None:
 def start(binary: Path, dbpath: Path, logpath: Path, port: int, gate: str | None):
     dbpath.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    env.pop(GATE, None)
-    if gate is not None:
-        env[GATE] = gate
     proc = subprocess.Popen(
         [str(binary), "--port", str(port), "--dbpath", str(dbpath), "--bind_ip", "127.0.0.1",
          "--wiredTigerCacheSizeGB", "2", "--logpath", str(logpath),
-         "--setParameter", "diagnosticDataCollectionEnabled=false"],
+         "--setParameter", "diagnosticDataCollectionEnabled=false",
+         "--setParameter", f"{GATE}={'true' if gate == '1' else 'false'}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env)
     uri = f"mongodb://localhost:{port}/?directConnection=true"
     for _ in range(240):
@@ -266,6 +264,37 @@ def main() -> None:
         }
         for name, fn in refusals.items():
             compare(gated, plain, f"refusal:{name}", fn)
+
+        log("\n== duplicate index keys spanning batches ==")
+        # The case that caught silent data loss. An earlier version stored the resume point as the
+        # key WITHOUT its RecordId, and for a standard index the RecordId is part of the key, so
+        # re-seeking exclusive-after it stepped past EVERY entry sharing that key value. 500 docs
+        # with one identical key returned 101 -- the first batch, then nothing, no error.
+        #
+        # No tree workload can catch this: every child has a distinct sort key, so a run of
+        # duplicates never exists in the data. It has to be built on purpose.
+        for db in (gated, plain):
+            db.drop_collection("dupkeys")
+            db["dupkeys"].insert_many(
+                [{"_id": i, "a": 1, "b": 2, "c": 3, "d": 4} for i in range(500)])
+            db["dupkeys"].create_index([("a", 1), ("b", 1), ("c", 1), ("d", 1)], name="abcd")
+
+        def dup_run(db):
+            return [x["_id"] for x in
+                    db["dupkeys"].find({"a": 1, "b": 2}, {"_id": 1}).sort([("c", 1), ("d", 1)])]
+        compare(gated, plain, "500 identical index keys across ~5 batches", dup_run)
+
+        # and a mixture, so some runs of duplicates straddle a batch boundary and some do not
+        for db in (gated, plain):
+            db.drop_collection("dupmix")
+            db["dupmix"].insert_many(
+                [{"_id": i, "a": 1, "b": 2, "c": i // 37, "d": "same"} for i in range(700)])
+            db["dupmix"].create_index([("a", 1), ("b", 1), ("c", 1), ("d", 1)], name="abcd")
+
+        def dupmix_run(db):
+            return [x["_id"] for x in
+                    db["dupmix"].find({"a": 1, "b": 2}, {"_id": 1}).sort([("c", 1), ("d", 1)])]
+        compare(gated, plain, "700 docs in runs of 37 identical keys", dupmix_run)
 
         log("\n== getMore across many batches, and under forced yielding ==")
         for yield_iters in (128, 1):

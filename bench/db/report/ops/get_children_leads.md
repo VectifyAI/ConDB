@@ -900,6 +900,83 @@ check short-circuits the candidate loop earlier:
 
 **60 of 60 blocks improved.** Absolute server CPU 89.1–93.2 µs falls to 58.0–59.5 µs.
 
+## L9 — the express change was wrong when first measured; five defects, all found by checking
+
+The −35% in L7 was measured against an implementation that **silently dropped rows and never
+yielded**. An adversarial review found it; I reproduced every claim before accepting it. This is the
+most important entry in this file, because the number looked excellent and the change was broken.
+
+### The one that mattered
+
+**Silent data loss on duplicate index keys.** The resume point stored
+`getKeyStringWithoutRecordIdView()`. For a standard index the RecordId **is** part of the stored
+key, so re-seeking exclusive-after that value steps past *every* entry sharing it.
+
+    500 documents, one identical index key, find({a:1,b:2}).sort({c:1,d:1})
+      gated   101 / 500      <- the first batch, then nothing. No error.
+      ungated 500 / 500
+
+Every getMore boundary landing inside a run of duplicate sort keys dropped the remainder.
+
+**No test I had written could have caught it.** The workload is a tree: every child has a distinct
+sort key, so a run of duplicate keys never existed in any of my data. "5,000 rows across ~49
+batches, no duplicates" proved the easy case and read like proof of the hard one.
+
+Fixed by keeping the cursor and using `SortedDataInterface::Cursor`'s own `save()`/`restore()` plus
+`detach`/`reattach`, plumbed through `PlanExecutorExpress` — which is what `IndexScan` does, and
+what I had talked myself out of. My stated reason for hand-rolling a resume ("detachFromOperationContext
+only swaps a pointer") described a two-line fix, not a reason to reimplement cursor positioning.
+**500/500 and 700/700 after.**
+
+### The other four
+
+| defect | why it mattered |
+|---|---|
+| `cq->getCollator()` read in the same call that `std::move`s `cq` | argument evaluation is unsequenced; right-to-left ordering is a null deref. The sibling factory hoists into locals for exactly this reason and I had dropped that guard |
+| no `PlanYieldPolicy` | harmless while an express plan returned one document; an iterating one can hold a storage snapshot for an unbounded getMore. Now yields on `PlanYieldPolicyImpl`'s cadence and knobs |
+| `std::deque` for the stash | allocates **twice** on default construction (measured: 2 allocs / 576 bytes, against 0 for `vector`), so every `_id` point lookup paid two mallocs it did not before — *with the gate off*. I introduced this myself while "improving" the code |
+| `getenv` feature gate | not settable at runtime, invisible to `getParameter`, unreachable from any test suite. Now the `internalQueryEnableExpressPrefixScan` server parameter |
+
+### `internalQueryExecYieldIterations` defaults to −1
+
+Worth its own line because I reported it as evidence twice. Iteration-based yielding is **off by
+default**; the 10 ms `internalQueryExecYieldPeriodMS` is what actually fires. Setting the iterations
+knob to 1 and claiming "yields between essentially every document" tested nothing at all — and
+express never instantiated a yield policy to read it in the first place.
+
+### What my testing actually failed at
+
+Four distinct failures, each with a different cause, worth separating:
+
+1. **No duplicate sort keys anywhere in the data.** Tree data cannot produce them. The hard case has
+   to be constructed on purpose; it will never appear by accident.
+2. **A vacuous yield test.** I set a knob that neither controls anything by default nor is read by
+   this code path, and reported the result as evidence.
+3. **A regression I introduced while cleaning up.** `vector` → `deque` for an O(1) pop, on a path
+   where the container is always empty and the allocation is the entire cost.
+4. **Comparing results where I should also have asserted plans** — see L8.
+
+### Now
+
+`jstests/core/index/express_prefix_scan.js` covers duplicate keys spanning batches, hints honoured
+including a partial index falling back, `{$eq: null}` refused, multikey and sparse refused, and runs
+every query with the knob off and on comparing element-wise. **Verified the test can fail**:
+inverting one assertion exits 253.
+
+| check | result |
+|---|---|
+| duplicate keys, 500 identical / 700 in runs of 37 | **500/500, 700/700**, no duplicates |
+| differential fuzz | **797 shapes, no differences** |
+| new jstest | passes, and demonstrably fails when broken |
+| `jstests/core/index/express*.js` | 0 regressions |
+| express unit tests | 30/30 |
+
+Performance after the fixes: **retired instructions −22.87%**, blocks [−22.93, −22.84], floor
+−0.02% — essentially unchanged from before them, because the resume path only runs at getMore
+boundaries and an eleven-row query never reaches one. Server CPU is about −36%, 20/20 blocks in each
+rotation, but that run's control arm was noisy (spikes to +99%), so it is being re-measured on a
+verified-quiet box before being quoted as final.
+
 ## Still to run
 
 - **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver

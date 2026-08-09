@@ -23,9 +23,11 @@ TESTS=$(cd "$SRC" && ls jstests/core/index/express*.js 2>/dev/null)
 start_mongod() {  # port, gate
   local port=$1 gate=$2 dbp="$SCRATCH/db$1"
   rm -rf "$dbp"; mkdir -p "$dbp"
-  if [ "$gate" = "on" ]; then export MONGO_EXPRESS_PREFIX_SCAN=1; else unset MONGO_EXPRESS_PREFIX_SCAN; fi
+  local on=false; [ "$gate" = "on" ] && on=true
   "$BINARY" --port "$port" --dbpath "$dbp" --bind_ip 127.0.0.1 --wiredTigerCacheSizeGB 2 \
-            --logpath "$SCRATCH/mongod$port.log" --setParameter diagnosticDataCollectionEnabled=false &
+            --logpath "$SCRATCH/mongod$port.log" \
+            --setParameter diagnosticDataCollectionEnabled=false \
+            --setParameter "internalQueryEnableExpressPrefixScan=$on" &
   echo $! > "$SCRATCH/pid$port"
   for _ in $(seq 1 120); do
     "$SHELL_BIN" --port "$port" --quiet --eval 'quit(0)' >/dev/null 2>&1 && return 0

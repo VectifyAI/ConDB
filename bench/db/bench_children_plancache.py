@@ -60,6 +60,7 @@ CHILD_SORT = [("path", 1), ("node_id", 1)]
 
 DEFAULT_GATE_ENV = "MONGO_PROBE_HINTED_PLAN_MEMO"
 GATE_ENV = DEFAULT_GATE_ENV  # overridden by --gate-env
+GATE_KIND = "env"    # overridden by --gate-kind
 
 ARM_NAMES = ("baseline", "probe", "control")
 ARM_GATES = {"baseline": "0", "probe": "1", "control": "0"}
@@ -107,17 +108,20 @@ def start_mongod(binary: Path, dbpath: Path, logpath: Path, port: int,
                  cache_gb: int, gate: str | None) -> subprocess.Popen:
     dbpath.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    if gate is not None:
+    argv = [str(binary), "--port", str(port), "--dbpath", str(dbpath),
+            "--bind_ip", "127.0.0.1", "--wiredTigerCacheSizeGB", str(cache_gb),
+            "--logpath", str(logpath),
+            "--setParameter", "diagnosticDataCollectionEnabled=false"]
+    if GATE_KIND == "param":
+        # A server parameter, not an environment variable: still fixed for the process's lifetime
+        # because it is set on the command line, so the arms stay comparable.
+        env.pop(GATE_ENV, None)
+        argv += ["--setParameter", f"{GATE_ENV}={'true' if gate == '1' else 'false'}"]
+    elif gate is not None:
         env[GATE_ENV] = gate
     else:
         env.pop(GATE_ENV, None)
-    proc = subprocess.Popen(
-        [str(binary), "--port", str(port), "--dbpath", str(dbpath),
-         "--bind_ip", "127.0.0.1", "--wiredTigerCacheSizeGB", str(cache_gb),
-         "--logpath", str(logpath),
-         "--setParameter", "diagnosticDataCollectionEnabled=false"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env,
-    )
+    proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env)
     uri = f"mongodb://localhost:{port}/?directConnection=true"
     for _ in range(240):
         try:
@@ -284,6 +288,9 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--reuse-data", action="store_true",
                         help="skip populate; reuse the prepared dbpath copies")
+    parser.add_argument("--gate-kind", default="env", choices=("env", "param"),
+                        help="how the change under test is switched: startup env var, or a "
+                             "--setParameter server parameter")
     parser.add_argument("--gate-env", default=DEFAULT_GATE_ENV,
                         help="startup environment variable that switches the change under test")
     parser.add_argument("--port-rotation", type=int, default=0, choices=(0, 1, 2),
@@ -291,8 +298,9 @@ def main() -> None:
                              "separate a server-specific bias from a real effect")
     args = parser.parse_args()
 
-    global GATE_ENV
+    global GATE_ENV, GATE_KIND
     GATE_ENV = args.gate_env
+    GATE_KIND = args.gate_kind
 
     binary = Path(args.binary).resolve()
     scratch = Path(args.scratch)
@@ -304,6 +312,7 @@ def main() -> None:
                 "doc_limit": args.doc_limit, "blocks": args.blocks,
                 "sweeps_per_block": args.sweeps, "cache_gb": args.cache_gb,
                 "gate_env": args.gate_env,
+                "gate_kind": args.gate_kind,
                 "port_rotation": args.port_rotation,
                 "arm_ports": arm_ports(args.port_rotation)},
         "units": {"server_cpu_us": "mongod CPU on the arm's own connection thread "
