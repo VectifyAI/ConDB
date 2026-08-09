@@ -751,3 +751,81 @@ Larger than anything left inside it, and listed so they are not lost:
    ~257 KB of the 5.11 MB reply, about 5%. A more compact reply encoding would cut both the
    transmission and the client's decode, but it needs driver support to be readable.
 
+---
+
+## L7 — Exhaust through `mongos`. **The report's premise is wrong, and this is the largest finding here.**
+
+This project treats exhaust cursors as unavailable to sharded deployments, and that is what makes
+the ~40% overlap they buy look unreachable — "the capability exists in the server and is reachable
+only through a client option most deployments cannot use". **`mongos` implements exhaust in full.**
+The restriction is imposed by the driver.
+
+**Why nobody noticed.** PyMongo refuses before a byte reaches the wire
+(`pymongo/synchronous/cursor.py`, 4.12.0):
+
+```python
+if self._cursor_type == CursorType.EXHAUST:
+    if self._collection.database.client.is_mongos:
+        raise InvalidOperation("Exhaust cursors are not supported by mongos")
+```
+
+No experiment conducted through PyMongo can tell "mongos cannot do this" from "the driver will not
+ask". Every measurement in this project went through PyMongo.
+
+**What mongos actually does:**
+
+- `s/commands/strategy.cpp:488` — `opCtx->setExhaust(OpMsg::isFlagSet(m, OpMsg::kExhaustSupported))`
+- `s/commands/query_cmd/cluster_getmore_cmd.h:111-115` — `if (opCtx->isExhaust() &&
+  response.getCursorId() != 0) reply->setNextInvocation(boost::none);`
+- `s/commands/strategy.cpp:1332-1337` — propagates `shouldRunAgainForExhaust` into the `DbResponse`
+
+**Verified on the wire, not inferred.** `exhaust_through_mongos.py` speaks OP_MSG over a raw socket
+and sets `exhaustAllowed` itself, so the driver's refusal never applies. It decodes `flagBits` and
+counts how many replies come back for a **single** `getMore` request. Instrument validated first
+against a standalone mongod on the real 11,686-row subtree: 11 replies, 10 unsolicited.
+
+Cluster: config server + shards + `mongos` on 57022, all from this build; 20,000 documents with the
+same four-component covering index (`setup_sharded_for_exhaust.sh`).
+
+| endpoint | replies to ONE getMore | unsolicited | rows |
+|---|---|---|---|
+| standalone mongod | 11 | 10 | 11,686 |
+| **mongos, one shard** | **20** | **19** | 20,000 |
+| **mongos, two shards, merged** | **20** | **19** | 20,000 |
+
+It works through a router, and it keeps working when `mongos` is merging two shards — which is the
+case that most plausibly would have broken.
+
+**What it is worth.** Same raw client, same socket, same batch size; the only difference is the
+`exhaustAllowed` flag, so the delta is attributable to exhaust alone. Paired, arms alternating
+within blocks, 3 reps per arm, best-of taken:
+
+| cluster | paired delta | blocks faster | median |
+|---|---|---|---|
+| one shard | **−23.41%** [−26.65, −8.91] | 8/8 | 20.2 ms vs 26.0 ms |
+| two shards | −19.40% [−56.15, +7.86] | 6/8 | 39.3 ms vs 52.0 ms |
+
+The single-shard figure is the trustworthy one. The two-shard run is directionally the same but much
+noisier — both arms slower, the range crosses zero, 6/8 blocks — so it is reported as corroboration
+of direction, not as a second measurement of size.
+
+**What this changes.** The largest item identified anywhere in this project needs **no MongoDB
+server work**. It is already built, already shipped, and already streams through a router. What
+stands between sharded deployments and it is a client-side check whose error message —
+"Exhaust cursors are not supported by mongos" — is not true of the server it names.
+
+**What this does not establish.** That the driver restriction is safe to lift. An exhaust cursor
+monopolises its connection for the life of the cursor, and behind a router fronting many shards
+that has pooling consequences a single-cursor test cannot see; interaction with retryable reads,
+load-balancer mode and failover is untested. The claim made here is narrower and firmer: **the
+stated reason for the restriction is factually wrong about the server**, and whatever the real
+reason is, it is not that mongos cannot do it.
+
+Setup is deliberately small — one mongos, two single-node shards, no auth, no load balancer, no
+failover, a synthetic 20,000-document collection, and a Python client that is not a production
+driver. It is sized to answer a protocol question, not to produce a throughput number.
+
+Status: **settled, positive, and the most actionable result in this log.** Recommended next step is
+not a mongod change but a question to the drivers team: what is the restriction actually protecting
+against, given the server streams correctly through a two-shard merge?
+
