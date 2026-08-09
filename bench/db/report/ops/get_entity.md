@@ -101,6 +101,71 @@ By group, exclusive, µs of 45.354:
 parsing, projection analysis, match expression — is 10.14 µs, 22%.** That is the shape of a command
 whose query is already trivial, and it is why §5's conclusion holds.
 
+## 2b. Whose code is it — the origin split
+
+The phase table above says *which subsystem* a sample is in. It does not say whether the sample is
+MongoDB's own code, the kernel, or this box's endpoint-protection stack, and only the first is
+something MongoDB can change. `bench/db/decomp_origin.py` classifies the **leaf** frame of every
+sample, so the parts sum to the phase and the phases sum to the operation.
+
+Whole operation, 83,543 samples, 45.354 µs:
+
+| origin | µs | % |
+|---|---|---|
+| `mongod` — MongoDB's own C++ | 21.761 | 48.0 |
+| kernel | 10.803 | 23.8 |
+| **EDR / container networking — this box only** | **3.994** | **8.8** |
+| unresolved | 3.365 | 7.4 |
+| WiredTiger | 3.288 | 7.3 |
+| allocator | 2.142 | 4.7 |
+
+**MongoDB's own code (mongod + WiredTiger + allocator) is 27.19 µs, 60% of the operation.**
+
+But it is not where the phase table's biggest number is. Splitting the two transport phases:
+
+| phase | µs | mongod | kernel | EDR |
+|---|---|---|---|---|
+| `_sendResponse` — send reply | 10.163 | **0.210 (2.1%)** | 6.357 | 3.354 |
+| `_getNextWork` — receive request | 4.282 | 0.513 (12.0%) | 3.226 | 0.368 |
+
+**Of the 14.4 µs the phase table calls transport, 0.72 µs is MongoDB's code.** The rest is the
+kernel socket path and, for 3.72 µs of it, modules that would not be loaded on a normal deployment.
+So the 39.6% transport term is almost entirely not MongoDB's to optimise — while the other 60% of
+the operation is.
+
+**Where MongoDB's 27.19 µs actually sits.** It is flat: the largest single mongod leaf frame is
+`operator new` at 1.106 µs, 2.4%. Grouped:
+
+| | µs | % | |
+|---|---|---|---|
+| allocator | 2.016 | 4.4 | `operator new` 1.106, `operator delete` 0.787, `tc_malloc` 0.123 |
+| refcounting | 0.905 | 2.0 | `_Sp_counted_base::_M_release` 0.432, `_M_add_ref_copy` 0.197, `intrusive_ptr_release` 0.276 |
+| BSON re-walking | 0.880 | 1.9 | `BSONElement::computeSize` 0.350, `BSONObj::getField` 0.274, builder 0.256 |
+| WT config parsing | 0.681 | 1.5 | see M6 |
+| WT row search | 0.468 | 1.0 | `__wt_row_search` 0.376, `__wt_row_leaf_key` 0.092 |
+
+**There is no ten-microsecond item.** That is the finding, and it is the same shape as the driver
+side: per-command cost spread thin across machinery that each does a little.
+
+### M6 — `begin_transaction` re-parses a config string on every read · **already fixed on master**
+
+`__config_next` is 0.588 µs/op, 1.3% of server CPU, and 91% of it comes from
+`WiredTigerBeginTxnBlock` → `__session_begin_transaction`.
+
+The cause is exact. For a plain read all three branches in
+`wiredtiger_begin_transaction_block.cpp:93-113` are false, so the config string is **empty** — yet
+7.0.34 still builds a `str::stream`, converts it to a `std::string`, and passes `""`. WiredTiger's
+`__wt_config_gets_def` carries its own comment that parsing config strings is "expensive" and has a
+fast path for it, but that path is selected by the *length of the cfg array*: `nullptr` gives length
+1 and returns the default immediately, while `""` gives length 2 and sends **every key lookup**
+through `__wt_config_getones` to parse the empty string.
+
+**Master already fixes this properly**, and by more than the one-line `nullptr`: it pre-compiles
+every non-default combination through WiredTiger's compiled-configuration API at startup, skips the
+all-default case outright (`if (config == 0) continue`), and passes a compiled token rather than a
+string. So this is not a proposal — it is a measurement of what a 7.0 deployment still pays and what
+upgrading recovers: **0.59 µs per read, on every read the server serves.**
+
 **Environment note.** 8.39% of self samples land in EDR and container-networking kernel modules
 (`dsa_filter`, `bmhook`, `tmhook`, `nf_tables`, `nf_conntrack`, `nf_nat`, `bridge`, `nft_compat`)
 inside `mongod`'s connection thread. That inflates the transport terms and is a property of this box,
@@ -155,7 +220,17 @@ For scale: PostgreSQL's *entire* client-side term for this operation is 52.3 µs
 server CPU). That figure includes the relay and kernel time whereas MongoDB's 60–63 µs is CPU only,
 so the two are not like-for-like — but the comparison is conservative in the direction claimed.
 
-### M3 — The fixed command path · `mongod` · ~24 µs
+### M3 — The fixed command path · `mongod` · ~24 µs, and it is flat
+
+§2b settles what this is made of. Of the 23.9 µs above MongoDB's own per-command floor, and of the
+45.4 µs total, **27.2 µs is MongoDB's own code** — but spread across allocator traffic (2.0 µs),
+refcounting (0.9), BSON re-walking (0.9), WiredTiger config and search (1.1), command dispatch
+(9.3 across eight named steps, largest 4.2) and collection acquisition (4.6). The largest single
+mongod leaf frame in the whole operation is `operator new` at 1.1 µs.
+
+**So there is no single server-side change worth attacking here.** That is a finding, not an
+absence of one: it says the residual is per-command machinery, which is exactly what §6's coalescing
+result (23.3× at B=64) predicts, and it is the same shape the driver side turned out to have.
 
 §5 shows that after `IDHACK` there is still 23.9 µs of server CPU above MongoDB's own per-command
 floor, in dispatch, IDL parse, collection acquisition, projection AST and executor construction. The
