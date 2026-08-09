@@ -317,11 +317,29 @@ avoids the decode M2 and M3 attack.
 | | measured |
 |---|---|
 | `RawBSONDocument` | **2.41× slower** (375,379 vs 155,844 µs at 96,238 rows, distributions disjoint) — the projection returns three fields and the workload reads all three, so a raw document re-scans its bytes per access |
-| wire compression, snappy / zstd | +57.7% / +84.1%, 40 subtrees averaging 59,052 rows, 12 blocks; compressors verified engaged by before/after `serverStatus.network.compression` deltas |
+| wire compression, snappy / zstd | +57.7% / +84.1% **on loopback**, 40 subtrees averaging 59,052 rows, 12 blocks; compressors verified engaged by before/after `serverStatus.network.compression` deltas. **This is a loopback result, not a general one** — see below |
 | wire compression, zlib | median **+1254.9%** over 8 blocks on one 11,686-row subtree; engagement verified in `battery.json`, not in `wire.json` whose counters are lifetime totals. The payload compresses 3.4–4.8×, so this is loopback-specific and would not transfer to a bandwidth-constrained link |
 | range-sharded parallel cursors | −48.3% against **−46.4% for exhaust + `batchSize` 2000** (not exhaust alone, −30.3% at that input), at 1.5× server CPU |
 | manual `find`/`getMore` commands | median −3.59%, 11/12 blocks, block min/max [−10.62, +4.71] |
 | aggregation reshaping | every variant slower than `find` **[unretained — arms exist in `bench_subtree_wins.py`, no result file was written]** |
+
+**Compression has a break-even, and loopback is on the wrong side of it.** For a payload
+compressing to a fraction `r`, with compressor throughput `C` and decompressor throughput `D`, the
+link bandwidth at which compression stops paying is `(1 − r) / (1/C + 1/D)` — the payload size
+cancels. Measured on 5,096,093 bytes captured off the wire from the P50 subtree:
+
+| compressor | ratio | compress | decompress | break-even link |
+|---|---|---|---|---|
+| snappy | 0.298 | 616 MB/s | 1456 MB/s | **2.43 Gbps** |
+| zstd-3 | 0.223 | 339 MB/s | 1341 MB/s | **1.68 Gbps** |
+| zlib-6 | 0.208 | 27 MB/s | 365 MB/s | **157 Mbps** |
+
+Loopback here is ~16 Gbps, above all three, which is why all three lost. **snappy pays on any link
+slower than ~2.4 Gbps** — 1 GbE, most cloud cross-AZ, every cross-region path — and it is a
+configuration change, not code. Computed from measured inputs rather than measured end to end: no
+throttled link was available (`tc` needs root).
+
+Field names are a second lever on the same bytes: 25 B per document, **5.7% of the reply**.
 
 **[unretained]** "~24% run-to-run spread" is quoted across this project and stated by no artifact. It
 reproduces at 24.6% over 9 live blocks at the P50 input but 12.7% over 5 blocks at 96,238 rows, so it

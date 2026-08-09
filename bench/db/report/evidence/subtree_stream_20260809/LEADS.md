@@ -778,11 +778,50 @@ Larger than anything left inside it, and listed so they are not lost:
    to set `kExhaustSupported`, and drivers refuse exhaust behind a router. `mongos` is MongoDB's own
    code, so this is a MongoDB-side change — it simply cannot be measured on a standalone box, which
    is why it was set aside here, not because it is unreal.
-2. **Fewer bytes on the wire.** Transmission-side kernel work is ~7.3% of server CPU and the client
-   spends ~23% of the operation decoding BSON; **both scale with reply size.** Wire compression was
-   ruled out for this workload **on loopback only**, where a compressor cannot repay itself against
-   a ~2 GB/s local transfer. The payload compresses 3.4–4.8×, so on a real link that conclusion
-   plausibly inverts. This benchmark structurally cannot show it, and no claim is made either way.
+2. **Fewer bytes on the wire — now with a break-even, not a shrug.** Transmission-side kernel work
+   is ~7.3% of server CPU and the client spends ~23% of the operation decoding BSON; **both scale
+   with reply size.** Compression was ruled out for this workload on loopback (snappy +57.7%, zstd
+   +84.1%, zlib +1254.9%), which is true of loopback and misleading about networks.
+
+   The useful question is at what bandwidth it starts paying, and that has a closed form. For a
+   payload of S bytes compressing to S·r, compressor throughput C and decompressor throughput D,
+   over a link of bandwidth B: uncompressed costs S/B, compressed costs S/C + S·r/B + S/D, and
+   setting them equal cancels S entirely:
+
+   **B_breakeven = (1 − r) / (1/C + 1/D)**
+
+   Measured on 5,096,093 bytes of real reply payload captured off the wire — the bytes mongod
+   actually produced for the 11,686-row P50 subtree (`bench_subtree_wire_breakeven.py`,
+   `wire_breakeven.json`):
+
+   | compressor | ratio | compress | decompress | **break-even link** |
+   |---|---|---|---|---|
+   | snappy | 0.298 (3.4×) | 616 MB/s | 1456 MB/s | **2.43 Gbps** |
+   | zstd-3 | 0.223 (4.5×) | 339 MB/s | 1341 MB/s | **1.68 Gbps** |
+   | zlib-6 | 0.208 (4.8×) | 27 MB/s | 365 MB/s | **157 Mbps** |
+
+   Compression pays *below* the break-even. Loopback here is ~16 Gbps, above all three, which is
+   exactly why all three lost — and why zlib lost hardest, at a 157 Mbps threshold and 27 MB/s of
+   compression throughput.
+
+   **So: snappy pays on any link slower than ~2.4 Gbps.** That covers 1 GbE, most cloud cross-AZ
+   paths, and every cross-region path. It is a configuration change
+   (`--networkMessageCompressors`), not code.
+
+   The measured ratios reproduce the 3.4–4.8× the report already recorded, which is a useful
+   cross-check on the capture.
+
+   Attached caveats: C and D are Python bindings over the same C libraries mongod and the drivers
+   use, so they carry a little call overhead and the break-even is if anything slightly
+   pessimistic; the model is single-stream and does not price CPU contention on a busy server; and
+   it ignores that compression also shrinks the ~7.3% of server CPU spent in transmission-side
+   kernel work, which would push the break-even higher still. No link slower than loopback was
+   available on this machine — `tc` needs root — so this is a computed break-even from measured
+   inputs, not an end-to-end measurement over a throttled link.
+
+   **Field names are a second, compressor-independent lever on the same bytes:** `node_id`,
+   `title` and `summary` cost 25 B per document, 292,150 B over the subtree, **5.7% of the reply**
+   before compression.
 3. **Per-document field names.** `node_id`, `title` and `summary` repeat in all 11,686 documents —
    ~257 KB of the 5.11 MB reply, about 5%. A more compact reply encoding would cut both the
    transmission and the client's decode, but it needs driver support to be readable.

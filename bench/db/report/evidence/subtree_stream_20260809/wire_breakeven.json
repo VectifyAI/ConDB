@@ -1,0 +1,31 @@
+{
+  "bytes": 5096093,
+  "rows": 11686,
+  "results": [
+    {
+      "compressor": "snappy",
+      "ratio": 0.29756050370352344,
+      "compressed_bytes": 1516396,
+      "compress_MBps": 616.4645814702003,
+      "decompress_MBps": 1456.0538413235117,
+      "breakeven_bandwidth_Mbps": 2433.8066536965403
+    },
+    {
+      "compressor": "zstd-3",
+      "ratio": 0.22261112581736636,
+      "compressed_bytes": 1134447,
+      "compress_MBps": 338.83477548044567,
+      "decompress_MBps": 1340.5556739084689,
+      "breakeven_bandwidth_Mbps": 1682.0908972424627
+    },
+    {
+      "compressor": "zlib-6",
+      "ratio": 0.20848991570601244,
+      "compressed_bytes": 1062484,
+      "compress_MBps": 26.688817438396672,
+      "decompress_MBps": 365.19284625812054,
+      "breakeven_bandwidth_Mbps": 157.486412058224
+    }
+  ],
+  "field_name_bytes": 292150
+}
