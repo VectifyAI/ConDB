@@ -971,11 +971,25 @@ inverting one assertion exits 253.
 | `jstests/core/index/express*.js` | 0 regressions |
 | express unit tests | 30/30 |
 
-Performance after the fixes: **retired instructions −22.87%**, blocks [−22.93, −22.84], floor
-−0.02% — essentially unchanged from before them, because the resume path only runs at getMore
-boundaries and an eleven-row query never reaches one. Server CPU is about −36%, 20/20 blocks in each
-rotation, but that run's control arm was noisy (spikes to +99%), so it is being re-measured on a
-verified-quiet box before being quoted as final.
+### Final numbers, on the fixed implementation
+
+Measured on a box held above 90% idle for 90 consecutive seconds before starting and verified free
+of other builds at the end. Artifacts `express_clean_rot{0,1,2}.json`, `express_instructions_clean.json`.
+
+| instrument | effect | control floor |
+|---|---|---|
+| **retired instructions** | **−22.91%**, blocks [−23.35, −22.86] | −0.04% |
+| **server CPU** | **−36.12% / −35.74% / −36.02%** | +1.30% / −0.27% |
+| **client wall** | −18.68% / −17.89% | — |
+
+**60 of 60 blocks improved.** Absolute server CPU 89.0–94.9 µs falls to 57.3–61.8 µs.
+
+**The fixes cost nothing measurable.** Instructions were −22.79% before them and −22.91% after. That
+is not luck: the resume path only runs at a getMore boundary, and an eleven-row query never reaches
+one, so a correct resume is free on this shape. The yield tracker adds one `fastClockSource` read
+per document. The review's warning that "a correct resume is more expensive than a lossy one" is
+true in principle and does not bite here — but it would on a shape that actually spans batches, and
+nothing here measures that.
 
 ## Still to run
 

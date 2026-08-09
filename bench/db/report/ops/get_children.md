@@ -125,7 +125,7 @@ server-global; the other operations were checked and none regresses (`get_subtre
 `forceClassicEngine` is the deliberate 7.0.34 default, so defaulting to SBE is a deployment-policy
 decision this evidence does not settle.
 
-### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **BUILT: −20.8% instructions / −35.5% server CPU / −18.5% wall**
+### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **BUILT: −22.9% instructions / −36.0% server CPU / −18.3% wall**
 
 > **Update.** M2 was recorded below with no value. There is now a measured envelope for it, from a
 > different shape: on master, `find({_id: X})` takes the express fast path while the same query with
@@ -142,11 +142,13 @@ decision this evidence does not settle.
 > Detail in [`get_children_leads.md`](get_children_leads.md) L4a.
 >
 > **Built and measured. `carsontung666/mongo#6`, branch `express-prefix-scan`.** Three campaigns,
-> gate rotated across three servers, **60 of 60 blocks improved**: retired instructions −20.81%
-> (control floor −0.16%), server CPU −35.48% / −35.44% / −36.09% (control +0.91% / −0.30% /
-> +1.37%), client wall −18.27% / −18.48% / −19.57%. Absolute server CPU 93.5–97.8 µs falls to
-> 60.0–64.6. Correctness gate — including a 5,000-row scan across ~49 batches and the same under
-> `internalQueryExecYieldIterations=1` — passed before any number was read. Detail in L7.
+> gate rotated across three servers, **60 of 60 blocks improved**: retired instructions −22.91%
+> (control floor −0.04%), server CPU −36.12% / −35.74% / −36.02% (control +1.30% / −0.27%), client
+> wall −18.68% / −17.89%. Absolute server CPU 89.0–94.9 µs falls to 57.3–61.8. Detail in L7.
+>
+> **An earlier revision measured −35% while silently dropping rows** — 101 of 500 documents on a run
+> of duplicate index keys. Five defects were found and fixed before this was proposed; L9 records
+> them and, more usefully, the four distinct ways the testing failed to find them.
 >
 > The ≈24 µs envelope above **understated it**; the measured saving is ≈33 µs. The `_id` lever
 > priced a one-row query and so caught only the fixed per-command cost, while for eleven rows
