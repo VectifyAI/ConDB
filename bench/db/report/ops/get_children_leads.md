@@ -976,20 +976,103 @@ inverting one assertion exits 253.
 Measured on a box held above 90% idle for 90 consecutive seconds before starting and verified free
 of other builds at the end. Artifacts `express_clean_rot{0,1,2}.json`, `express_instructions_clean.json`.
 
-| instrument | effect | control floor |
+| instrument | effect | control |
 |---|---|---|
 | **retired instructions** | **−22.91%**, blocks [−23.35, −22.86] | −0.04% |
-| **server CPU** | **−36.12% / −35.74% / −36.02%** | +1.30% / −0.27% |
-| **client wall** | −18.68% / −17.89% | — |
+| **server CPU** | **−36.12% / −35.74% / −36.02%** | +1.30% / −0.27% / −0.02% |
+| **client wall** | −18.68% / −17.89% / −18.01% | — |
 
-**60 of 60 blocks improved.** Absolute server CPU 89.0–94.9 µs falls to 57.3–61.8 µs.
+Absolute server CPU 89.0–94.9 µs (campaign medians; block-level baseline spans 86.2–105.9) falls to
+57.3–61.8 µs.
 
-**The fixes cost nothing measurable.** Instructions were −22.79% before them and −22.91% after. That
-is not luck: the resume path only runs at a getMore boundary, and an eleven-row query never reaches
-one, so a correct resume is free on this shape. The yield tracker adds one `fastClockSource` read
-per document. The review's warning that "a correct resume is more expensive than a lossy one" is
-true in principle and does not bite here — but it would on a shape that actually spans batches, and
-nothing here measures that.
+### Corrections after an audit of the measurement itself · **L10**
+
+An auditor recomputed every number above from the artifacts and got the same values, and could not
+break the estimator, the arms, or the instruments. **Three statements around the numbers did not
+survive**, and they are corrected here rather than quietly dropped.
+
+**1. "control floor ±0.04%" was a median presented as a floor, and I quoted the quieter of two
+campaigns.** At block level the control is far noisier than that: 12 of 60 blocks exceed ±5% and 3
+exceed ±10%, with maxima of **+26.35%** and **+33.72%** *in the reported campaigns*. Each arm's
+window is only ~0.44 s, so one 150 ms hiccup on a shared box moves a block 30%. Worse, an
+equivalent campaign six minutes earlier on the same binary and gate — `express_knob_rot{0,1,2}` —
+had a control spike to **+99.68%**, and I quoted only the later one. That is selection on the
+control. It did not flatter the effect (the discarded campaign's probe deltas were slightly
+*better*: −36.56 / −35.97 / −37.39), but it made the instrument look orders of magnitude quieter
+than it is.
+
+**What the control actually establishes**: not a per-block floor, but that two identical servers
+agree at the *campaign median* to about ±2 points. Across six campaigns on the final binary the
+control medians are −2.12, −1.12, −0.27, −0.02, +1.30, +3.44 — mean +0.20, sd 1.78. The probe over
+the same six is **−36.30, sd 0.54**. That is roughly **20 sd out**, which is the honest way to state
+the separation.
+
+**2. "The fixes cost nothing measurable" is withdrawn.** It is not supported, for a reason that
+matters more than the arithmetic: **the benchmark never executes the code the fixes touched.** The
+cohort's fan-out is 6–14, so every reply fits the 101-document first batch — `opcounters.getmore`
+and `cursor.totalOpened` are **0** in both arms over 640 queries — and a ~30 µs query never reaches
+the 10 ms yield period. Cursor save/restore, the resume path, `stashResult` and getMore are the
+entire surface of the five fixes, and none of it runs here. The 0.12-point difference I read as
+"unchanged" is also five times smaller than the between-campaign offset the control arm itself
+shows (0.8 points), on top of a denominator that moved 0.49%.
+
+**Supported instead:** *any cost of the fixes on the single-batch, non-yielding shape is below this
+instrument's between-campaign resolution of about ±0.6 points. Their cost on the resuming,
+multi-batch path is unmeasured* — and that is precisely where both wrong-rows defects lived.
+
+**3. "60 of 60 blocks improved" overstates independence.** The blocks are repeated measures over 9
+process instantiations, one dbpath family, one cohort, one pinned connection per arm. The unit at
+which "the gate or the machine?" is answered is the **campaign, n=3**, not the block. Blocks are at
+least uncorrelated in time (lag-1 −0.30…+0.18, no first/second-half drift), so they are a fair
+repeat measure — just not 60 trials. Two things the rotation does not cover: process **start order**
+is never rotated (baseline always first, probe second, control third), and there is a within-block
+slot effect — normalised CPU by slot is 0.992 / 0.986 / **1.022**, and the rotation leaves probe in
+the expensive third slot 3 fewer times out of 60, worth about **+0.13 points in the probe's
+favour**, uncorrected.
+
+### Two harness defects the audit found
+
+**No artifact ever proved the probe took the new path.** `analyze_children_plancache.py` prints
+`plan_cache_delta` under the label `activation:`, but for an express plan it is identical in all
+three arms and carries no activation information at all. Worse, `verify_express_prefix_scan.py`
+asserts `EXPRESS_IXSCAN` on the **unhinted** query while the benchmark measures the **hinted** one —
+and "the hint was ignored" was one of the two wrong-results defects. The auditor checked it
+separately and it holds, but the harness would have reported ~0% and looked like a null result if
+the gate had silently stopped applying. **Fixed**: the benchmark now explains the measured hinted
+shape on every arm and aborts if the probe's plan does not differ from baseline's, or if control's
+does.
+
+**`start_mongod` could measure a stale server.** It returned as soon as a `ping` succeeded and only
+checked `proc.poll()` on the failure path. A leftover mongod holding the port answers the ping while
+the process just launched dies with "address in use" — and then the harness samples
+`/proc/<dead pid>`. **This is the explanation for the three aborted campaigns I could not diagnose**
+(`express_fixed_rot{0,1,2}`, 15:25): each shows one arm with a non-zero plan-cache count at startup,
+and in all three it is the arm assigned port 57021. It did not touch any reported number — that
+failure yields `server_cpu_us == 0`, and there is not one non-positive value in 1,260
+arm-measurements. **Fixed**: liveness is checked first, and `serverStatus().pid` must match the
+process we started.
+
+### What the audit confirmed
+
+Worth recording because it is the part that licenses the headline. Every number recomputes exactly.
+The estimator is not doing the work (median-of-paired-deltas −35.92% against ratio-of-means −35.97%,
+0.5 points apart). No unit mixing. **The probe is not doing less work** — over 640 identical queries
+both arms report identical `queryExecutor.scanned` (6400), `scannedObjects` (6400),
+`document.returned` (6400), `opcounters.query` (640). The hinted baseline is not a straw man
+(`hint_vs_cached.json`: the plan-cache-hitting unhinted arm is 0.43% *more* expensive). The two
+instruments corroborate rather than double-count — Δwall is 94–96% of Δserver-CPU, and on a single
+pinned synchronous connection wall can only fall if the critical path shortened. `perf stat --tid`
+counts only the mongod connection thread. The `comm` tap cannot alias. The absolute drift across
+campaigns is common-mode: the control tracked the baseline every time.
+
+### What is still needed before this transfers
+
+Fan-out is 6–14 everywhere; the ~26 µs of fixed cost in the saving means the percentage must shrink
+as rows grow. **Zero getMores and zero cursors** in every measured query, so the multi-batch path is
+performance-unmeasured. One connection, no contention. 1.2 GB in an 8 GB cache, so no I/O.
+Ineligible shapes are 0%, not −36%, and nothing measures the eligible fraction of a real workload.
+The −36% embeds this box's ~20% IPC gain; **instructions transfer between machines, microseconds do
+not.**
 
 ## Still to run
 

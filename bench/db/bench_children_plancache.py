@@ -124,13 +124,30 @@ def start_mongod(binary: Path, dbpath: Path, logpath: Path, port: int,
     proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env)
     uri = f"mongodb://localhost:{port}/?directConnection=true"
     for _ in range(240):
+        # Check liveness FIRST. A ping can be answered by a leftover server still holding the
+        # port, in which case the one we just launched has already died with "address in use" and
+        # we would go on to measure the stale process while sampling /proc/<dead pid>. That has
+        # happened: three aborted campaigns show one arm with a non-zero plan-cache count at
+        # startup, always on the same port.
+        if proc.poll() is not None:
+            raise SystemExit(
+                f"mongod on {port} exited early (code {proc.returncode}); a stale server may "
+                f"already hold the port. See {logpath}")
         try:
-            MongoClient(uri, serverSelectionTimeoutMS=500).admin.command("ping")
+            hello = MongoClient(uri, serverSelectionTimeoutMS=500).admin.command("hello")
+            # And confirm the server answering is the process we started.
+            served_by = MongoClient(uri, serverSelectionTimeoutMS=500).admin.command(
+                "serverStatus")["pid"]
+            if int(served_by) != proc.pid:
+                raise SystemExit(
+                    f"port {port} is served by pid {served_by}, not the mongod we started "
+                    f"({proc.pid}) -- a stale server is holding the port")
+            del hello
             log(f"  mongod up on {port} (pid {proc.pid}, {GATE_ENV}={gate})")
             return proc
+        except SystemExit:
+            raise
         except Exception:
-            if proc.poll() is not None:
-                raise SystemExit(f"mongod on {port} exited early; see {logpath}")
             time.sleep(0.5)
     raise SystemExit(f"mongod on {port} did not become ready")
 
@@ -366,6 +383,34 @@ def main() -> None:
             log(f"  arm {name:<9} port {arm['port']} connectionId {arm['connection_id']}")
 
         out["plan_cache_before"] = {n: plan_cache_counters(a["db"]) for n, a in arms.items()}
+
+        # Prove the change under test is actually engaged on the SHAPE BEING MEASURED. Without
+        # this, a gate that silently stopped applying would report ~0% and look like a null
+        # result rather than a broken run. It must be the hinted shape: the benchmark measures
+        # the hinted query, and "the hint was ignored" was one of the defects found in review.
+        out["activation"] = {}
+        for name, arm in arms.items():
+            wp = arm["db"].command(
+                "explain",
+                {"find": NODES,
+                 "filter": {"tree_id": TREE_ID, "parent_id": parents[0]},
+                 "projection": CHILD_PROJECTION,
+                 "sort": dict(CHILD_SORT),
+                 "hint": CHILD_INDEX},
+                verbosity="queryPlanner")["queryPlanner"]["winningPlan"]
+            stages, node = [], wp
+            while node:
+                stages.append(node.get("stage"))
+                node = node.get("inputStage")
+            out["activation"][name] = stages
+            log(f"  arm {name:<9} plan on the measured shape: {stages}")
+        if out["activation"]["baseline"] == out["activation"]["probe"]:
+            raise SystemExit(
+                "the probe arm runs the same plan as baseline -- the change under test is not "
+                f"engaged: {out['activation']}")
+        if out["activation"]["baseline"] != out["activation"]["control"]:
+            raise SystemExit(
+                f"control does not match baseline: {out['activation']}")
 
         log(f"verifying element-wise output equality over {len(parents)} inputs")
         elements = verify_equality(arms, parents)
