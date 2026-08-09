@@ -63,4 +63,31 @@ delta that is zero by construction. This is the same effect that made client CPU
 3 and 318 µs at load 216: contention changes the cycles a fixed amount of work costs.
 
 **So the null test is the gate.** The comparison is only run once it reports a delta inside a
-microsecond or two, and it is re-run alongside the real measurement rather than assumed.
+microsecond or two.
+
+## Two more things the null test caught
+
+**A cache asymmetry in the first harness.** With fresh random ids per block, and 9 GB of
+uncompressed documents against an 8 GB cache, whichever arm ran a block first paid the read and
+warmed those ids for the arm that ran second. On a quiet box the null test showed it plainly: the
+arm that went first read 90-117 us and the one that went second read 44, flipping with the block
+parity. Fixed by drawing a 40,000-id working set once and warming both arms on it before timing,
+which is the cached point lookup the 45.354 us figure names. The null test then reported +0.00 us
+[-2.52, +2.00], 4/8 blocks.
+
+**NUMA.** This is a two-socket box. Unpinned, the 7.0.34 arm read 45.9 us alone but 53.5 us when
+alternating with master. Pinning both servers to node 0 brought both arms down by about 7 us --
+and left the paired delta almost unchanged, 6.65 us against 6.24. So placement was common-mode and
+the delta is robust to it, but the absolute numbers are only meaningful pinned.
+
+## Results
+
+| run | 7.0.34 | master | paired delta | blocks |
+|---|---|---|---|---|
+| unpinned | 53.46 | 45.93 | +6.65 us (12.4%) | 12/12 |
+| node 0, load ~30 | 46.29 | 39.14 | +6.24 us (13.5%) | 11/12 |
+| node 0, quiet | **45.00** | **38.11** | **+6.74 us (15.0%)** | 14/14 |
+
+The quiet run is the one quoted. Its 7.0.34 arm at 45.00 us sits 0.4 us from the 45.354 us the
+containerised instance measures by a different instrument, which is the check that the host
+reproduction is faithful.

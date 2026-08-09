@@ -98,7 +98,8 @@ def main() -> None:
     ap.add_argument("--hi", type=int, default=10_000_000)
     ap.add_argument("--blocks", type=int, default=12)
     ap.add_argument("--iters", type=int, default=2000)
-    ap.add_argument("--warm", type=int, default=4000)
+    ap.add_argument("--workset", type=int, default=40000,
+                    help="ids drawn once and warmed on both arms before timing")
     ap.add_argument("--seed", type=int, default=20260809)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -123,10 +124,20 @@ def main() -> None:
     for label, plan in plans.items():
         print(f"  {label:10} winning plan: {plan[:150]}")
 
+    # A fixed working set, warmed on both arms before anything is timed.
+    #
+    # Drawing fresh random ids per block does not work here: 9M documents of
+    # ~1 KB do not fit uncompressed in an 8 GB WiredTiger cache, so the first
+    # arm to touch a block's ids pays the read and warms them for the second.
+    # A null test with both arms on the same server made that visible -- the
+    # arm that ran first read 90-117 us and the one that ran second read 44,
+    # flipping with the block parity. Reusing a warmed working set measures the
+    # cached point lookup, which is the "hit" arm the 45.354 us figure names.
     rng = random.Random(args.seed)
-    ids = [str(rng.randrange(args.lo, args.hi)) for _ in range(args.warm)]
-    for a in arms:
-        a.run(ids)
+    workset = [str(rng.randrange(args.lo, args.hi)) for _ in range(args.workset)]
+    for _ in range(2):
+        for a in arms:
+            a.run(workset)
 
     idle = {a.label: a.idle(1.0) for a in arms}
     for label, ns in idle.items():
@@ -135,7 +146,7 @@ def main() -> None:
     cpu: dict[str, list[float]] = {a.label: [] for a in arms}
     wall: dict[str, list[float]] = {a.label: [] for a in arms}
     for b in range(args.blocks):
-        block_ids = [str(rng.randrange(args.lo, args.hi)) for _ in range(args.iters)]
+        block_ids = [workset[rng.randrange(len(workset))] for _ in range(args.iters)]
         order = arms if b % 2 == 0 else arms[::-1]
         for a in order:
             c, w, seen = a.run(block_ids)
@@ -156,6 +167,7 @@ def main() -> None:
     deltas = [cpu[la][i] - cpu[lb][i] for i in range(args.blocks)]
     result = {
         "blocks": args.blocks, "iters_per_block": args.iters,
+        "workset": args.workset,
         "collection": args.coll, "documents": args.hi - args.lo,
         "versions": {a.label: a.version for a in arms},
         "winning_plans": plans,
