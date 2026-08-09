@@ -1,0 +1,13 @@
+{
+  "tag": "l4a_on",
+  "path": "/000006/000075/000773",
+  "rows": 11686,
+  "seconds": 15,
+  "threads": 1,
+  "operations": 1357,
+  "server_cpu_us_total": 9370000.0,
+  "server_cpu_us_per_op": 6904.93736182756,
+  "client_wall_us_per_op": 12911.522260879818,
+  "self_percent": [],
+  "inclusive_percent": []
+}

@@ -42,6 +42,9 @@ DB = "bench"
 NODES = "layout2_view"
 COVER_INDEX = "layout2_rootcause_exact_cover"
 KNOB = "internalQueryEnableFusedCoveredProjection"
+# Overridden by --knob so the same harness can A/B any single boolean query knob.
+_ACTIVE_KNOB = KNOB
+_PRESETS: list[tuple[str, bool]] = []
 
 
 def log(m: str) -> None:
@@ -73,7 +76,9 @@ def proc_cpu_us(pid: int) -> float:
 
 
 def set_arm(client: MongoClient, enabled: bool) -> None:
-    client.admin.command({"setParameter": 1, KNOB: enabled})
+    for name, value in _PRESETS:
+        client.admin.command({"setParameter": 1, name: value})
+    client.admin.command({"setParameter": 1, _ACTIVE_KNOB: enabled})
     # A plan cached under the other arm would otherwise survive the switch.
     client[DB].command({"planCacheClear": NODES})
 
@@ -204,14 +209,23 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=3.0, help="window length per arm per block")
     ap.add_argument("--warmup", type=int, default=3)
     ap.add_argument("--instructions", action="store_true")
+    ap.add_argument("--knob", default=KNOB, help="boolean query knob to A/B")
+    ap.add_argument("--preset", action="append", default=[],
+                    help="knob=true|false held fixed in both arms, repeatable")
+    ap.add_argument("--skip-activation", action="store_true",
+                    help="skip the fused-plan activation assertions (for non-fusion knobs)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
+
+    global _ACTIVE_KNOB, _PRESETS
+    _ACTIVE_KNOB = args.knob
+    _PRESETS = [(p.split("=")[0], p.split("=")[1].lower() == "true") for p in args.preset]
 
     uri = f"mongodb://localhost:{args.port}/?directConnection=true"
     client = MongoClient(uri)
     coll = client[DB][NODES]
     pid = mongod_pid(args.port)
-    log(f"mongod pid {pid}; knob {KNOB}; {args.seconds}s windows x {args.blocks} blocks x 2 arms")
+    log(f"mongod pid {pid}; knob {_ACTIVE_KNOB}; presets {_PRESETS}; {args.seconds}s windows x {args.blocks} blocks x 2 arms")
 
     results: dict[str, Any] = {
         "knob": KNOB, "port": args.port, "seconds_per_window": args.seconds,
@@ -281,7 +295,7 @@ def main() -> int:
         log(f"{path}: output mismatches {mismatches}")
 
     activation = {}
-    for path in args.paths:
+    for path in ([] if args.skip_activation else args.paths):
         lower, upper = path + "/", path + "0"
         set_arm(client, False)
         base_stages, base_fused = plan_shape(coll, lower, upper)

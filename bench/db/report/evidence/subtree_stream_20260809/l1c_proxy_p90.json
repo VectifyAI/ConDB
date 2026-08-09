@@ -1,0 +1,103 @@
+{
+  "path": "/000004/000046",
+  "rows": 97773,
+  "arms": {
+    "0": {
+      "wall_us": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "improved": 0,
+        "blocks": 8
+      },
+      "cpu_us": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "improved": 0,
+        "blocks": 8
+      },
+      "instructions": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "improved": 0,
+        "blocks": 8
+      },
+      "median_ops_per_window": 35.0
+    },
+    "1000": {
+      "wall_us": {
+        "median": -2.392479078484888,
+        "min": -29.032709640613408,
+        "max": 19.425248468758127,
+        "improved": 5,
+        "blocks": 8
+      },
+      "cpu_us": {
+        "median": 3.991250322661033,
+        "min": -10.277777777777775,
+        "max": 31.195652173913047,
+        "improved": 2,
+        "blocks": 8
+      },
+      "instructions": {
+        "median": 0.6528654166968351,
+        "min": -0.7464865443254753,
+        "max": 1.6573533157855591,
+        "improved": 3,
+        "blocks": 8
+      },
+      "median_ops_per_window": 37.0
+    },
+    "2000": {
+      "wall_us": {
+        "median": -2.1100691076504976,
+        "min": -49.230152446254,
+        "max": 27.56666497229425,
+        "improved": 5,
+        "blocks": 8
+      },
+      "cpu_us": {
+        "median": 6.475485448088192,
+        "min": -41.53846153846153,
+        "max": 35.51215623754482,
+        "improved": 3,
+        "blocks": 8
+      },
+      "instructions": {
+        "median": -0.6801017173888813,
+        "min": -2.464860518700951,
+        "max": 1.9655855240897635,
+        "improved": 5,
+        "blocks": 8
+      },
+      "median_ops_per_window": 36.5
+    },
+    "8000": {
+      "wall_us": {
+        "median": -1.0303149871701611,
+        "min": -52.6771074719322,
+        "max": 31.334607127374504,
+        "improved": 5,
+        "blocks": 8
+      },
+      "cpu_us": {
+        "median": 8.590144701066505,
+        "min": -44.86486486486486,
+        "max": 24.372909698996658,
+        "improved": 2,
+        "blocks": 8
+      },
+      "instructions": {
+        "median": -0.4400461688461088,
+        "min": -2.619940715922875,
+        "max": 0.45321389337340534,
+        "improved": 5,
+        "blocks": 8
+      },
+      "median_ops_per_window": 38.0
+    }
+  },
+  "mismatches": 0
+}

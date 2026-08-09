@@ -1,0 +1,13 @@
+{
+  "tag": "fused_v2_cg",
+  "path": "/000006/000075/000773",
+  "rows": 11686,
+  "seconds": 20,
+  "threads": 1,
+  "operations": 1790,
+  "server_cpu_us_total": 11430000.0,
+  "server_cpu_us_per_op": 6385.474860335195,
+  "client_wall_us_per_op": 12060.193660453757,
+  "self_percent": [],
+  "inclusive_percent": []
+}

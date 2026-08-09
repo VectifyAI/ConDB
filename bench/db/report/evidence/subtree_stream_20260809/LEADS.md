@@ -623,3 +623,131 @@ The levers that remain are therefore not in `mongod`'s query execution at all:
    PyMongo.
 
 Neither is in this lane, and both are larger than what is left in it.
+
+---
+
+## Second pass — four more server-side leads, three of them dead
+
+After L2 landed, the claim "44% of this operation is unreachable from the server" was challenged and
+was **too strong**. It is true of *overlapping* server and client work; it says nothing about
+*reducing* either term. So the post-fusion profile was re-taken on the shipped build and worked
+through lead by lead. Three of the four died, and each died for a different reason worth recording.
+
+Self time on the shipped build, fusion on (`profile_fused_v2.json`), grouped:
+
+| | self CPU |
+|---|---|
+| materialise the projected object and move it into the reply | ~15.3% |
+| KeyString decode, incl. `BufReader` overhead 3.32% | ~20.3% |
+| WiredTiger index walk | ~12.6% |
+| transmission-side kernel work | ~7.3% |
+
+### L5 — reply-buffer page zeroing. **Dead. The hypothesis was simply wrong.**
+
+`clear_page_erms` is 3.84% of server CPU, and the guess was that mongod reallocates a 16 MB reply
+buffer per getMore instead of reusing one. The call graph says otherwise:
+
+```
+clear_page_erms ← get_page_from_freelist ← alloc_pages ← skb_page_frag_refill
+                ← sk_page_frag_refill ← tcp_sendmsg_locked ← __sys_sendto ← sinkMessage
+```
+
+It is the **kernel** allocating socket page fragments while sending the 5.11 MB reply. Nothing
+mongod owns, nothing mongod can pool. Reducible only by sending fewer bytes.
+
+### L1c — server-chosen batch byte cap. **Dead, and it took two runs to kill honestly.**
+
+`find_common.cpp:39` pins `kMaxBytesToReturnToClientAtOnce` at 16 MB. This was originally dismissed
+by argument — without exhaust there is no overlap, so smaller batches only add round trips — but
+that argument did not explain the report's observed −11.2% at 96,238 rows with `batchSize` 2000.
+An argument that contradicts a measurement is not a reason to skip the measurement.
+
+**The first proxy run produced a false positive** and is retained as a caution: `batchSize` 1000
+came out at −5.20% median. The block sequence exposed it — −35.5%, −28.2%, −4.1%, … , −1.6%. The
+probe had no per-arm settle, so whichever arm ran first in a block paid for a cold cache, and since
+the arm order rotates, the baseline absorbed most of it. Fixed with a settle before every window
+plus two discarded warmup blocks.
+
+Corrected run at 97,773 rows (`l1c_proxy_p90.json`, 8 measured blocks):
+
+| batchSize | client wall | server CPU | retired instructions |
+|---|---|---|---|
+| 1000 | −2.39% [−29.0, +19.4], 5/8 | **+3.99%** | **+0.65%** |
+| 2000 | −2.11% [−49.2, +27.6], 5/8 | **+6.48%** | **−0.68%** |
+| 8000 | −1.03% [−52.7, +31.3], 5/8 | **+8.59%** | **−0.44%** |
+
+**Retired instructions decide it.** On this box that metric holds to ~0.2 pp, and batch size moves
+it by under 1% in either direction — the server does not do less work with smaller batches, so the
+cache-residency mechanism is not operating. The wall medians sit inside ±30–50% ranges at 5/8
+blocks, which is noise, and server CPU is consistently *worse* because more round trips mean more
+command processing. The report's −11.2% does not reproduce here.
+
+### L4a — stop rebuilding an object that already exists. **Real, measured, too small. Reverted.**
+
+`Document::toBsonIfTriviallyConvertible()` returns the backing BSON directly, and
+`DocumentStorage::reset(bson, false)` leaves `_modified` false and no metadata, so every projected
+object qualifies. `plan_executor_impl.cpp` nevertheless called plain `toBson()` and rebuilt each
+object field by field.
+
+It works — the profile shows the symbol swap cleanly, with fusion held on in both arms:
+
+| arm | symbol | self CPU |
+|---|---|---|
+| on | `Document::toBsonIfTriviallyConvertible()` | 1.10% |
+| off | `Document::toBson<DefaultSizeTrait>()` | 1.78% |
+
+Net **~0.68% of server CPU**, about 0.4% of wall, because the fast path is not free either: it still
+copies a BSONObj handle and wraps it in an optional. The paired A/B could not resolve it — retired
+instructions +0.08% [−0.16, +0.34] at P50 and −0.59% [−2.46, +2.22] at P90, 4/10 and 8/10 blocks.
+
+It passed 13/13 differential cases and 88/88 core projection and covered-query tests, so it is
+correct. It was still **reverted**: a change that cannot be measured end to end, carrying a server
+parameter and a branch on a path every query takes, does not belong in a PR whose other content is
+measurable. Recorded here so the next person does not re-derive it.
+
+Two instrumentation errors of mine along the way, both caught before they reached a conclusion: a
+resmoke run that never started because one listed test file did not exist and the watcher only
+matched a success pattern; and a profile labelled `l4a_on` that in fact had the knob off, because
+the profiler does not manage knobs and the A/B harness leaves the toggled knob disabled when it
+finishes.
+
+### L6 — decode straight into the reply buffer. **Scoped, not built. Recommended against.**
+
+The largest remaining server-side item. Today each row is materialised into a `BSONObjBuilder`,
+frozen into a `BSONObj`, wrapped in a `Document`, converted back to a `BSONObj`, and finally copied
+into the reply's `BSONArrayBuilder`. Measured on the shipped build: builder appends 3.47 + 0.81,
+`_done()` 1.35, `DocumentStorage::reset` 3.30, `Document::toBson` 1.29, `transitionMemberToOwnedObj`
+0.91, `BSONArrayBuilder::append` 3.24, `BSONObjCursorAppender` 0.91 — **~15.3% of server CPU**, plus
+a share of `__memmove_avx512` at 3.37%.
+
+If the covered scan wrote its projected components straight into the reply buffer, all of that
+except the final byte-writing would go. Optimistically **10–11% of server CPU, about 6% of wall.**
+
+Against that: the plan-stage contract is that stages produce `WorkingSetMember`s and the command
+layer owns the reply builder. Bypassing it means threading a sink from the command down through the
+executor into the leaf stage, for one plan shape — architecturally the same move
+`exec/express/plan_executor_express.cpp` makes for point queries, and that is a whole parallel
+executor. **Recommended against**: express-executor-scale surgery on a hot, shared contract for a
+single-digit wall gain, on a workload where 44% of the time is already outside the server's reach.
+Recorded with numbers so the trade is visible rather than assumed.
+
+---
+
+## MongoDB-side leads outside this lane
+
+Larger than anything left inside it, and listed so they are not lost:
+
+1. **`mongos` support for exhaust cursors — ~40% of wall, the largest item identified anywhere in
+   this project.** The server machinery exists and works; L1a showed the overlap requires the client
+   to set `kExhaustSupported`, and drivers refuse exhaust behind a router. `mongos` is MongoDB's own
+   code, so this is a MongoDB-side change — it simply cannot be measured on a standalone box, which
+   is why it was set aside here, not because it is unreal.
+2. **Fewer bytes on the wire.** Transmission-side kernel work is ~7.3% of server CPU and the client
+   spends ~23% of the operation decoding BSON; **both scale with reply size.** Wire compression was
+   ruled out for this workload **on loopback only**, where a compressor cannot repay itself against
+   a ~2 GB/s local transfer. The payload compresses 3.4–4.8×, so on a real link that conclusion
+   plausibly inverts. This benchmark structurally cannot show it, and no claim is made either way.
+3. **Per-document field names.** `node_id`, `title` and `summary` repeat in all 11,686 documents —
+   ~257 KB of the 5.11 MB reply, about 5%. A more compact reply encoding would cut both the
+   transmission and the client's decode, but it needs driver support to be readable.
+
