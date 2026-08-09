@@ -297,6 +297,18 @@ that made checkout expensive in 4.12 are gone. The measured one is that **what r
 is not overhead but accounting**: merging all eight mutex acquisitions into two recovered only 18.5%
 of that layer.
 
+**And the server side has moved further than the driver side.** `get_entity.md` §2c measures a clean
+build of driver-era master against 7.0.34 on the same collection, same box, both host processes,
+both pinned to one NUMA node: **45.00 → 38.11 µs of server CPU, 6.74 µs, 15.0%, 14/14 blocks**,
+because master takes `EXPRESS_IXSCAN` where 7.0.34 takes `PROJECTION_SIMPLE → IDHACK`. That is 46%
+of the server-CPU gap against the matched unprepared PostgreSQL arm, already closed, with nothing
+for this project to propose.
+
+Put beside it, the three driver changes are 21.1 µs of client CPU and 28.4 µs of wall. The two are
+different quantities and are not added here, but the ordering is worth stating: **on this operation
+the largest single movement available is upgrading the server, and the second largest is the driver
+work in this file.**
+
 So the conclusion for this lane is that the driver is no longer where the `get_entity` gap lives.
 After C2, client CPU is 66.4 µs against a 17.6 µs floor, and the 49 µs between them is spread across
 the retryable-read wrapper, the connection pool's accounting, implicit session creation and
