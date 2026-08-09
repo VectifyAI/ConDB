@@ -623,6 +623,53 @@ where the plan-cache ceiling measured ≈9.5 µs. L3 found no hotspot to attack 
 leaf in the whole profile is 2.10%. A fast path does not need a hotspot, because it skips layers
 rather than optimising one.
 
+## L6 — is a hinted baseline the right reference? · **yes: real plan caching is worth +0.43%, i.e. nothing**
+
+The `get_node` agent raised the sharpest challenge of this lane: a hinted control arm re-plans on
+every call, because a hint disqualifies plan caching. Measuring a fast path against it therefore
+measures *fast path vs uncached planning*, which would overstate production gain for a workload
+whose queries would otherwise hit the cache. They had been burned by exactly this — a 28–34% figure
+from a hinted campaign, three builds, three nulls.
+
+Tested directly, in **retired instructions** per their instrument advice (wall and CPU cannot resolve
+this; instructions hold to ~0.05% here). One server, one process, three pinned connections,
+`bench/db/bench_children_hint_vs_cached.py`, artifact `runs/.../hint_vs_cached.json`:
+
+| arm | insn/op | vs hinted | spread over 9 blocks |
+|---|---|---|---|
+| hinted (uncached, replans every call) | 435,810 | — | — |
+| **unhinted (cache hit)** | **437,809** | **+0.43%** | [+0.33, +0.59] |
+| control (second hinted connection) | 435,720 | −0.05% | [−0.16, +0.01] |
+
+Plan cache counters during warm-up confirm the arms did what they claim: **5,590 hits** (unhinted)
+against **10,764 skipped** (the two hinted arms).
+
+**The plan-cached query is more expensive than the uncached hinted one.** Not equal — worse, by
+eight times the control floor, in every one of nine blocks.
+
+Why: a hint restricts the index set before enumeration ("Hint by name specified, restricting
+indices"), so planning a hinted query is already cheap. The unhinted query must instead discriminate
+across all five indexes on the collection to build a cache key, then `planFromCache` and still
+construct an executor. On this shape the cache costs slightly more than it saves.
+
+### Three consequences
+
+1. **The challenge does not apply to this operation.** A hinted baseline is not a flattering
+   reference here, it is the *cheaper* one. The L4a envelope needs no discount.
+2. **It independently corroborates closing the plan-cache lead**, by a completely different route
+   and instrument. L2 said the ceiling for caching hinted plans is ≈−10.3%; L6 says that when
+   caching is genuinely available on this shape it is worth **+0.43%**. A change that buys real plan
+   caching for this query would make it slower.
+3. **It explains the source document's unexplained result.** `get_children.md` §5 records "dropping
+   the pinned hint: +0.30% client-side P50, neutral to negative" and could not say why, since
+   dropping the hint should have bought plan caching. This is why: the caching is worth nothing, and
+   the index discrimination it requires costs a little. Two instruments, two builds, 7.0.34 and
+   master, +0.30% and +0.43%.
+
+**Limits.** Instructions are not time and this delta is not converted to one. Five indexes on the
+collection — a collection with fewer would discriminate more cheaply and the sign could flip. One
+shape, one build.
+
 ## Still to run
 
 - **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver
