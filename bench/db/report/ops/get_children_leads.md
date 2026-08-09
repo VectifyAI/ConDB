@@ -759,6 +759,92 @@ Multikey indexes are refused outright rather than reasoned about. The resume sem
 the last key returned", which matches an index scan across a yield but has not been tested against
 concurrent writers beyond the yield-forcing test. No jstest yet.
 
+## L8 — pre-PR checking found a wrong-results bug: **the hint was being ignored**
+
+The A/B proved the change is fast on one shape. That is not the question that decides whether it can
+be proposed. The question is whether turning the gate on changes the answer to *any other* query,
+and answering it found a real defect.
+
+### The instrument
+
+`bench/db/fuzz_express_prefix_scan.py` — two mongods from one binary on identical data, differing
+only in the gate, comparing **795 query shapes** element-wise. The data is chosen to be hostile
+rather than representative: arrays (multikey), nulls, missing fields, dotted paths, empty strings,
+values that compare equal across BSON types, and heavy duplication on the equality prefix. The
+indexes deliberately include the kinds the eligibility is supposed to **refuse** — multikey, sparse,
+partial, descending, collated, hashed — so a refusal that does not actually happen surfaces as a
+wrong answer rather than as nothing.
+
+29 of 795 differed, in two classes.
+
+### Class 1 — my test was too strict, not the code
+
+`sort=None` cases returned the same **set** in a different order. Without a sort MongoDB guarantees
+no order, so this is legal. The fuzzer now compares unsorted queries as sets. Worth stating plainly
+that express *does* reorder unsorted results, because it forces index order where the planner might
+have chosen otherwise — legal, but observable.
+
+### Class 2 — a real wrong-results bug
+
+**Whatever index the query hinted, the gated path used `abcd`.**
+
+| hint | sets equal? | index actually used |
+|---|---|---|
+| `partial_a_c` | **no — 63 rows against 53** | `abcd` |
+| `sparse_opt` | yes, by luck | `abcd` |
+| `multikey_arr_c` | yes, by luck | `abcd` |
+| `dotted_subk_c` | yes, by luck | `abcd` |
+
+`partial_a_c` carries `partialFilterExpression: {c: {$gt: 0}}`, so hinting it is a request for the
+subset of documents that index contains. The fast path returned all 63 instead of 53. **Silently
+wrong rows, no error.**
+
+**Root cause: an assumption I made and never checked.** I believed `params.mainCollectionInfo.indexes`
+was already narrowed to the hinted index, having seen "Hint by name specified, restricting indices"
+in the server log. It is not — `QueryPlanner::plan` applies the hint *during planning*, which is
+exactly the step this path skips. So the fast path had the full index list and picked its own.
+
+Fixed: the candidate loop now skips any index that does not match the hint, using the same rule as
+`QueryPlanner`'s own `hintMatchesNameOrPattern` ( `{$hint: <name>}` by name, otherwise key pattern).
+A hint naming an index the eligibility refuses now falls through to normal planning.
+
+Verified after the fix, on the real workload's shape:
+
+| query | plan | index |
+|---|---|---|
+| no hint | `EXPRESS_IXSCAN` | `allops_tree_parent_path` |
+| hint by name (the benchmark's own shape) | `EXPRESS_IXSCAN` | `allops_tree_parent_path` |
+| hint by key pattern | `EXPRESS_IXSCAN` | `allops_tree_parent_path` |
+| **hint a different index** | `PROJECTION_SIMPLE`/**`SORT`**/`FETCH`/`IXSCAN` | falls back |
+
+The last row is the fix working: hinting an index that cannot provide the order falls back *and*
+correctly grows a `SORT` stage.
+
+Re-run after the fix: **795 shapes, no differences.**
+
+### Why this one nearly escaped
+
+Three of the four hinted cases returned the same set *by luck*, because those indexes happen to
+contain every document. Only the partial index exposed it. A test that had used ordinary indexes
+would have passed while the bug was live.
+
+### A second issue found by reading rather than testing
+
+The stash-serving block added to `PlanExecutorExpress::getNext` was placed **above** the scope that
+starts the execution timer, checks the fail point, and calls `checkForInterrupt()`. With the gate off
+`_stash` is always empty so it could never fire — but that is safety by luck. Moved inside the
+guarded scope: returning a stashed document must not be a way to dodge a `killOp`.
+
+### Non-intrusion audit
+
+The whole change has **two deletions**: `isEOF()`'s body, and `stashResult()`'s
+`MONGO_UNREACHABLE_TASSERT`. Everything else is additive, and `express_plan.h` is purely so. With the
+gate off the surface is three lines, each individually arguable: `_stash` is always empty, so
+`isEOF()` is unchanged, `getNext()`'s new block never runs, and `stashResult()` was previously
+unreachable.
+
+Express unit tests (`//src/mongo/db/exec/express:express_execution_test`): **30/30 pass.**
+
 ## Still to run
 
 - **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver
