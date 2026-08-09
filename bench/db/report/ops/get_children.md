@@ -125,7 +125,7 @@ server-global; the other operations were checked and none regresses (`get_subtre
 `forceClassicEngine` is the deliberate 7.0.34 default, so defaulting to SBE is a deployment-policy
 decision this evidence does not settle.
 
-### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **envelope now measured: ≈24 µs**
+### M2 — Extend the fast path to cover a bounded prefix scan · `mongod` · **BUILT: −20.8% instructions / −35.5% server CPU / −18.5% wall**
 
 > **Update.** M2 was recorded below with no value. There is now a measured envelope for it, from a
 > different shape: on master, `find({_id: X})` takes the express fast path while the same query with
@@ -139,7 +139,19 @@ decision this evidence does not settle.
 > envelope of **≈24%**, of which M1 has now been shown to reach ≈8.6 points. **These are bounds
 > derived from a different shape, not measurements of this operation** — a bounded-scan fast path
 > must additionally iterate and satisfy the sort, so it would recover less than 24 µs, never more.
-> Detail in [`get_children_leads.md`](get_children_leads.md) L4a. **This is the lead worth building.**
+> Detail in [`get_children_leads.md`](get_children_leads.md) L4a.
+>
+> **Built and measured. `carsontung666/mongo#6`, branch `express-prefix-scan`.** Three campaigns,
+> gate rotated across three servers, **60 of 60 blocks improved**: retired instructions −20.81%
+> (control floor −0.16%), server CPU −35.48% / −35.44% / −36.09% (control +0.91% / −0.30% /
+> +1.37%), client wall −18.27% / −18.48% / −19.57%. Absolute server CPU 93.5–97.8 µs falls to
+> 60.0–64.6. Correctness gate — including a 5,000-row scan across ~49 batches and the same under
+> `internalQueryExecYieldIterations=1` — passed before any number was read. Detail in L7.
+>
+> The ≈24 µs envelope above **understated it**; the measured saving is ≈33 µs. The `_id` lever
+> priced a one-row query and so caught only the fixed per-command cost, while for eleven rows
+> express also deletes the per-row stage machinery (`getNextBatch` at 14.87% inclusive in the
+> profile). Recorded rather than quietly corrected.
 
 `get_node.md` §5 M1 proposes a fast path for unique compound-index equality. `get_children` is the
 natural next shape: an equality on a *prefix* of a compound index (`tree_id, parent_id`) returning

@@ -5,15 +5,22 @@ including the ones that did not pay. Negative results are retained deliberately:
 file is that the next person does not repeat them.
 
 Target is **master**, pinned base `0561c098b99ac5e929005e70a2e37d7a97a82423`, fork
-`carsontung666/mongo`, branch `hinted-plan-cache-ceiling`, worktree `/tmp/mongo-getchildren`.
+`carsontung666/mongo`, branches `hinted-plan-cache-ceiling` and `express-prefix-scan`, worktree
+`/tmp/mongo-getchildren`.
 The measured ConDB baseline (stock 7.0.34 on `:57017`) cannot run a master build, so every number
 below is an A/B on one locally built binary, never a comparison against `:57017`.
 
 Started 2026-08-09.
 
-**Deliverables so far.** Branch `hinted-plan-cache-ceiling` pushed to `origin`; Draft PR
-`carsontung666/mongo#4`, opened against the **fork's** master, not upstream. No SERVER ticket exists
-and none was invented; the PR states in its first line that it is a measurement and not a proposal.
+**Deliverables.** Two branches pushed to `origin`, both Draft PRs against the **fork's** master,
+not upstream. No SERVER ticket exists and none was invented.
+
+| PR | branch | what | outcome |
+|---|---|---|---|
+| [#4](https://github.com/carsontung666/mongo/pull/4) | `hinted-plan-cache-ceiling` | measurement probe, not a proposal | ceiling ≈−10.3%, **lead closed** |
+| [#6](https://github.com/carsontung666/mongo/pull/6) | `express-prefix-scan` | extends express to a bounded index prefix scan | **−20.8% instructions, −35.5% server CPU, −18.5% wall** |
+
+The second is the result. The first is why it was the thing worth building.
 
 ---
 
