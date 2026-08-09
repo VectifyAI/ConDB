@@ -32,23 +32,39 @@ SEP = "\x1f"
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--perf-data", required=True)
-    ap.add_argument("--sym-meta", required=True,
-                    help=".sym.meta.json holding tid and load_bias_hex")
-    ap.add_argument("--binary", required=True)
+    ap.add_argument("--sym-meta",
+                    help=".sym.meta.json holding tid and load_bias_hex; omit "
+                         "when perf can resolve the symbols itself")
+    ap.add_argument("--binary", help="only needed alongside --sym-meta")
+    ap.add_argument("--tid", help="only needed without --sym-meta")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    meta = json.loads(Path(args.sym_meta).read_text())
-    # The .sym.meta.json nests it; the header comment in .sym.self.txt does not.
-    meta = meta.get("meta", meta)
-    tid = str(meta["tid"])
-    bias = int(meta["load_bias_hex"], 16)
-    expected = meta.get("samples")
+    # A capture of a process this account owns needs none of the indirection
+    # below: perf resolves the symbols itself. The Symbolizer path exists for
+    # the containerised captures, where mongod runs as another uid and perf
+    # can resolve neither its comm nor its user-space symbols.
+    native = args.sym_meta is None
+    if native:
+        # A capture already made with `perf record --tid` needs no filter, and
+        # passing one to `perf script` against such a capture yields nothing.
+        tid, expected, sym = args.tid, None, None
+    else:
+        meta = json.loads(Path(args.sym_meta).read_text())
+        # The .sym.meta.json nests it; the .sym.self.txt header does not.
+        meta = meta.get("meta", meta)
+        tid = str(meta["tid"])
+        expected = meta.get("samples")
+        if not args.binary:
+            raise SystemExit("--binary is required with --sym-meta")
+        sym = Symbolizer(Path(args.binary), int(meta["load_bias_hex"], 16))
 
-    sym = Symbolizer(Path(args.binary), bias)
+    cmd = ["perf", "script", "-i", args.perf_data]
+    if tid:
+        cmd += ["--tid", tid]
+    cmd += ["-F", "ip,sym,dso" if native else "ip,dso"]
     proc = subprocess.Popen(
-        ["perf", "script", "-i", args.perf_data, "--tid", tid, "-F", "ip,dso"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
         bufsize=1 << 20,
     )
 
@@ -67,6 +83,25 @@ def main() -> None:
             if not line:
                 finish()
                 chain = []
+                continue
+            if native:
+                # "<hex ip> <symbol> (<dso>)". The dso is always last, so the
+                # final " (" splits it off even though symbols contain
+                # parentheses of their own.
+                rest = line.split(None, 1)
+                if len(rest) < 2:
+                    continue
+                body = rest[1]
+                cut = body.rfind(" (")
+                name = body[:cut].strip() if cut > 0 else body.strip()
+                dso = body[cut + 2:].rstrip(")") if cut > 0 else ""
+                if not name or name == "[unknown]":
+                    frame = f"[{dso}]" if dso else "[unresolved]"
+                elif dso.endswith(".ko") or "kallsyms" in dso or dso.startswith("["):
+                    frame = f"[{dso}]"
+                else:
+                    frame = shorten(name)
+                chain.append(frame)
                 continue
             parts = line.split(None, 1)
             try:
