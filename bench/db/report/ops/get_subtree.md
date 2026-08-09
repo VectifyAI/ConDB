@@ -357,11 +357,14 @@ across a 120× range of input sizes, no output differences. It is honest to stat
 single-digit: the server is only ~55% of this operation after the change, and transmission (~21%)
 and client-side BSON decode (~23%) are untouched and out of reach from `mongod`.
 
-Underneath sits **M2**, the absence of non-key payload columns in indexes. A ceiling probe puts the
-whole cost of carrying the payload through the key at 37% of server CPU, but that is a loose upper
-bound — `INCLUDE` would keep the payload in the index and still copy it, and the narrow-index arm
-walks a 0.28 GB B-tree against 4.66 GB. What `INCLUDE` actually removes is the escape scan and
-TypeBits for payload components, a few percent of server CPU. **Not recommended for this workload.**
+Underneath sits **M2**, the absence of non-key payload columns in indexes — now measured rather than
+estimated. KeyString already contains a length-prefixed encoding (BinData), so the same payload
+bytes can be scanned through both encodings on the real server and the real fused path. The
+difference is **−0.78% of server-side retired instructions** (9/10 blocks, range [−1.01, +0.08]).
+An earlier wide-versus-narrow-index probe suggested 37% of server CPU; that was about 50× too high,
+because it also removed the copy `INCLUDE` still has to pay and swapped a 4.66 GB B-tree for a
+0.28 GB one. The escape scan is `memchr`, which is vectorised, and both encodings must still copy
+the bytes. **Not worth building for this workload, on measurement.**
 
 ---
 

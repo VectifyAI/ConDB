@@ -586,10 +586,46 @@ and still returns it. Specifically it does **not** save:
   ~0.3 MB reply against 5.11 MB, which has nothing to do with key encoding.
 
 What `INCLUDE` actually removes is the escape scan and the TypeBits participation for payload
-components. After L2 those are what remains of the decode: in the post-fusion profile,
-`readCString` plus `readCStringWithNuls` are ~4.3% of server CPU self time and
-`toBsonProjectedSafe` 5.33%, of which the copy is irreducible. **A defensible estimate is a few
-percent of server CPU — call it 3–6% — which is 2–4% of wall.**
+components. That was first estimated at "3–6% of server CPU". **It has since been measured, and the
+estimate was too generous by roughly a factor of five.**
+
+### M2 measured, not estimated (`bench_subtree_m2_ceiling.py`, `m2_ceiling_measured.json`)
+
+`INCLUDE`'s decode side is "read a length, take that many bytes". KeyString already has an encoding
+that does exactly that — **BinData is length-prefixed** (`key_string.cpp:1629-1644`: read a 1- or
+4-byte length, `reader->skip(size)`, hand over the pointer; no terminator scan, no 0x00/0xFF escape
+handling, no TypeBits) — where strings are not (`key_string.cpp:1576-1600` →
+`readCStringWithNuls`).
+
+So: two collections holding the **same payload bytes**, one with `title`/`summary` as strings and
+one as BinData, the same covering index, the same fused covered scan, on the real server. The
+difference is exactly the term `INCLUDE` would remove. 11,686 rows, 4,431,447 payload bytes, both
+indexes 5.5 MB, both arms confirmed on the fused path, 10 blocks after 2 discarded warmups:
+
+| | length-prefixed vs order-encoded |
+|---|---|
+| **retired instructions (server, decisive)** | **−0.78%** [−1.01, +0.08], 9/10 blocks lower |
+| server CPU | +2.27% [−1.27, +5.34], 3/10 — noise |
+| client wall | −4.59% [−6.40, −0.81] — **excluded, see below** |
+
+**The wall figure must not be counted.** It is a client-side artifact: PyMongo decodes `bytes` more
+cheaply than `str`, which needs UTF-8 decoding. `INCLUDE` would still return strings, so it does not
+collect that. Counting it would be self-deception.
+
+**So the answer is under 1% of server-side instructions.** The reason is visible once measured:
+`readCStringWithNuls` uses `memchr`, which is vectorised — scanning ~380 bytes for a terminator is
+on the order of 10 ns against ~1 ns to read a length; the escape check is one branch and TypeBits is
+a couple of bits. Both paths must still `memcpy` those 380 bytes, and that dominates.
+
+This also puts a number on how loose the earlier wide-vs-narrow-index probe was: it reported 37% of
+server CPU, against a measured **0.78%** — about 50× too high, because it also removed the copy that
+`INCLUDE` still pays and swapped a 4.66 GB B-tree for a 0.28 GB one.
+
+Not covered: `INCLUDE` would also keep the payload out of comparisons during index maintenance and
+seeks. This probe measures the read path only, which is the relevant one for a read-dominated
+workload but is not the whole feature.
+
+**M2 is therefore not worth building for this workload, on measurement rather than judgement.**
 
 **Recommendation: not worth building for this workload.** It is a storage-format change touching
 every KeyString consumer, for low single digits of wall time, and L2 has already taken the part of
