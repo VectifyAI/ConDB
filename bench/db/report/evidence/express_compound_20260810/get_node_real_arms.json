@@ -1,0 +1,539 @@
+{
+  "mongod": "/home/junyao/code/mongo/bazel-bin/src/mongo/db/mongod",
+  "source": "mongodb://127.0.0.1:57017/?directConnection=true",
+  "ops_per_block": 10000,
+  "plans": {
+    "hinted": {
+      "stages": [
+        "LIMIT",
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "allops_tree_node"
+    },
+    "planner": {
+      "stages": [
+        "LIMIT",
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "allops_tree_node"
+    },
+    "express": {
+      "stages": [
+        "EXPRESS_IXSCAN"
+      ],
+      "index": "allops_tree_node"
+    },
+    "hinted_rand": {
+      "stages": [
+        "LIMIT",
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "allops_tree_node"
+    },
+    "express_rand": {
+      "stages": [
+        "EXPRESS_IXSCAN"
+      ],
+      "index": "allops_tree_node"
+    }
+  },
+  "blocks": [
+    {
+      "block": 0,
+      "order": [
+        "hinted",
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand"
+      ],
+      "hinted": {
+        "instr_per_op": 326053.8787,
+        "server_cpu_us_per_op": 84.0,
+        "wall_us_per_op": 155.2492373622954
+      },
+      "planner": {
+        "instr_per_op": 322552.7226,
+        "server_cpu_us_per_op": 80.0,
+        "wall_us_per_op": 147.49491401016712
+      },
+      "express": {
+        "instr_per_op": 216151.9074,
+        "server_cpu_us_per_op": 54.0,
+        "wall_us_per_op": 123.83583430200815
+      },
+      "hinted_rand": {
+        "instr_per_op": 339180.4452,
+        "server_cpu_us_per_op": 103.0,
+        "wall_us_per_op": 175.37616034969687
+      },
+      "express_rand": {
+        "instr_per_op": 217769.9241,
+        "server_cpu_us_per_op": 60.0,
+        "wall_us_per_op": 132.55273094400764
+      }
+    },
+    {
+      "block": 1,
+      "order": [
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand",
+        "hinted"
+      ],
+      "planner": {
+        "instr_per_op": 322527.1962,
+        "server_cpu_us_per_op": 99.0,
+        "wall_us_per_op": 177.55760699510574
+      },
+      "express": {
+        "instr_per_op": 216437.8212,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 127.31005800887942
+      },
+      "hinted_rand": {
+        "instr_per_op": 326891.8525,
+        "server_cpu_us_per_op": 164.0,
+        "wall_us_per_op": 277.82392585650086
+      },
+      "express_rand": {
+        "instr_per_op": 216442.8951,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 175.27773268520832
+      },
+      "hinted": {
+        "instr_per_op": 326386.1036,
+        "server_cpu_us_per_op": 137.0,
+        "wall_us_per_op": 237.58719582110643
+      }
+    },
+    {
+      "block": 2,
+      "order": [
+        "express",
+        "hinted_rand",
+        "express_rand",
+        "hinted",
+        "planner"
+      ],
+      "express": {
+        "instr_per_op": 216448.864,
+        "server_cpu_us_per_op": 52.0,
+        "wall_us_per_op": 122.81917529180646
+      },
+      "hinted_rand": {
+        "instr_per_op": 326192.2816,
+        "server_cpu_us_per_op": 93.0,
+        "wall_us_per_op": 164.42785318940878
+      },
+      "express_rand": {
+        "instr_per_op": 216302.2768,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 128.10045732185245
+      },
+      "hinted": {
+        "instr_per_op": 326001.2601,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 158.14492953941226
+      },
+      "planner": {
+        "instr_per_op": 322584.285,
+        "server_cpu_us_per_op": 83.0,
+        "wall_us_per_op": 150.39151748642325
+      }
+    },
+    {
+      "block": 3,
+      "order": [
+        "hinted_rand",
+        "express_rand",
+        "hinted",
+        "planner",
+        "express"
+      ],
+      "hinted_rand": {
+        "instr_per_op": 326125.6637,
+        "server_cpu_us_per_op": 95.0,
+        "wall_us_per_op": 165.6436880119145
+      },
+      "express_rand": {
+        "instr_per_op": 216306.6654,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 126.51207912713289
+      },
+      "hinted": {
+        "instr_per_op": 326113.7426,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 156.86070099473
+      },
+      "planner": {
+        "instr_per_op": 322672.7491,
+        "server_cpu_us_per_op": 81.0,
+        "wall_us_per_op": 147.2846849821508
+      },
+      "express": {
+        "instr_per_op": 216501.7721,
+        "server_cpu_us_per_op": 51.0,
+        "wall_us_per_op": 121.30601117387414
+      }
+    },
+    {
+      "block": 4,
+      "order": [
+        "express_rand",
+        "hinted",
+        "planner",
+        "express",
+        "hinted_rand"
+      ],
+      "express_rand": {
+        "instr_per_op": 216285.1546,
+        "server_cpu_us_per_op": 60.0,
+        "wall_us_per_op": 129.27853129804134
+      },
+      "hinted": {
+        "instr_per_op": 326119.3535,
+        "server_cpu_us_per_op": 86.0,
+        "wall_us_per_op": 156.19238885119557
+      },
+      "planner": {
+        "instr_per_op": 322642.2321,
+        "server_cpu_us_per_op": 81.0,
+        "wall_us_per_op": 149.79554088786244
+      },
+      "express": {
+        "instr_per_op": 216475.8642,
+        "server_cpu_us_per_op": 51.0,
+        "wall_us_per_op": 120.4337784089148
+      },
+      "hinted_rand": {
+        "instr_per_op": 326046.1747,
+        "server_cpu_us_per_op": 89.0,
+        "wall_us_per_op": 160.04290441051126
+      }
+    },
+    {
+      "block": 5,
+      "order": [
+        "hinted",
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand"
+      ],
+      "hinted": {
+        "instr_per_op": 326086.2241,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 158.74798940494657
+      },
+      "planner": {
+        "instr_per_op": 322596.2131,
+        "server_cpu_us_per_op": 82.0,
+        "wall_us_per_op": 148.90589406713843
+      },
+      "express": {
+        "instr_per_op": 216429.6973,
+        "server_cpu_us_per_op": 50.0,
+        "wall_us_per_op": 118.19296199828386
+      },
+      "hinted_rand": {
+        "instr_per_op": 325809.3043,
+        "server_cpu_us_per_op": 91.0,
+        "wall_us_per_op": 161.94272367283702
+      },
+      "express_rand": {
+        "instr_per_op": 216258.04,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 126.46722458302975
+      }
+    },
+    {
+      "block": 6,
+      "order": [
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand",
+        "hinted"
+      ],
+      "planner": {
+        "instr_per_op": 322857.448,
+        "server_cpu_us_per_op": 91.0,
+        "wall_us_per_op": 160.45879358425736
+      },
+      "express": {
+        "instr_per_op": 216225.4182,
+        "server_cpu_us_per_op": 53.0,
+        "wall_us_per_op": 126.18349362164736
+      },
+      "hinted_rand": {
+        "instr_per_op": 325938.7624,
+        "server_cpu_us_per_op": 97.0,
+        "wall_us_per_op": 172.4700352177024
+      },
+      "express_rand": {
+        "instr_per_op": 216326.621,
+        "server_cpu_us_per_op": 58.0,
+        "wall_us_per_op": 131.65772128850222
+      },
+      "hinted": {
+        "instr_per_op": 326220.2401,
+        "server_cpu_us_per_op": 93.0,
+        "wall_us_per_op": 166.97648698464036
+      }
+    },
+    {
+      "block": 7,
+      "order": [
+        "express",
+        "hinted_rand",
+        "express_rand",
+        "hinted",
+        "planner"
+      ],
+      "express": {
+        "instr_per_op": 216449.5237,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 129.84719825908542
+      },
+      "hinted_rand": {
+        "instr_per_op": 326107.4892,
+        "server_cpu_us_per_op": 96.0,
+        "wall_us_per_op": 170.02262100577354
+      },
+      "express_rand": {
+        "instr_per_op": 216243.1139,
+        "server_cpu_us_per_op": 59.0,
+        "wall_us_per_op": 131.98804566636682
+      },
+      "hinted": {
+        "instr_per_op": 326083.3461,
+        "server_cpu_us_per_op": 88.0,
+        "wall_us_per_op": 160.54189037531614
+      },
+      "planner": {
+        "instr_per_op": 322638.218,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 160.51786579191685
+      }
+    },
+    {
+      "block": 8,
+      "order": [
+        "hinted_rand",
+        "express_rand",
+        "hinted",
+        "planner",
+        "express"
+      ],
+      "hinted_rand": {
+        "instr_per_op": 326033.2363,
+        "server_cpu_us_per_op": 99.0,
+        "wall_us_per_op": 173.35681542754173
+      },
+      "express_rand": {
+        "instr_per_op": 216228.218,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 127.65381522476673
+      },
+      "hinted": {
+        "instr_per_op": 326060.2106,
+        "server_cpu_us_per_op": 89.0,
+        "wall_us_per_op": 160.43018912896514
+      },
+      "planner": {
+        "instr_per_op": 322625.265,
+        "server_cpu_us_per_op": 86.0,
+        "wall_us_per_op": 160.1727823726833
+      },
+      "express": {
+        "instr_per_op": 216510.7609,
+        "server_cpu_us_per_op": 57.0,
+        "wall_us_per_op": 128.20485336706042
+      }
+    },
+    {
+      "block": 9,
+      "order": [
+        "express_rand",
+        "hinted",
+        "planner",
+        "express",
+        "hinted_rand"
+      ],
+      "express_rand": {
+        "instr_per_op": 216220.7412,
+        "server_cpu_us_per_op": 57.0,
+        "wall_us_per_op": 125.4832093603909
+      },
+      "hinted": {
+        "instr_per_op": 326283.4484,
+        "server_cpu_us_per_op": 87.0,
+        "wall_us_per_op": 156.81224670261145
+      },
+      "planner": {
+        "instr_per_op": 322686.9193,
+        "server_cpu_us_per_op": 83.0,
+        "wall_us_per_op": 152.762808278203
+      },
+      "express": {
+        "instr_per_op": 216523.1445,
+        "server_cpu_us_per_op": 57.0,
+        "wall_us_per_op": 132.0178933441639
+      },
+      "hinted_rand": {
+        "instr_per_op": 325829.1626,
+        "server_cpu_us_per_op": 111.0,
+        "wall_us_per_op": 185.3000871837139
+      }
+    },
+    {
+      "block": 10,
+      "order": [
+        "hinted",
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand"
+      ],
+      "hinted": {
+        "instr_per_op": 326182.8382,
+        "server_cpu_us_per_op": 94.0,
+        "wall_us_per_op": 166.55855337157845
+      },
+      "planner": {
+        "instr_per_op": 322699.4016,
+        "server_cpu_us_per_op": 83.0,
+        "wall_us_per_op": 151.11785167828202
+      },
+      "express": {
+        "instr_per_op": 216530.6662,
+        "server_cpu_us_per_op": 52.0,
+        "wall_us_per_op": 122.03260408714414
+      },
+      "hinted_rand": {
+        "instr_per_op": 325848.2546,
+        "server_cpu_us_per_op": 94.0,
+        "wall_us_per_op": 169.14312234148383
+      },
+      "express_rand": {
+        "instr_per_op": 216283.6306,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 126.89503654837608
+      }
+    },
+    {
+      "block": 11,
+      "order": [
+        "planner",
+        "express",
+        "hinted_rand",
+        "express_rand",
+        "hinted"
+      ],
+      "planner": {
+        "instr_per_op": 322953.3654,
+        "server_cpu_us_per_op": 82.0,
+        "wall_us_per_op": 150.3902304917574
+      },
+      "express": {
+        "instr_per_op": 216244.9497,
+        "server_cpu_us_per_op": 53.0,
+        "wall_us_per_op": 123.30700056627393
+      },
+      "hinted_rand": {
+        "instr_per_op": 326084.4884,
+        "server_cpu_us_per_op": 96.0,
+        "wall_us_per_op": 170.11227998882532
+      },
+      "express_rand": {
+        "instr_per_op": 216159.9855,
+        "server_cpu_us_per_op": 56.0,
+        "wall_us_per_op": 128.06637305766344
+      },
+      "hinted": {
+        "instr_per_op": 326071.1356,
+        "server_cpu_us_per_op": 90.0,
+        "wall_us_per_op": 162.2870204038918
+      }
+    }
+  ],
+  "summary": {
+    "ndocs": 10000000,
+    "instr_per_op": {
+      "hinted": 326138.4818,
+      "planner": 322669.66795,
+      "express": 216410.8657833333,
+      "hinted_rand": 327173.92629166663,
+      "express_rand": 216402.27218333332
+    },
+    "server_cpu_us_per_op": {
+      "hinted": 92.41666666666667,
+      "planner": 84.83333333333333,
+      "express": 53.5,
+      "hinted_rand": 102.33333333333333,
+      "express_rand": 59.75
+    },
+    "wall_us_per_op": {
+      "hinted": 166.36573574505746,
+      "planner": 154.73754088549563,
+      "express": 124.62423853576183,
+      "hinted_rand": 178.80518472132584,
+      "express_rand": 132.49441309211156
+    },
+    "express_vs_hinted_instr": {
+      "mean_reduction_pct": 33.64448114663217,
+      "median_reduction_pct": 33.62474410402611,
+      "ci95": [
+        33.623050531453465,
+        33.668182966769045
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "express_vs_planner_instr": {
+      "mean_reduction_pct": 32.9311267304721,
+      "median_reduction_pct": 32.904449972948555,
+      "ci95": [
+        32.90360940333364,
+        32.96349263675762
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "express_vs_hinted_cpu": {
+      "mean_reduction_pct": 41.27317873215235,
+      "median_reduction_pct": 40.90439276485788,
+      "ci95": [
+        38.24607924452045,
+        45.181204577436795
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "express_rand_vs_hinted_rand_instr": {
+      "mean_reduction_pct": 33.850593584908665,
+      "median_reduction_pct": 33.676458150009225,
+      "ci95": [
+        33.65562431536926,
+        34.211985252849836
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "projected_get_node_server_cpu_us": {
+      "report_baseline_us": 71.7,
+      "reduction_applied": 0.33644481146632166,
+      "projected_us": 47.57690701786474,
+      "postgres_unprepared_us": 46.5,
+      "postgres_prepared_us": 20.5
+    }
+  }
+}

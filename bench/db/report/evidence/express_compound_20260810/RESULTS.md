@@ -57,6 +57,55 @@ the work express removes is fixed per operation, while the storage work it does
 not touch grows with the collection. 10 documents is MongoDB's own benchmark
 configuration; 200,000 is the realistic operating point. Both are reported.
 
+### ConDB's real `get_node`, on the real collection
+
+The 10,000,000-document `bench.layout2_view` copied verbatim from the 57017
+server -- every document, all five indexes -- into a server built from the
+patched fork, since the real dataset runs MongoDB 7.0.34, which predates express
+entirely. `allops_tree_node` is `{tree_id: 1, node_id: 1}` **unique**, so the
+real predicate qualifies. The real 7-field projection does not disqualify it.
+
+12 interleaved blocks of 10,000 `find_one` calls, arms rotated per block.
+
+| arm | plan | instr/op | server CPU µs/op | wall µs/op |
+|---|---|---|---|---|
+| `hinted` -- what ConDB sends today | LIMIT/PROJECTION_SIMPLE/FETCH/IXSCAN | 326,138 | 92.4 | 166.4 |
+| `planner` -- unhinted, express off (stock master) | LIMIT/PROJECTION_SIMPLE/FETCH/IXSCAN | 322,670 | 84.8 | 154.7 |
+| `express` -- unhinted, express on (**the change**) | EXPRESS_IXSCAN | **216,411** | **53.5** | **124.6** |
+
+- vs today's hinted call: **−33.64% instructions**, CI95 [33.62, 33.67], 12/12
+- vs stock master unhinted: **−32.93%**, CI95 [32.90, 32.96], 12/12
+- server CPU: **−41.3%**, CI95 [38.2, 45.2] (noisier instrument, reported second)
+
+A random-node pair guards against the fixed hot document carrying the result:
+**−33.85%**, CI95 [33.66, 34.21]. The win is not a cache artifact.
+
+**The harness reproduces the real operating point.** Its `hinted` arm measures
+166.4 µs of wall time; `report/ops/get_node.md` §0 measures the same operation
+at 166.9 µs on a different instrument. 0.3% apart.
+
+### What that does to the PostgreSQL gap
+
+Applying the measured instruction reduction to the report's 71.7 µs of server
+CPU:
+
+| | server CPU |
+|---|---|
+| MongoDB today | 71.7 µs |
+| MongoDB with this change | **~47.6 µs** |
+| PostgreSQL unprepared (the like-for-like arm) | 46.5 µs |
+| PostgreSQL prepared | 20.5 µs |
+
+The change closes essentially all of the server-side deficit against PostgreSQL
+*unprepared*. It does not touch the prepared-statement gap, which is protocol,
+not engine: `report/ops/get_node.md` §2 puts transport at 19.79 µs, command
+dispatch at 11.10 and command parse/teardown at 4.13 -- 35 µs, 49% of the total
+-- and no query-path change reaches any of it.
+
+Two conditions on realising this: ConDB must **drop the hint** (a hint
+disqualifies express outright; the report prices the hint itself at 0.05 µs, so
+dropping it costs nothing), and the server must be a build carrying the change.
+
 ## Why the numbers can be believed
 
 **Positive control.** Every comparison is run alongside the same ablation
@@ -137,10 +186,13 @@ itself. Measured, that is worth **2.6%** (`hinted` → `cached`, 319,213 →
 
 ## Files
 
-- `mongod_arms.json` -- 15-block, five-arm run on a real mongod (the headline)
+- `get_node_real_arms.json` -- 12-block, five-arm run on the real 10M-document
+  `layout2_view` collection (the ConDB-facing result)
+- `mongod_arms.json` -- 15-block, five-arm run on a synthetic mongod collection
 - `mongod_arms_r1.json` -- earlier three-arm run, 12 blocks, before the
   positive control was added
 - `point_query_bm_fixed.txt` -- benchmark output with the knob correctly applied
 - `point_query_bm_broken_knob.txt` -- the same run with the bare-store knob,
   kept as the record of the invalid measurement
-- Harness: `bench/db/bench_hint_plancache_instr.py`
+- Harnesses: `bench/db/bench_get_node_express_real.py` (real collection),
+  `bench/db/bench_hint_plancache_instr.py` (synthetic)
