@@ -322,8 +322,13 @@ floor, and the ~49 µs between them is spread across the retryable-read wrapper,
 pool's accounting, implicit session creation and `conn.command` — four spec-governed subsystems,
 none worth more than 9 µs. `get_entity.md` §2b says the same thing from the server side.
 
-**And the largest single movement available on this operation is not in this file.** Upgrading the
-server from 7.0.34 to master is 6.74 µs of server CPU, 15.0%, measured — `get_entity.md` §2c.
+**Corrected by the same-transport grid (`get_entity.md` §2d): on wall, at equal transport, the
+driver is the biggest lever on this operation.** Same box, same rows, same TCP loopback: pymongo
+4.13 139.2 µs wall against psycopg unprepared 61.2, with 76.8 of the 78.0 µs difference being
+client CPU. Driver master plus the `find_one` fast path measures 98.9 µs on that rig — about 40 µs
+of the driver gap already removed — and the hand-written OP_MSG floor puts most of the remaining
+~27 µs within mechanical reach, at the cost of the driver's feature set. The server upgrade
+(6.74 µs server CPU, §2c) is real but second to this on wall.
 
 ## 4. Artefacts
 

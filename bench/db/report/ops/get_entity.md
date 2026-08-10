@@ -335,6 +335,76 @@ both driven 60 seconds before attaching, decompression is 0.000 on both sides an
 MongoDB-code delta is unchanged at −6.204 µs against −6.178. The artifact moved where the time was
 attributed inside `mongod` without changing the total, which is the reassuring outcome.
 
+## 2d. The same-transport grid — where the gap actually is
+
+Every cross-engine figure above compares a containerised mongod behind a docker published port
+against psycopg on a container-local socket — two different transports. This section removes that:
+**both engines as host processes on this box, each measured over TCP loopback and over its unix
+socket, serving the same 9,000,000 value-checked rows** (`bench_entity_cross_engine.py`,
+`runs/entity_driver_20260809/cross_engine_20260810.json`; mongod is the clean master build, PG is
+16 with `shared_buffers=8GB` on tmpfs; one held connection per arm, 40,000-id warmed working set,
+arms rotated within 10 blocks, load < 4).
+
+| arm | server CPU µs | wall µs | floor CPU (`ping`/`SELECT 1`) | above floor |
+|---|---|---|---|---|
+| mongo master · TCP | 39.49 | 131.2 | 17.72 | 21.78 |
+| mongo master · unix | 35.43 | 121.2 | 16.12 | 19.31 |
+| PG16 unprepared · TCP | 32.60 | 60.2 | 15.62 | 16.98 |
+| PG16 prepared · TCP | 21.62 | 49.0 | 14.07 | 7.54 |
+| PG16 unprepared · unix | 28.68 | 53.5 | 12.49 | 16.19 |
+| PG16 prepared · unix | 17.65 | 42.4 | 11.04 | 6.61 |
+
+Client CPU on the same rig (system Python 3.10, stock pymongo 4.13.1 with C extensions, psycopg 3
+binary; 6 blocks × 2000):
+
+| client | client CPU µs | wall µs |
+|---|---|---|
+| pymongo `find_one` | 103.5 | 139.2 |
+| psycopg unprepared | 26.7 | 61.2 |
+| psycopg prepared | 28.1 | 51.4 |
+
+**Three conclusions this grid forces, and two of them correct this document.**
+
+1. **At equal transport the server-CPU gap is small.** Master against unprepared PG is
+   39.5 vs 32.6 over TCP and 35.4 vs 28.7 over unix — **1.21×–1.24×**, about 6.9 µs, of which the
+   above-floor difference is 4.8 µs. The 1.51× that §1 reports for the unprepared arm was partly the
+   two transports. The floors themselves are 2.1–3.6 µs apart, and master's `ping` floor (17.7) is
+   well under 7.0.34's 21.5.
+
+2. **Against *prepared* PG the server gap is structural and real**: above floor, 21.8 vs 7.5 —
+   MongoDB's express path still parses and dispatches the full command every time, and the wire
+   protocol has no prepared-statement equivalent. That ~14 µs is the part of the server story that
+   survives every correction in this document.
+
+3. **The end-to-end gap is the driver, almost exactly.** Same transport, unprepared: wall differs by
+   **78.0 µs** and client CPU by **76.8 µs**. The famous wall ratio on this operation is, at equal
+   transport, ~98% PyMongo-vs-psycopg and ~2% mongod-vs-postgres. This corrects §3 of
+   `get_entity_driver.md`, which ranked the server upgrade above the driver work: **on wall, at
+   equal transport, the driver is the biggest lever on this operation and it is not close.**
+
+Where the levers stand on this rig, measured (mongo TCP arms):
+
+| configuration | wall µs |
+|---|---|
+| pymongo 4.13 stock | 139.2 |
+| driver master, cursor path forced (same process) | 115.1 |
+| driver master + the `find_one` fast path (PR #1) | **98.9** |
+| psycopg unprepared | 61.2 |
+| hand-written OP_MSG client floor (§5, ~17 µs client CPU) implies | ~72 |
+
+So driver master plus PR #1 removes ~40 µs of the 78 µs driver gap today; the remaining ~27 µs of
+client-CPU excess (62.3 vs 26.7) is the ceiling-limited machinery `get_entity_driver.md` §3
+describes, and a minimal client demonstrates most of it is mechanically removable at the cost of
+the driver's feature set. Coalescing (§6) remains the only lever that crosses the whole gap and
+reverses it.
+
+Caveats, stated rather than buried: the grid's client is Python 3.10 with stock 4.13.1, the
+patched-driver row is Python 3.14 from this project's build — compare within a table, not across;
+PG's 10.5 GB table exceeds its 8 GB `shared_buffers` but sits on tmpfs, so misses are page-cache
+reads for both engines; per-block spread is in the JSON (mongo_tcp CPU ranged 39.2–43.8); and the
+server-CPU counter carries the conn-thread-only bias noted at the top of this file — PG's backend
+processes are counted whole, mongod's non-`conn` threads are not.
+
 ## 3. Two version traps
 
 - **`get_entity` does not use the `EXPRESS` executor.** Express is 8.0+ and the measured server is
