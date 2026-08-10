@@ -1,0 +1,402 @@
+{
+  "mongod": "/home/junyao/code/mongo/bazel-bin/src/mongo/db/mongod",
+  "ndocs": 200000,
+  "ops_per_block": 20000,
+  "plans": {
+    "hinted": {
+      "stages": [
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    },
+    "cached": {
+      "stages": [
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    },
+    "express": {
+      "stages": [
+        "EXPRESS_IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    }
+  },
+  "plan_cache_counters": {
+    "hinted": {
+      "hits": 0,
+      "misses": 0,
+      "skipped": 500
+    },
+    "cached": {
+      "hits": 500,
+      "misses": 0,
+      "skipped": 0
+    },
+    "express": {
+      "hits": 0,
+      "misses": 0,
+      "skipped": 0
+    }
+  },
+  "blocks": [
+    {
+      "block": 0,
+      "order": [
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "hinted": {
+        "instructions": 6268148915,
+        "per_op": 313407.44575,
+        "wall_s": 2.9675641795620322,
+        "us_per_op": 148.3782089781016
+      },
+      "cached": {
+        "instructions": 6066286723,
+        "per_op": 303314.33615,
+        "wall_s": 2.8629364585503936,
+        "us_per_op": 143.14682292751968
+      },
+      "express": {
+        "instructions": 4230786122,
+        "per_op": 211539.3061,
+        "wall_s": 2.3381837233901024,
+        "us_per_op": 116.90918616950512
+      }
+    },
+    {
+      "block": 1,
+      "order": [
+        "cached",
+        "express",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6068096377,
+        "per_op": 303404.81885,
+        "wall_s": 2.888624008744955,
+        "us_per_op": 144.43120043724775
+      },
+      "express": {
+        "instructions": 4229115293,
+        "per_op": 211455.76465,
+        "wall_s": 2.4056720174849033,
+        "us_per_op": 120.28360087424517
+      },
+      "hinted": {
+        "instructions": 6268051919,
+        "per_op": 313402.59595,
+        "wall_s": 2.9054989255964756,
+        "us_per_op": 145.27494627982378
+      }
+    },
+    {
+      "block": 2,
+      "order": [
+        "express",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4231167132,
+        "per_op": 211558.3566,
+        "wall_s": 2.3195314817130566,
+        "us_per_op": 115.97657408565283
+      },
+      "hinted": {
+        "instructions": 6264713978,
+        "per_op": 313235.6989,
+        "wall_s": 2.9996746173128486,
+        "us_per_op": 149.98373086564243
+      },
+      "cached": {
+        "instructions": 6069507283,
+        "per_op": 303475.36415,
+        "wall_s": 2.8482842380180955,
+        "us_per_op": 142.41421190090477
+      }
+    },
+    {
+      "block": 3,
+      "order": [
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "hinted": {
+        "instructions": 6268377092,
+        "per_op": 313418.8546,
+        "wall_s": 3.012193975970149,
+        "us_per_op": 150.60969879850745
+      },
+      "cached": {
+        "instructions": 6067295142,
+        "per_op": 303364.7571,
+        "wall_s": 2.878156247548759,
+        "us_per_op": 143.90781237743795
+      },
+      "express": {
+        "instructions": 4229794570,
+        "per_op": 211489.7285,
+        "wall_s": 2.3507481794804335,
+        "us_per_op": 117.53740897402167
+      }
+    },
+    {
+      "block": 4,
+      "order": [
+        "cached",
+        "express",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6067379207,
+        "per_op": 303368.96035,
+        "wall_s": 2.8758128015324473,
+        "us_per_op": 143.79064007662237
+      },
+      "express": {
+        "instructions": 4865068224,
+        "per_op": 243253.4112,
+        "wall_s": 2.441936943680048,
+        "us_per_op": 122.0968471840024
+      },
+      "hinted": {
+        "instructions": 6269307589,
+        "per_op": 313465.37945,
+        "wall_s": 3.1487651830539107,
+        "us_per_op": 157.43825915269554
+      }
+    },
+    {
+      "block": 5,
+      "order": [
+        "express",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4231702834,
+        "per_op": 211585.1417,
+        "wall_s": 2.627376443706453,
+        "us_per_op": 131.36882218532264
+      },
+      "hinted": {
+        "instructions": 6271636467,
+        "per_op": 313581.82335,
+        "wall_s": 4.5017696265131235,
+        "us_per_op": 225.08848132565618
+      },
+      "cached": {
+        "instructions": 6075437362,
+        "per_op": 303771.8681,
+        "wall_s": 4.601122330874205,
+        "us_per_op": 230.05611654371023
+      }
+    },
+    {
+      "block": 6,
+      "order": [
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "hinted": {
+        "instructions": 6272385125,
+        "per_op": 313619.25625,
+        "wall_s": 4.552365364506841,
+        "us_per_op": 227.61826822534204
+      },
+      "cached": {
+        "instructions": 6073291290,
+        "per_op": 303664.5645,
+        "wall_s": 3.849845949560404,
+        "us_per_op": 192.4922974780202
+      },
+      "express": {
+        "instructions": 4232031674,
+        "per_op": 211601.5837,
+        "wall_s": 2.911262390203774,
+        "us_per_op": 145.5631195101887
+      }
+    },
+    {
+      "block": 7,
+      "order": [
+        "cached",
+        "express",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6075091429,
+        "per_op": 303754.57145,
+        "wall_s": 3.7835253262892365,
+        "us_per_op": 189.17626631446183
+      },
+      "express": {
+        "instructions": 4232185895,
+        "per_op": 211609.29475,
+        "wall_s": 3.0639582127332687,
+        "us_per_op": 153.19791063666344
+      },
+      "hinted": {
+        "instructions": 6267629133,
+        "per_op": 313381.45665,
+        "wall_s": 2.9191971980035305,
+        "us_per_op": 145.95985990017653
+      }
+    },
+    {
+      "block": 8,
+      "order": [
+        "express",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4230460590,
+        "per_op": 211523.0295,
+        "wall_s": 2.3054866688326,
+        "us_per_op": 115.27433344163
+      },
+      "hinted": {
+        "instructions": 6269479869,
+        "per_op": 313473.99345,
+        "wall_s": 3.0199283817783,
+        "us_per_op": 150.996419088915
+      },
+      "cached": {
+        "instructions": 6069496876,
+        "per_op": 303474.8438,
+        "wall_s": 2.8379221530631185,
+        "us_per_op": 141.89610765315592
+      }
+    },
+    {
+      "block": 9,
+      "order": [
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "hinted": {
+        "instructions": 6269653127,
+        "per_op": 313482.65635,
+        "wall_s": 2.9092965526506305,
+        "us_per_op": 145.46482763253152
+      },
+      "cached": {
+        "instructions": 6070752120,
+        "per_op": 303537.606,
+        "wall_s": 2.7915476942434907,
+        "us_per_op": 139.57738471217453
+      },
+      "express": {
+        "instructions": 4231830517,
+        "per_op": 211591.52585,
+        "wall_s": 2.330429768189788,
+        "us_per_op": 116.5214884094894
+      }
+    },
+    {
+      "block": 10,
+      "order": [
+        "cached",
+        "express",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6066297434,
+        "per_op": 303314.8717,
+        "wall_s": 2.8295171381905675,
+        "us_per_op": 141.47585690952837
+      },
+      "express": {
+        "instructions": 4231902282,
+        "per_op": 211595.1141,
+        "wall_s": 2.3488610219210386,
+        "us_per_op": 117.44305109605193
+      },
+      "hinted": {
+        "instructions": 6269308934,
+        "per_op": 313465.4467,
+        "wall_s": 2.941212607547641,
+        "us_per_op": 147.06063037738204
+      }
+    },
+    {
+      "block": 11,
+      "order": [
+        "express",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4232104657,
+        "per_op": 211605.23285,
+        "wall_s": 2.377786328084767,
+        "us_per_op": 118.88931640423834
+      },
+      "hinted": {
+        "instructions": 6266832338,
+        "per_op": 313341.6169,
+        "wall_s": 2.974495919421315,
+        "us_per_op": 148.72479597106576
+      },
+      "cached": {
+        "instructions": 6069501092,
+        "per_op": 303475.0546,
+        "wall_s": 2.8947587441653013,
+        "us_per_op": 144.73793720826507
+      }
+    }
+  ],
+  "summary": {
+    "per_op_instructions": {
+      "hinted": 313439.68535833334,
+      "cached": 303493.4680625,
+      "express": 214200.624125
+    },
+    "us_per_op": {
+      "hinted": 161.88317721631998,
+      "cached": 158.09188787825406,
+      "express": 124.2551382475843
+    },
+    "hinted_vs_cached": {
+      "mean_delta_pct": 3.2772629999032596,
+      "median_delta_pct": 3.2865363321764747,
+      "ci95": [
+        3.2474480732121607,
+        3.304537319757772
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "hinted_vs_express": {
+      "mean_delta_pct": 46.548017327524235,
+      "median_delta_pct": 48.155146122774624,
+      "ci95": [
+        43.31965356411163,
+        48.17815396891569
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    },
+    "cached_vs_express": {
+      "mean_delta_pct": 41.89844635401224,
+      "median_delta_pct": 43.45105462071409,
+      "ci95": [
+        38.759469295194634,
+        43.488906683299525
+      ],
+      "blocks_positive": 12,
+      "blocks": 12
+    }
+  }
+}

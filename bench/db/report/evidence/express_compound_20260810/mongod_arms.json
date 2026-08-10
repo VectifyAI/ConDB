@@ -1,0 +1,728 @@
+{
+  "mongod": "/home/junyao/code/mongo/bazel-bin/src/mongo/db/mongod",
+  "ndocs": 200000,
+  "ops_per_block": 20000,
+  "plans": {
+    "hinted": {
+      "stages": [
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    },
+    "cached": {
+      "stages": [
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    },
+    "express": {
+      "stages": [
+        "EXPRESS_IXSCAN"
+      ],
+      "index": "probe_tree_node"
+    },
+    "single_off": {
+      "stages": [
+        "PROJECTION_SIMPLE",
+        "FETCH",
+        "IXSCAN"
+      ],
+      "index": "probe_node"
+    },
+    "single_on": {
+      "stages": [
+        "EXPRESS_IXSCAN"
+      ],
+      "index": "probe_node"
+    }
+  },
+  "plan_cache_counters": {
+    "hinted": {
+      "hits": 0,
+      "misses": 0,
+      "skipped": 500
+    },
+    "cached": {
+      "hits": 500,
+      "misses": 0,
+      "skipped": 0
+    },
+    "express": {
+      "hits": 0,
+      "misses": 0,
+      "skipped": 0
+    },
+    "single_off": {
+      "hits": 0,
+      "misses": 500,
+      "skipped": 0
+    },
+    "single_on": {
+      "hits": 0,
+      "misses": 0,
+      "skipped": 0
+    }
+  },
+  "blocks": [
+    {
+      "block": 0,
+      "order": [
+        "hinted",
+        "cached",
+        "express",
+        "single_off",
+        "single_on"
+      ],
+      "hinted": {
+        "instructions": 6348231168,
+        "per_op": 317411.5584,
+        "wall_s": 3.110883044078946,
+        "us_per_op": 155.5441522039473
+      },
+      "cached": {
+        "instructions": 6223211669,
+        "per_op": 311160.58345,
+        "wall_s": 2.9587547052651644,
+        "us_per_op": 147.93773526325822
+      },
+      "express": {
+        "instructions": 4303554165,
+        "per_op": 215177.70825,
+        "wall_s": 2.3900414472445846,
+        "us_per_op": 119.50207236222923
+      },
+      "single_off": {
+        "instructions": 5692898924,
+        "per_op": 284644.9462,
+        "wall_s": 2.822194967418909,
+        "us_per_op": 141.10974837094545
+      },
+      "single_on": {
+        "instructions": 3873905619,
+        "per_op": 193695.28095,
+        "wall_s": 2.3078922955319285,
+        "us_per_op": 115.39461477659643
+      }
+    },
+    {
+      "block": 1,
+      "order": [
+        "cached",
+        "express",
+        "single_off",
+        "single_on",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6224655401,
+        "per_op": 311232.77005,
+        "wall_s": 2.8898986810818315,
+        "us_per_op": 144.49493405409157
+      },
+      "express": {
+        "instructions": 4300774379,
+        "per_op": 215038.71895,
+        "wall_s": 2.36938688531518,
+        "us_per_op": 118.46934426575899
+      },
+      "single_off": {
+        "instructions": 5696501786,
+        "per_op": 284825.0893,
+        "wall_s": 2.797856690362096,
+        "us_per_op": 139.8928345181048
+      },
+      "single_on": {
+        "instructions": 3873937678,
+        "per_op": 193696.8839,
+        "wall_s": 2.3139123739674687,
+        "us_per_op": 115.69561869837344
+      },
+      "hinted": {
+        "instructions": 6346061609,
+        "per_op": 317303.08045,
+        "wall_s": 3.0255800932645798,
+        "us_per_op": 151.279004663229
+      }
+    },
+    {
+      "block": 2,
+      "order": [
+        "express",
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4303196731,
+        "per_op": 215159.83655,
+        "wall_s": 2.4440131029114127,
+        "us_per_op": 122.20065514557064
+      },
+      "single_off": {
+        "instructions": 5693129665,
+        "per_op": 284656.48325,
+        "wall_s": 2.8178519885987043,
+        "us_per_op": 140.89259942993522
+      },
+      "single_on": {
+        "instructions": 3871899414,
+        "per_op": 193594.9707,
+        "wall_s": 2.3050992991775274,
+        "us_per_op": 115.25496495887637
+      },
+      "hinted": {
+        "instructions": 6885944274,
+        "per_op": 344297.2137,
+        "wall_s": 3.1312683755531907,
+        "us_per_op": 156.56341877765954
+      },
+      "cached": {
+        "instructions": 6225483696,
+        "per_op": 311274.1848,
+        "wall_s": 2.9264951338991523,
+        "us_per_op": 146.3247566949576
+      }
+    },
+    {
+      "block": 3,
+      "order": [
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "single_off": {
+        "instructions": 5692789964,
+        "per_op": 284639.4982,
+        "wall_s": 2.8441963214427233,
+        "us_per_op": 142.20981607213616
+      },
+      "single_on": {
+        "instructions": 3872125846,
+        "per_op": 193606.2923,
+        "wall_s": 2.30956216994673,
+        "us_per_op": 115.4781084973365
+      },
+      "hinted": {
+        "instructions": 6346604886,
+        "per_op": 317330.2443,
+        "wall_s": 3.036945441737771,
+        "us_per_op": 151.84727208688855
+      },
+      "cached": {
+        "instructions": 6223520275,
+        "per_op": 311176.01375,
+        "wall_s": 3.0030447728931904,
+        "us_per_op": 150.15223864465952
+      },
+      "express": {
+        "instructions": 4300732538,
+        "per_op": 215036.6269,
+        "wall_s": 2.418268888257444,
+        "us_per_op": 120.9134444128722
+      }
+    },
+    {
+      "block": 4,
+      "order": [
+        "single_on",
+        "hinted",
+        "cached",
+        "express",
+        "single_off"
+      ],
+      "single_on": {
+        "instructions": 3873241824,
+        "per_op": 193662.0912,
+        "wall_s": 2.4331482155248523,
+        "us_per_op": 121.65741077624261
+      },
+      "hinted": {
+        "instructions": 6349133483,
+        "per_op": 317456.67415,
+        "wall_s": 3.1255306163802743,
+        "us_per_op": 156.27653081901371
+      },
+      "cached": {
+        "instructions": 6221627354,
+        "per_op": 311081.3677,
+        "wall_s": 2.9431238705292344,
+        "us_per_op": 147.15619352646172
+      },
+      "express": {
+        "instructions": 4302441685,
+        "per_op": 215122.08425,
+        "wall_s": 2.3883165242150426,
+        "us_per_op": 119.41582621075213
+      },
+      "single_off": {
+        "instructions": 5696473478,
+        "per_op": 284823.6739,
+        "wall_s": 2.888476596213877,
+        "us_per_op": 144.42382981069386
+      }
+    },
+    {
+      "block": 5,
+      "order": [
+        "hinted",
+        "cached",
+        "express",
+        "single_off",
+        "single_on"
+      ],
+      "hinted": {
+        "instructions": 6347286196,
+        "per_op": 317364.3098,
+        "wall_s": 3.143970564007759,
+        "us_per_op": 157.19852820038795
+      },
+      "cached": {
+        "instructions": 6221049592,
+        "per_op": 311052.4796,
+        "wall_s": 2.909954941831529,
+        "us_per_op": 145.49774709157646
+      },
+      "express": {
+        "instructions": 4305920821,
+        "per_op": 215296.04105,
+        "wall_s": 2.4175550416111946,
+        "us_per_op": 120.87775208055973
+      },
+      "single_off": {
+        "instructions": 5693271460,
+        "per_op": 284663.573,
+        "wall_s": 2.8327089678496122,
+        "us_per_op": 141.6354483924806
+      },
+      "single_on": {
+        "instructions": 3872175290,
+        "per_op": 193608.7645,
+        "wall_s": 2.3249673545360565,
+        "us_per_op": 116.24836772680283
+      }
+    },
+    {
+      "block": 6,
+      "order": [
+        "cached",
+        "express",
+        "single_off",
+        "single_on",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6227381546,
+        "per_op": 311369.0773,
+        "wall_s": 2.9437952488660812,
+        "us_per_op": 147.18976244330406
+      },
+      "express": {
+        "instructions": 4304032748,
+        "per_op": 215201.6374,
+        "wall_s": 2.4096657084301114,
+        "us_per_op": 120.48328542150557
+      },
+      "single_off": {
+        "instructions": 5696247910,
+        "per_op": 284812.3955,
+        "wall_s": 2.8006012607365847,
+        "us_per_op": 140.03006303682923
+      },
+      "single_on": {
+        "instructions": 3876991921,
+        "per_op": 193849.59605,
+        "wall_s": 2.4281346648931503,
+        "us_per_op": 121.40673324465752
+      },
+      "hinted": {
+        "instructions": 6346390499,
+        "per_op": 317319.52495,
+        "wall_s": 3.125874128192663,
+        "us_per_op": 156.29370640963316
+      }
+    },
+    {
+      "block": 7,
+      "order": [
+        "express",
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4302617316,
+        "per_op": 215130.8658,
+        "wall_s": 2.3758364440873265,
+        "us_per_op": 118.79182220436633
+      },
+      "single_off": {
+        "instructions": 5698790587,
+        "per_op": 284939.52935,
+        "wall_s": 2.8341694874688983,
+        "us_per_op": 141.70847437344491
+      },
+      "single_on": {
+        "instructions": 3872697336,
+        "per_op": 193634.8668,
+        "wall_s": 2.2871624026447535,
+        "us_per_op": 114.35812013223767
+      },
+      "hinted": {
+        "instructions": 6350520910,
+        "per_op": 317526.0455,
+        "wall_s": 2.9883938170969486,
+        "us_per_op": 149.41969085484743
+      },
+      "cached": {
+        "instructions": 6222793641,
+        "per_op": 311139.68205,
+        "wall_s": 2.9597314866259694,
+        "us_per_op": 147.98657433129847
+      }
+    },
+    {
+      "block": 8,
+      "order": [
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "single_off": {
+        "instructions": 5696776893,
+        "per_op": 284838.84465,
+        "wall_s": 2.905289724469185,
+        "us_per_op": 145.26448622345924
+      },
+      "single_on": {
+        "instructions": 3873158444,
+        "per_op": 193657.9222,
+        "wall_s": 2.4563689762726426,
+        "us_per_op": 122.81844881363213
+      },
+      "hinted": {
+        "instructions": 6349593081,
+        "per_op": 317479.65405,
+        "wall_s": 3.1165668815374374,
+        "us_per_op": 155.82834407687187
+      },
+      "cached": {
+        "instructions": 6226967006,
+        "per_op": 311348.3503,
+        "wall_s": 2.950265906751156,
+        "us_per_op": 147.5132953375578
+      },
+      "express": {
+        "instructions": 4303460417,
+        "per_op": 215173.02085,
+        "wall_s": 2.398427969776094,
+        "us_per_op": 119.9213984888047
+      }
+    },
+    {
+      "block": 9,
+      "order": [
+        "single_on",
+        "hinted",
+        "cached",
+        "express",
+        "single_off"
+      ],
+      "single_on": {
+        "instructions": 3873235355,
+        "per_op": 193661.76775,
+        "wall_s": 2.294962100684643,
+        "us_per_op": 114.74810503423214
+      },
+      "hinted": {
+        "instructions": 6348698378,
+        "per_op": 317434.9189,
+        "wall_s": 2.9886284433305264,
+        "us_per_op": 149.43142216652632
+      },
+      "cached": {
+        "instructions": 6225070938,
+        "per_op": 311253.5469,
+        "wall_s": 2.9084497820585966,
+        "us_per_op": 145.42248910292983
+      },
+      "express": {
+        "instructions": 4305608597,
+        "per_op": 215280.42985,
+        "wall_s": 2.3488933127373457,
+        "us_per_op": 117.44466563686728
+      },
+      "single_off": {
+        "instructions": 5697460460,
+        "per_op": 284873.023,
+        "wall_s": 2.7953240629285574,
+        "us_per_op": 139.76620314642787
+      }
+    },
+    {
+      "block": 10,
+      "order": [
+        "hinted",
+        "cached",
+        "express",
+        "single_off",
+        "single_on"
+      ],
+      "hinted": {
+        "instructions": 6347288942,
+        "per_op": 317364.4471,
+        "wall_s": 3.0373137462884188,
+        "us_per_op": 151.86568731442094
+      },
+      "cached": {
+        "instructions": 6228032734,
+        "per_op": 311401.6367,
+        "wall_s": 2.95404829736799,
+        "us_per_op": 147.7024148683995
+      },
+      "express": {
+        "instructions": 4304573155,
+        "per_op": 215228.65775,
+        "wall_s": 2.4273737967014313,
+        "us_per_op": 121.36868983507156
+      },
+      "single_off": {
+        "instructions": 5697986464,
+        "per_op": 284899.3232,
+        "wall_s": 2.8342483742162585,
+        "us_per_op": 141.71241871081293
+      },
+      "single_on": {
+        "instructions": 3873992225,
+        "per_op": 193699.61125,
+        "wall_s": 2.3168507162481546,
+        "us_per_op": 115.84253581240773
+      }
+    },
+    {
+      "block": 11,
+      "order": [
+        "cached",
+        "express",
+        "single_off",
+        "single_on",
+        "hinted"
+      ],
+      "cached": {
+        "instructions": 6224767213,
+        "per_op": 311238.36065,
+        "wall_s": 2.923250086605549,
+        "us_per_op": 146.16250433027744
+      },
+      "express": {
+        "instructions": 4303071174,
+        "per_op": 215153.5587,
+        "wall_s": 2.492570199072361,
+        "us_per_op": 124.62850995361805
+      },
+      "single_off": {
+        "instructions": 5698444691,
+        "per_op": 284922.23455,
+        "wall_s": 2.8437010180205107,
+        "us_per_op": 142.18505090102553
+      },
+      "single_on": {
+        "instructions": 3874521899,
+        "per_op": 193726.09495,
+        "wall_s": 2.2808534456416965,
+        "us_per_op": 114.04267228208482
+      },
+      "hinted": {
+        "instructions": 6349417762,
+        "per_op": 317470.8881,
+        "wall_s": 3.1081117186695337,
+        "us_per_op": 155.4055859334767
+      }
+    },
+    {
+      "block": 12,
+      "order": [
+        "express",
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached"
+      ],
+      "express": {
+        "instructions": 4303464415,
+        "per_op": 215173.22075,
+        "wall_s": 2.37770236749202,
+        "us_per_op": 118.885118374601
+      },
+      "single_off": {
+        "instructions": 5695288894,
+        "per_op": 284764.4447,
+        "wall_s": 2.804452057927847,
+        "us_per_op": 140.22260289639235
+      },
+      "single_on": {
+        "instructions": 3874727130,
+        "per_op": 193736.3565,
+        "wall_s": 2.34251004178077,
+        "us_per_op": 117.12550208903849
+      },
+      "hinted": {
+        "instructions": 6349460191,
+        "per_op": 317473.00955,
+        "wall_s": 3.199378877878189,
+        "us_per_op": 159.96894389390945
+      },
+      "cached": {
+        "instructions": 6224617412,
+        "per_op": 311230.8706,
+        "wall_s": 3.0135178873315454,
+        "us_per_op": 150.67589436657727
+      }
+    },
+    {
+      "block": 13,
+      "order": [
+        "single_off",
+        "single_on",
+        "hinted",
+        "cached",
+        "express"
+      ],
+      "single_off": {
+        "instructions": 5699647566,
+        "per_op": 284982.3783,
+        "wall_s": 2.9969064202159643,
+        "us_per_op": 149.84532101079822
+      },
+      "single_on": {
+        "instructions": 3873844448,
+        "per_op": 193692.2224,
+        "wall_s": 2.440804868005216,
+        "us_per_op": 122.0402434002608
+      },
+      "hinted": {
+        "instructions": 6349898026,
+        "per_op": 317494.9013,
+        "wall_s": 3.215442174114287,
+        "us_per_op": 160.77210870571434
+      },
+      "cached": {
+        "instructions": 6226967129,
+        "per_op": 311348.35645,
+        "wall_s": 3.0250420551747084,
+        "us_per_op": 151.25210275873542
+      },
+      "express": {
+        "instructions": 4303715681,
+        "per_op": 215185.78405,
+        "wall_s": 2.423584820702672,
+        "us_per_op": 121.1792410351336
+      }
+    },
+    {
+      "block": 14,
+      "order": [
+        "single_on",
+        "hinted",
+        "cached",
+        "express",
+        "single_off"
+      ],
+      "single_on": {
+        "instructions": 3873914553,
+        "per_op": 193695.72765,
+        "wall_s": 2.389022941701114,
+        "us_per_op": 119.45114708505571
+      },
+      "hinted": {
+        "instructions": 6349372528,
+        "per_op": 317468.6264,
+        "wall_s": 3.1929926155135036,
+        "us_per_op": 159.64963077567518
+      },
+      "cached": {
+        "instructions": 6223993961,
+        "per_op": 311199.69805,
+        "wall_s": 2.976283134892583,
+        "us_per_op": 148.81415674462914
+      },
+      "express": {
+        "instructions": 4304106510,
+        "per_op": 215205.3255,
+        "wall_s": 2.434697433374822,
+        "us_per_op": 121.7348716687411
+      },
+      "single_off": {
+        "instructions": 5697681583,
+        "per_op": 284884.07915,
+        "wall_s": 2.8523624893277884,
+        "us_per_op": 142.61812446638942
+      }
+    }
+  ],
+  "summary": {
+    "per_op_instructions": {
+      "hinted": 319213.0064433333,
+      "cached": 311233.7985566667,
+      "express": 215170.9011066667,
+      "single_off": 284811.30108333327,
+      "single_on": 193681.22994
+    },
+    "us_per_op": {
+      "hinted": 155.15626845881343,
+      "cached": 147.61885330391428,
+      "express": 120.38777980643015,
+      "single_off": 142.2344680906584,
+      "single_on": 117.43750622185568
+    },
+    "hinted_vs_cached": {
+      "mean_delta_pct": 2.5636707552510516,
+      "median_delta_pct": 2.0024933420751183,
+      "ci95": [
+        1.9731715312926912,
+        3.7217895142609683
+      ],
+      "blocks_positive": 15,
+      "blocks": 15
+    },
+    "hinted_vs_express": {
+      "mean_delta_pct": 48.35329812310409,
+      "median_delta_pct": 47.54455211884618,
+      "ci95": [
+        47.49887846504246,
+        50.031388633347206
+      ],
+      "blocks_positive": 15,
+      "blocks": 15
+    },
+    "cached_vs_express": {
+      "mean_delta_pct": 44.64494317644047,
+      "median_delta_pct": 44.65870912410802,
+      "ci95": [
+        44.611505392485675,
+        44.674436022917554
+      ],
+      "blocks_positive": 15,
+      "blocks": 15
+    },
+    "single_off_vs_single_on": {
+      "mean_delta_pct": 47.05158468761109,
+      "median_delta_pct": 47.072497325176045,
+      "ci95": [
+        47.02026988407874,
+        47.080831734300276
+      ],
+      "blocks_positive": 15,
+      "blocks": 15
+    }
+  }
+}
