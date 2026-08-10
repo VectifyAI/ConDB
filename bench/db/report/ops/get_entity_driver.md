@@ -330,6 +330,36 @@ of the driver gap already removed — and the hand-written OP_MSG floor puts mos
 ~27 µs within mechanical reach, at the cost of the driver's feature set. The server upgrade
 (6.74 µs server CPU, §2c) is real but second to this on wall.
 
+## 3b. The pre-merge reviews, and what they cost the claims
+
+Two further blank-context reviews ran at maintainer strictness against the two open PRs, each
+instructed to treat the newest commit — written under review pressure — as unreviewed code.
+
+**PR #1 (`find_one`): request-changes, now addressed.** The retry test added by the previous round
+was demonstrated to flake (`$clusterTime` is re-gossiped by the reconnect its own failpoint forces)
+and to pass with the fast path deleted — it now drops the volatile field and asserts the path was
+taken. The unreachable non-zero-cursor-id branch is now pinned by forging a reply and asserting the
+killCursors. The PR body carried three stale sections from before the fixes; rewritten. The review
+also verified, claim by claim, the equivalence table — including a zero-drift regeneration of the
+sync files and a clean `mypy --strict` — and found no behavioural divergence on any gate-accepted
+input.
+
+**PR #3 (pool): request-changes, with a real blocker in my own fix.** The rollback added after the
+previous review covered only the last two statements: the `popleft` and the three counter
+increments sat before the `try`, so an interrupt between them — the exact class the commit named —
+still leaked a maxPoolSize permit forever. Demonstrated by injection. Every mutation now sits
+inside the `try` with a progress marker; verified by injection at two points with pool state
+byte-identical before and after. Also added, from the same review: the `requests`-at-max decline
+test (that branch is load-bearing, not defensive — the long checkin queues the connection and
+releases the slot in separate critical sections), a CMAP-pairing test for the raise path, the
+missing pool-untouched assertions, and a changelog entry. One gap is disclosed in the PR rather
+than papered over: nothing asserts the merged checkin branch is taken, because there is no clean
+seam to assert it without instrumenting production code.
+
+The scoreboard for the lane after five review rounds: **28 defects found by reviewers, 27 fixed,
+one disclosed as an open question to maintainers; two of the 28 were blockers in code I wrote to
+fix earlier findings.** That last clause is the argument for the process.
+
 ## 4. Artefacts
 
 | file | what |
