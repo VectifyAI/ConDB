@@ -941,4 +941,98 @@ of core query execution to a type the codebase has already flagged for replaceme
 where 44% of the time is outside the server's reach entirely. The same effort spent on the driver
 question in L7 is worth an order of magnitude more.
 
+---
+
+## L8 — WiredTiger's key prefix compression. Real, small, and priced.
+
+WiredTiger stores row-store keys as a shared-prefix length plus the differing suffix, and MongoDB
+turns it on for every index (`wiredtiger_global_options.idl`,
+`storage.wiredTiger.indexConfig.prefixCompression`, default **true**). The trade looked bad for this
+index: a `(path, node_id, title, summary)` key is ~420 bytes of which `summary` is ~340, and
+adjacent keys share only the ~28-byte `path` prefix. With compression on, WiredTiger must
+materialise every key into a buffer; with it off, it can hand back a pointer into the page.
+
+Two collections, identical documents, one index each, differing only in that WT setting; same fused
+covered scan, outputs compared element-wise (`bench_subtree_wt_prefix.py`,
+`wt_prefix_compression.json`):
+
+| | prefix_compression=false vs true |
+|---|---|
+| **retired instructions** | **−1.22%** [−2.39, −0.77], **10/10 blocks lower** |
+| server CPU | −0.73% [−5.93, +3.70], 6/10 — noise |
+| index size | **+10.5%** (4.662 GB → 5.151 GB) |
+
+Consistent on the tight metric and small: **1.2% of instructions for 10.5% more index**. The
+prediction that it would remove a whole ~420-byte memcpy per row was wrong in magnitude — WiredTiger
+still copies the key into the cursor buffer either way, so only the prefix splice is saved.
+
+Not worth recommending generally. Worth knowing for a deployment that is CPU-bound and not
+space-bound, where it is a free 1.2%.
+
+---
+
+## L9 — What batching or vectorising the scan could actually recover
+
+The idea: pull many keys from WiredTiger in one go while the page is hot, decode them together, and
+amortise everything that costs the same per row regardless of row size. Rather than estimate its
+value, it was measured in two steps.
+
+### Step 1 — how much of the operation is per-row at all
+
+Cost decomposes as `rows × fixed + bytes × variable`, so holding total payload bytes equal and
+varying the row count isolates `fixed`. Two collections, **8,000,000 payload bytes each**, one with
+20,000 rows of 400 B and one with 2,000 rows of 4,000 B, same covering index, same fused scan
+(`bench_subtree_perrow_overhead.py`, `perrow_overhead.json`):
+
+**4,487.6 instructions per row** [4,463.9, 4,505.4] over 10 blocks — a ±0.5% band — and 0.3 µs/row.
+
+On the real 11,686-row subtree that is **52.4 M instructions / ~3,121 µs**, against ~7,150 µs of
+server CPU: **per-row fixed cost is ~89% of retired instructions and ~44% of server CPU time.** The
+two figures differ because per-row work is branchy low-IPC code while per-byte work is `memcpy` at
+very high IPC. **This operation is dominated by per-row cost, not by moving bytes** — which is not
+visible in a top-down profile, where the same cost is spread across twenty symbols whose common
+property is that each is paid once per row.
+
+### Step 2 — how much of that per-row cost batching could take
+
+Same differencing, applied per symbol, with `-e instructions:u` so a symbol's share is its share of
+instructions (`bench_subtree_perrow_breakdown.py`, `perrow_breakdown.json`). Categories were
+assigned by symbol semantics **before** the run, so the buckets could not be fitted to the answer.
+
+| category | instr/row | share |
+|---|---|---|
+| inherent: KeyString component decode | 1,284 | 27.3% |
+| inherent: BSON document structure | 922 | 19.6% |
+| **amortisable: WT cursor call** | **712** | **15.1%** |
+| unclassified (mostly WT internals) | 611 | 13.0% |
+| **amortisable: WSM / Document round-trip** | **540** | **11.5%** |
+| inherent: byte movement | 516 | 11.0% |
+| **amortisable: stage dispatch** | **119** | **2.5%** |
+| amortisable: per-row allocation | 3 | 0.1% |
+| **total** | **4,707** | |
+
+The total agrees with step 1's 4,487 to within 5% by an independent method.
+
+**Amortisable: 1,374 instructions per row, 29% of the per-row fixed cost.** Scaled: ~29% of 44% of
+server CPU ≈ **13% of server CPU, about 7% of wall — and that is an upper bound**, since it credits
+batching with removing those symbols entirely, where a batched read still does per-key work.
+
+**Where it lives matters more than the total.** Over half the amortisable cost is the WiredTiger
+cursor call (712 of 1,374), and WiredTiger's public cursor interface has no batch-next; capturing it
+means changing WiredTiger, not MongoDB's execution layer. What the query layer could take on its own
+— stage dispatch, the WSM/Document round-trip and allocation — is **662 instructions per row, about
+6% of server CPU and 3.5% of wall**.
+
+One prior belief did not survive: **stage dispatch is only 119 instructions per row, 2.5%.** The
+`getNextBatch → work → doWork → doWork` chain that looked like the obvious target for vectorisation
+is nearly free.
+
+### A bookkeeping error, recorded
+
+L4a was reverted in source but the binary was never rebuilt, so every measurement from that point on
+— L8 and both L9 steps — ran on a mongod containing L4a with its knob defaulting true. All of those
+are A/B comparisons **within one binary**, so the comparisons stand; what is not true is the
+statement that the binary under test was PR #5's code. The absolute per-row figures include L4a's
+~0.7%-of-server-CPU fast path, which does not move the bucket proportions. Rebuilt afterwards so the
+tree and the binary agree again.
 

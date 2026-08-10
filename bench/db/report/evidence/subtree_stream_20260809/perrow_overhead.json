@@ -1,0 +1,22 @@
+{
+  "many_rows": 20000,
+  "few_rows": 2000,
+  "payload_bytes": 8000000,
+  "per_block": [],
+  "metrics": {
+    "instructions": {
+      "per_row_fixed": 4487.570319303983,
+      "min": 4463.852979979267,
+      "max": 4505.380886684295,
+      "blocks": 10,
+      "share_of_real_op": null
+    },
+    "cpu_us": {
+      "per_row_fixed": 0.26706276320230815,
+      "min": 0.24968444431531683,
+      "max": 0.36238126280499156,
+      "blocks": 10,
+      "share_of_real_op": null
+    }
+  }
+}
