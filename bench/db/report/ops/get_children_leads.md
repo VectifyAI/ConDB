@@ -1074,6 +1074,118 @@ Ineligible shapes are 0%, not −36%, and nothing measures the eligible fraction
 The −36% embeds this box's ~20% IPC gain; **instructions transfer between machines, microseconds do
 not.**
 
+## L10 — removing the duplication, and what the sharding test found
+
+Two rounds of blank-context review agreed on one structural objection, in the same words: a separate
+*function* for the new fast path is unavoidable, a separate *list* of eligibility conditions is not.
+The second reviewer showed the list had **already drifted in both directions** in its first
+revision -- stricter than the shipped path on sparse and partial indexes (refused outright where the
+shipped path refuses conditionally), looser on shard filtering.
+
+Four duplications removed:
+
+| duplicate | now |
+|---|---|
+| index-catalog lookup, ~10 lines verbatim in two iterators | one free function in `namespace express` |
+| equality-prefix bound construction, ~18 lines | `buildEqualityPrefixBounds()`, shared |
+| hint matching, copied from `QueryPlanner` | the planner's own `hintMatchesNameOrPattern()`, lifted out of its anonymous namespace and exported |
+| the eligibility list | `isExpressCommandShapeEligible()`; each strategy holds only its deltas |
+
+The shared helper adds four conditions to the shipped `isEqualityExpressEligibleQuery()` that it did
+not check itself (metadata deps, query framework, `returnKey`, `batchSize`). That is behaviour-
+preserving rather than merely harmless: the function has exactly one caller, and that caller tests
+all four before reaching it. Verified by grep over the tree, not assumed.
+
+### The deduplication itself introduced a defect, on the shipped path
+
+A third blank-context review, scoped to "did this refactor change already-shipped behaviour",
+cleared refactors 1 and 2 by inspection -- caller census, IDL types for the four moved conditions
+(`batchSize` is `optional`, so both sites test presence and `batchSize: 0` is rejected either way),
+and the `"$hint"sv` literal still resolving after the function left the anonymous namespace. It
+found one real defect in refactor 3, and it is mine:
+
+    buildEqualityPrefixBounds(_indexCatalogEntry->descriptor(), {_filterValue}, _collator);
+
+The extracted helper took `const std::vector<BSONElement>&`. The braced argument at the **shipped**
+point-lookup call site materialises a one-element vector, so deduplicating added one `malloc` and
+one `free` per query to `EXPRESS_IXSCAN` -- the path whose entire purpose is to avoid that class of
+cost. Fixed by taking `std::span<const BSONElement>` and passing `std::span(&_filterValue, 1)`.
+
+Worth recording as a pattern: the refactor was requested to reduce risk, and the way it added risk
+was through a parameter type, not through any of the logic being merged.
+
+The same review caught `static_assert(Plan::canIterate() || true, ...)` as a tautology -- the
+`tassert` on the following line already requires the same expression to compile, so it asserted
+nothing. Removed. It also flagged a comment that still described `_stash` as a `boost::optional`
+after it became a `unique_ptr`.
+
+### The sharding test failed first, and was right to
+
+The change retires a documented restriction. `getIndexForExpressEquality()` refuses a non-unique
+index whenever a shard filter is needed, because *"Express executor cannot iterate (yet), so we can
+only support shard filtering when there is at most 1 possible result"* (`TODO SERVER-87016`). An
+iterating plan removes that reason. Nothing in the branch tested it, and the commit message claimed
+it.
+
+The first version of the test asserted the shards chose `EXPRESS_IXSCAN_PREFIX`. They did not:
+
+    PROJECTION_DEFAULT {_id: 1, ord: 1, $sortKey: {$meta: "sortKey"}}
+      SORT_KEY_GENERATOR -> SHARDING_FILTER -> FETCH -> IXSCAN
+
+**A sorted query on a sharded collection can never reach this fast path.** When the router merges
+sorted streams it asks each shard for a `$sortKey`, which makes the shard-side projection non-simple
+*and* gives the query a metadata dependency -- and express eligibility refuses both. This matters
+beyond the test: the measured `get_children` shape *has* a sort, so the −36% applies to it unsharded
+and does not transfer to a sharded deployment as measured.
+
+Dropping the sort, the fast path is chosen on both shards and filters orphans correctly while
+iterating. So the restriction really is retired, for unsorted queries.
+
+### The tests were then broken on purpose, because passing proves nothing
+
+Three mutations, each reverted and the file diffed byte-identical afterwards:
+
+| mutation | expected to be caught by | result |
+|---|---|---|
+| `releaseResources()` drops the cursor instead of saving it | the save/restore unit test | **caught** — 1 of 34 failed, on the row count |
+| the scan's end position removed | the in-order and empty-run unit tests | **caught** |
+| express accepts every document (orphans included) | the sharding test | **caught** — 375 rows instead of 250, exactly shard0's 125 orphans |
+
+The orphan mutation is the informative one: it leaves the control arm correct, because the
+stage-based plan filters through the `SHARDING_FILTER` stage and never calls `applyShardFilter()`.
+So the test's comparison, not just its absolute count, is doing real work.
+
+### Re-measured on the binary that is actually being submitted
+
+The previous numbers were taken before the deduplication and before the span fix. Re-run on the
+shipping binary, same protocol (1.5M documents, 20 blocks x 40 sweeps x 64 parents, three mongods
+from one binary over byte-identical dbpath copies, gate rotated across all three ports):
+
+| instrument | effect | control floor |
+|---|---|---|
+| retired instructions | **−22.81%**, blocks [−22.94, −22.68] | +0.22%, [+0.01, +0.46] |
+| server CPU | **−36.40% / −37.21% / −36.48%**, 60/60 blocks | +2.31% / +0.12% / +0.94% |
+| client wall | −16.39% / −17.14% / −16.43% | +1.29% / +0.20% / −0.06% |
+
+Absolute server CPU 91–105 µs falls to 58–66 µs. In every block all three arms returned the same
+row count, so no arm is cheaper for doing less.
+
+Two things to read honestly. The server-CPU control floor reached **+2.31%** in one campaign, well
+above the ~0.3% of the earlier runs, so the CPU separation should be read against a couple of points
+of noise rather than against zero; the instruction floor stayed at +0.22% and is the tighter
+instrument. And the wall figure came in at −16.4 to −17.1%, about a point and a half below the
+earlier −17.3 to −19.4% — the same change, a different day, and the reason to quote a range rather
+than a single number.
+
+### Coverage added
+
+`jstests/sharding/express_prefix_scan_orphans.js` (new; 250 documents, so the reply spans getMores
+with orphan filtering active) and four `PrefixScanViaUserIndex` unit tests in `express_plan_test.cpp`
+— whole run in index order, empty run, compound equality prefix, and resume mid-run across a
+save/restore with duplicate keys, which is the L9 data-loss bug written as a unit test. The file had
+a test per shipped iterator and none for this one. **34/34 unit tests, 8/8 express jstests
+(gated and ungated), sharding test passes.**
+
 ## Still to run
 
 - **L4** — build the express extension per L4c. Envelope ≈24 µs (L4a), shape known (L4b), driver
