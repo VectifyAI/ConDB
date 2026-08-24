@@ -105,13 +105,16 @@ def thread_nanos(pid: int, comm: str) -> int:
 # --------------------------------------------------------------- the server
 
 def start_mongod(binary: Path, dbpath: Path, logpath: Path, port: int,
-                 cache_gb: int, gate: str | None) -> subprocess.Popen:
+                 cache_gb: int, gate: str | None,
+                 extra_set_parameters: list[str] | None = None) -> subprocess.Popen:
     dbpath.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     argv = [str(binary), "--port", str(port), "--dbpath", str(dbpath),
             "--bind_ip", "127.0.0.1", "--wiredTigerCacheSizeGB", str(cache_gb),
             "--logpath", str(logpath),
             "--setParameter", "diagnosticDataCollectionEnabled=false"]
+    for extra in extra_set_parameters or []:
+        argv += ["--setParameter", extra]
     if GATE_KIND == "param":
         # A server parameter, not an environment variable: still fixed for the process's lifetime
         # because it is set on the command line, so the arms stay comparable.
@@ -313,6 +316,9 @@ def main() -> None:
     parser.add_argument("--port-rotation", type=int, default=0, choices=(0, 1, 2),
                         help="rotate which physical port and dbpath each arm runs on, to "
                              "separate a server-specific bias from a real effect")
+    parser.add_argument("--extra-set-parameter", action="append", default=[],
+                        help="setParameter applied to every arm (repeatable). Use to hold "
+                             "internalQueryEnableExpressPrefixScan=true while A/B'ing another knob")
     args = parser.parse_args()
 
     global GATE_ENV, GATE_KIND
@@ -330,6 +336,7 @@ def main() -> None:
                 "sweeps_per_block": args.sweeps, "cache_gb": args.cache_gb,
                 "gate_env": args.gate_env,
                 "gate_kind": args.gate_kind,
+                "extra_set_parameter": args.extra_set_parameter,
                 "port_rotation": args.port_rotation,
                 "arm_ports": arm_ports(args.port_rotation)},
         "units": {"server_cpu_us": "mongod CPU on the arm's own connection thread "
@@ -346,7 +353,8 @@ def main() -> None:
             if base_dbpath.exists():
                 shutil.rmtree(base_dbpath)
             prep = start_mongod(binary, base_dbpath, scratch / "prepare.log",
-                                57020, args.cache_gb, gate=None)
+                                57020, args.cache_gb, gate=None,
+                                extra_set_parameters=args.extra_set_parameter)
             try:
                 prep_db = MongoClient("mongodb://localhost:57020/?directConnection=true",
                                       maxPoolSize=1)[DB_NAME]
@@ -376,7 +384,8 @@ def main() -> None:
             port = ports[name]
             procs[name] = start_mongod(binary, scratch / f"dbpath_{port}",
                                        scratch / f"{name}.log", port, args.cache_gb,
-                                       ARM_GATES[name])
+                                       ARM_GATES[name],
+                                       extra_set_parameters=args.extra_set_parameter)
 
         arms = {name: build_arm(ports[name]) for name in ARM_NAMES}
         for name, arm in arms.items():

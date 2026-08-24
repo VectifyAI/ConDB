@@ -85,8 +85,37 @@ tens of µs as a standalone prize.
 | Allocator campaign | 8% class exclusive on L3; 1.91% leaf here | — | **below-bar** as a targeted change |
 | Lift `batchSize` / getMore | ClientCursor | 0 on this op | **closed** — L10 `getmore` and `cursor.totalOpened` are 0 |
 
-No candidate is classified **would-need-a-new-experiment**. The gated profile
-already prices the leftover frames. No experiment is warranted.
+No leftover *clears the bar*. The cheap-catalog item was still implemented and
+measured, because it is a real, local change. Result below.
+
+## Tried: cheap catalog on the express hit
+
+Code: `/tmp/mongo-getchildren` on `express-prefix-scan`, knob
+`internalQueryExpressPrefixScanCheapCatalog`. Hinted prefix-scan finds look up
+only the hinted index instead of `fillOutIndexEntries`. Internal finds never
+take the path (a first version segfaulted in `LogicalSessionCacheReap` on
+`config.transactions`).
+
+A/B: prefix scan on for all three arms; only probe has the cheap catalog.
+Synthetic 64×10 tree, same four index names as the real collection. Artifact
+`bench/db/runs/getchildren_cheap_catalog_20260820.json`, 12 blocks.
+
+| | median |
+|---|---:|
+| probe vs baseline | **−3.56%** |
+| control vs baseline | −0.23% |
+| baseline | 95.9 µs |
+| probe | 92.6 µs |
+
+That is about **3 µs**, matching the gated-profile `fillOutIndexEntries` 2.92%
+(~1.8 µs) plus a little. Several blocks were noisy (probe +40.6% in block 5;
+blocks 8–9 had 160–260 µs baselines). The median is the number. **Below-bar.
+Not proposed.** No experiment is warranted beyond this trial.
+
+Query-shape hash was not built: `computeQueryShapeHash` runs in
+`parseQueryAndBeginOperation` before `tryExpress`. Skipping it needs a find
+front-end change and drops `$queryStats`, same trade SERVER-102484 already
+owns. Ceiling remains 3.43% / ~2.1 µs.
 
 ## What this does not say
 
