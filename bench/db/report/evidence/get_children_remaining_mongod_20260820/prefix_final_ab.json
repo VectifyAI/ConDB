@@ -1,0 +1,445 @@
+{
+  "run": {
+    "binary": "/home/junyao/.cache/bazel/_bazel_junyao/0f0a2e643d67c51a4130376feed3b340/execroot/_main/bazel-out/k8-opt/bin/src/mongo/db/mongod_with_debug",
+    "blocks": 12,
+    "sweeps": 40,
+    "port_rotation": 0,
+    "arm_ports": {
+      "baseline": 57021,
+      "probe": 57022,
+      "control": 57023
+    },
+    "note": "final check: prefix-scan gate only; cheap catalog default off"
+  },
+  "units": {
+    "server_cpu_us": "connection-thread schedstat ns/op, microseconds",
+    "client_wall_us": "client wall us/op"
+  },
+  "correctness": {
+    "plans": {
+      "baseline": "CLASSIC_IXSCAN",
+      "probe": "EXPRESS_PREFIX",
+      "control": "CLASSIC_IXSCAN"
+    },
+    "elements_compared": 1280,
+    "row_mismatch": false,
+    "cheap_catalog": false
+  },
+  "cohort": {
+    "parents": [
+      "p000",
+      "p001",
+      "p002",
+      "p003",
+      "p004",
+      "p005",
+      "p006",
+      "p007",
+      "p008",
+      "p009",
+      "p010",
+      "p011",
+      "p012",
+      "p013",
+      "p014",
+      "p015",
+      "p016",
+      "p017",
+      "p018",
+      "p019",
+      "p020",
+      "p021",
+      "p022",
+      "p023",
+      "p024",
+      "p025",
+      "p026",
+      "p027",
+      "p028",
+      "p029",
+      "p030",
+      "p031",
+      "p032",
+      "p033",
+      "p034",
+      "p035",
+      "p036",
+      "p037",
+      "p038",
+      "p039",
+      "p040",
+      "p041",
+      "p042",
+      "p043",
+      "p044",
+      "p045",
+      "p046",
+      "p047",
+      "p048",
+      "p049",
+      "p050",
+      "p051",
+      "p052",
+      "p053",
+      "p054",
+      "p055",
+      "p056",
+      "p057",
+      "p058",
+      "p059",
+      "p060",
+      "p061",
+      "p062",
+      "p063"
+    ],
+    "docs": 640,
+    "indexes": 4
+  },
+  "blocks": [
+    {
+      "block": 0,
+      "order": [
+        "baseline",
+        "probe",
+        "control"
+      ],
+      "baseline": {
+        "server_cpu_us": 491.301962109375,
+        "client_wall_us": 1008.2447089871494,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 340.019154296875,
+        "client_wall_us": 763.3327097664733,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 476.775388671875,
+        "client_wall_us": 955.9385035117884,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -30.79222544989979,
+      "control_vs_baseline_pct": -2.956750544030194
+    },
+    {
+      "block": 1,
+      "order": [
+        "probe",
+        "control",
+        "baseline"
+      ],
+      "probe": {
+        "server_cpu_us": 352.3558515625,
+        "client_wall_us": 797.588792966053,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 493.8990609375,
+        "client_wall_us": 999.395542567072,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 493.40345703125,
+        "client_wall_us": 1013.0593914027485,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -28.586667454139196,
+      "control_vs_baseline_pct": 0.10044597361193464
+    },
+    {
+      "block": 2,
+      "order": [
+        "control",
+        "baseline",
+        "probe"
+      ],
+      "control": {
+        "server_cpu_us": 492.81791328125,
+        "client_wall_us": 985.0695132854527,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 493.05530820312504,
+        "client_wall_us": 992.7338750003399,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 357.796826171875,
+        "client_wall_us": 808.7066531288656,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -27.43271997703091,
+      "control_vs_baseline_pct": -0.0481477266191854
+    },
+    {
+      "block": 3,
+      "order": [
+        "baseline",
+        "probe",
+        "control"
+      ],
+      "baseline": {
+        "server_cpu_us": 467.12531484375,
+        "client_wall_us": 938.4519878949504,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 341.5047421875,
+        "client_wall_us": 762.4931675763946,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 499.597658203125,
+        "client_wall_us": 1005.8190132667734,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -26.892263952397684,
+      "control_vs_baseline_pct": 6.951527208547183
+    },
+    {
+      "block": 4,
+      "order": [
+        "probe",
+        "control",
+        "baseline"
+      ],
+      "probe": {
+        "server_cpu_us": 336.57458085937503,
+        "client_wall_us": 733.8075988172932,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 492.506031640625,
+        "client_wall_us": 987.3199831872624,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 468.128884765625,
+        "client_wall_us": 943.8602625095882,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -28.10215480980508,
+      "control_vs_baseline_pct": 5.207357988004679
+    },
+    {
+      "block": 5,
+      "order": [
+        "control",
+        "baseline",
+        "probe"
+      ],
+      "control": {
+        "server_cpu_us": 475.07468671875,
+        "client_wall_us": 950.8796304544376,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 469.263908203125,
+        "client_wall_us": 951.3937480505774,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 346.981367578125,
+        "client_wall_us": 756.7149214992241,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -26.05837322824089,
+      "control_vs_baseline_pct": 1.23827518248212
+    },
+    {
+      "block": 6,
+      "order": [
+        "baseline",
+        "probe",
+        "control"
+      ],
+      "baseline": {
+        "server_cpu_us": 484.73245859375004,
+        "client_wall_us": 988.9681441336505,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 342.538105859375,
+        "client_wall_us": 782.1519761819218,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 476.53562851562504,
+        "client_wall_us": 942.4123496046377,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -29.33460514422594,
+      "control_vs_baseline_pct": -1.6910008671391024
+    },
+    {
+      "block": 7,
+      "order": [
+        "probe",
+        "control",
+        "baseline"
+      ],
+      "probe": {
+        "server_cpu_us": 337.081984375,
+        "client_wall_us": 746.0484812327195,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 468.696871875,
+        "client_wall_us": 935.9352351566486,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 502.434774609375,
+        "client_wall_us": 1014.1332546936611,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -32.91029972257212,
+      "control_vs_baseline_pct": -6.71488209800068
+    },
+    {
+      "block": 8,
+      "order": [
+        "control",
+        "baseline",
+        "probe"
+      ],
+      "control": {
+        "server_cpu_us": 483.15930390625,
+        "client_wall_us": 978.0081707049249,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 482.115915234375,
+        "client_wall_us": 949.5032003997039,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 367.62209726562503,
+        "client_wall_us": 845.4406492091948,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -23.748192986553896,
+      "control_vs_baseline_pct": 0.2164186327198433
+    },
+    {
+      "block": 9,
+      "order": [
+        "baseline",
+        "probe",
+        "control"
+      ],
+      "baseline": {
+        "server_cpu_us": 486.817588671875,
+        "client_wall_us": 973.968330072239,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 345.15027265624997,
+        "client_wall_us": 780.6849863300158,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 462.760494921875,
+        "client_wall_us": 922.097044531256,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -29.100697943580606,
+      "control_vs_baseline_pct": -4.941705951017918
+    },
+    {
+      "block": 10,
+      "order": [
+        "probe",
+        "control",
+        "baseline"
+      ],
+      "probe": {
+        "server_cpu_us": 347.4297375,
+        "client_wall_us": 761.4579734308791,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "control": {
+        "server_cpu_us": 492.123909765625,
+        "client_wall_us": 996.6292609306037,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 464.822526171875,
+        "client_wall_us": 940.438182442449,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -25.255400085422558,
+      "control_vs_baseline_pct": 5.873506996013125
+    },
+    {
+      "block": 11,
+      "order": [
+        "control",
+        "baseline",
+        "probe"
+      ],
+      "control": {
+        "server_cpu_us": 445.6029875,
+        "client_wall_us": 908.0324531169026,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "baseline": {
+        "server_cpu_us": 470.72559296875,
+        "client_wall_us": 941.9760042874259,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe": {
+        "server_cpu_us": 341.88909765625,
+        "client_wall_us": 761.3221183419228,
+        "ops": 2560,
+        "rows": 25600
+      },
+      "probe_vs_baseline_pct": -27.369766428028708,
+      "control_vs_baseline_pct": -5.336995872756343
+    }
+  ],
+  "summary": {
+    "probe_median_pct": -27.767437393417993,
+    "control_median_pct": 0.02614912349637462,
+    "probe_min_pct": -32.91029972257212,
+    "probe_max_pct": -23.748192986553896,
+    "baseline_median_us": 483.4241869140625,
+    "probe_median_us": 343.84418925781245,
+    "blocks_probe_better": 12
+  }
+}

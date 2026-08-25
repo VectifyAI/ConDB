@@ -125,3 +125,20 @@ mechanism that could clear another 10%. Rebase and re-measure belong with
 upstream submission, not with hunting a second mongod change.
 
 Driver M3/M4 and a prepared-find protocol are out of scope here.
+
+## Final A/B (2026-08-25)
+
+Same binary, prefix-scan gate only (cheap catalog confirmed false). Synthetic
+64×10, 12 blocks. Artifact `prefix_final_ab.json`.
+
+| | |
+|---|---|
+| plans | probe `EXPRESS_PREFIX`; baseline/control `CLASSIC_IXSCAN` |
+| rows | 1280 elements, all three arms equal, every block |
+| probe vs baseline | **−27.77%** server CPU (all 12 blocks better) |
+| control vs baseline | **+0.03%** |
+| absolutes | 491–502 µs → 337–368 (box also compiling mongo; not the L10 60 µs) |
+
+This is not a re-measure of L10's −36% (different data, loaded box). It is a
+gate-follows-effect check: the path is taken, answers match, CPU falls, control
+does not.
