@@ -74,7 +74,10 @@ covered-row handoff. Against sequential individual
 queries, coalescing three already-known inputs reduces MongoDB
 group-completion P50 by 2.66$\times$, 2.27$\times$, and 2.62$\times$ for node,
 child, and entity reads; at 64 inputs the corresponding ratios are
-24.1$\times$, 6.81$\times$, and 25.1$\times$. With at most 16 client workers,
+24.1$\times$, 6.81$\times$, and 25.1$\times$.
+\code{get\_entity} already uses \code{IDHACK}; the remaining MongoDB
+cost is command setup rather than plan selection, so we did not attempt a
+server-side change for that operation. With at most 16 client workers,
 a threaded control still leaves coalescing 1.56--2.28$\times$ faster at three
 inputs across two grouping seeds. Cursor batch size has no
 projection-independent optimum: a one-million-row request gives a modest
@@ -481,6 +484,9 @@ initialization, \code{IDHackStage}, and projection construction. The payload
 control shows no measurable P50 change at 1\,KiB. At 256\,KiB, latency rises
 to 0.391\,ms in MongoDB and 0.619\,ms in PostgreSQL. Fixed lookup work
 dominates only at the 1\,KiB size used by the main workload.
+This query already takes \code{IDHACK}. The remaining cost is that command
+path rather than plan selection, so \code{get\_entity} is a poor target for
+a further \code{mongod} change, and we did not attempt one.
 
 The short-read arms pin an explicit index hint on both the baseline and the
 candidate. That keeps the comparison like-for-like, which is what the coalescing
@@ -1249,6 +1255,11 @@ also need an update, rebuild, and atomic-publication design.
 
 \subsection{Entity fetch}\label{sec:opt-entity}
 
+No MongoDB server change is measured for this operation: it already uses
+\code{IDHACK}, and Section~\ref{sec:overhead} places the residual on the
+command path. The candidate below is the same already-known-ID coalescing as
+for node lookup.
+
 \subsubsection{Optimization method}
 
 For each batch size, the baseline issues sequential equality lookups on the
@@ -1394,6 +1405,10 @@ external reproduction therefore requires publishing that frozen evidence bundle
 in addition to this report and its manifest.
 
 \section{Conclusion}
+
+\code{get\_entity} already uses \code{IDHACK}, so it was not a MongoDB
+source target; the only intervention measured for it is coalescing
+already-known IDs in the storage harness.
 
 Request coalescing is now integrated into the SQLite-backed Beam path. Under
 the report's local, warm-cache, fully materialized conditions, the storage
