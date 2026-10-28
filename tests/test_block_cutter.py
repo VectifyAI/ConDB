@@ -131,3 +131,26 @@ def test_precompute_missing_tree_does_not_return_stale_cache():
 
     with TreeDB(":memory:") as db:
         assert counter.precompute_tree_tokens(db, "missing-tree") == {}
+
+
+def test_block_content_lists_sections_in_document_order():
+    import contextdb
+
+    db = contextdb.open(":memory:")
+    try:
+        doc = {
+            "structure": [
+                {"title": f"Section {i}", "node_id": f"{i:04d}", "summary": f"part {i}", "text": f"body {i}"}
+                for i in range(1, 13)
+            ]
+        }
+        tree_id = db.store(doc, format="pageindex")
+        counter = TokenCounter()
+        counter.precompute_tree_tokens(db.storage, tree_id)
+        plan = BlockCutter(db.storage, counter, max_tokens_per_block=16000).cut_tree(tree_id)
+
+        content = plan.blocks[0].cached_content
+        positions = [content.index(f"Section {i}\n") for i in range(1, 13)]
+        assert positions == sorted(positions)
+    finally:
+        db.close()

@@ -3,11 +3,24 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, TypeVar, runtime_checkable
 
 from contextdb.logger import get_logger
 
 log = get_logger(__name__)
+
+T = TypeVar("T")
+
+
+def _is_index_slot(slot: Any) -> bool:
+    return isinstance(slot, str) and slot.isascii() and slot.isdigit()
+
+
+def sort_siblings(items: list[T], slot_of: Callable[[T], Any]) -> list[T]:
+    """Order slot-sorted siblings; a group of list indices ("0", "1", .., "10") sorts numerically."""
+    if len(items) > 1 and all(_is_index_slot(slot_of(item)) for item in items):
+        return sorted(items, key=lambda item: int(slot_of(item)))
+    return items
 
 
 @dataclass
@@ -198,7 +211,7 @@ class TreeDB:
     def get_children(self, tree_id: str, node_id: str) -> list[Node]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM nodes WHERE tree_id = ? AND parent_id = ? ORDER BY slot", (tree_id, node_id))
-        return [Node(**dict(row)) for row in cursor.fetchall()]
+        return sort_siblings([Node(**dict(row)) for row in cursor.fetchall()], lambda node: node.slot)
 
     def get_children_many(self, tree_id: str, node_ids: list[str]) -> dict[str, list[Node]]:
         """Fetch several sibling lists while preserving slot order within each parent."""
@@ -220,7 +233,7 @@ class TreeDB:
             for row in cursor.fetchall():
                 node = Node(**dict(row))
                 result[node.parent_id].append(node)
-        return result
+        return {node_id: sort_siblings(nodes, lambda node: node.slot) for node_id, nodes in result.items()}
 
     def get_subtree(
         self, tree_id: str, node_id: str, max_depth: int = 100, with_entities: bool = False
@@ -341,10 +354,18 @@ class TreeDB:
                 )
 
             def insert(
-                data: dict, nid: str, pid: Optional[str], ppath: Optional[str], pdepth: int, slot: Optional[str]
+                data: dict,
+                nid: str,
+                pid: Optional[str],
+                ppath: Optional[str],
+                pdepth: int,
+                slot: Optional[str],
+                rank: int = 0,
             ):
                 depth = pdepth + 1 if pid else 0
-                path = f"{ppath}/{nid}" if ppath else f"/r/{nid}"
+                # Below the root, path components are sibling ranks in get_children order,
+                # so ORDER BY path walks a subtree in document order.
+                path = f"{ppath}/{rank:08d}" if ppath else f"/r/{nid}"
                 ntype_str = data.get("type", "object")
                 ntype = self.OBJECT if ntype_str == "object" else (self.ARRAY if ntype_str == "array" else self.LEAF)
                 attrs = data.get("attrs")
@@ -371,13 +392,19 @@ class TreeDB:
                 )
 
                 children = data.get("children")
-                if children:
-                    if isinstance(children, dict):
-                        for k, child in children.items():
-                            insert(child, str(uuid.uuid4()), nid, path, depth, k)
-                    elif isinstance(children, list):
-                        for i, child in enumerate(children):
-                            insert(child, str(uuid.uuid4()), nid, path, depth, str(i))
+                if isinstance(children, dict):
+                    items = list(children.items())
+                elif isinstance(children, list):
+                    items = [(str(i), child) for i, child in enumerate(children)]
+                else:
+                    items = []
+                # Rank by the slot text SQLite will store (TEXT affinity); a NULL slot sorts first.
+                ordered = sort_siblings(
+                    sorted(items, key=lambda item: (item[0] is not None, str(item[0]))),
+                    lambda item: None if item[0] is None else str(item[0]),
+                )
+                for rank, (child_slot, child) in enumerate(ordered):
+                    insert(child, str(uuid.uuid4()), nid, path, depth, child_slot, rank)
 
             insert(tree_structure, root_id, None, None, -1, None)
             self.conn.commit()

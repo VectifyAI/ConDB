@@ -8,6 +8,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
+from contextdb.core.storage import sort_siblings
 from contextdb.retriever.algorithm.block_types import Block, BlockResult, BlockType
 from contextdb.retriever.algorithm.ranker import has_path_evidence
 
@@ -763,6 +764,9 @@ class BlockRetrieverFilesystemSupport:
             f"{self._NODE_QUERY} WHERE n.tree_id = ? AND n.parent_id = ? ORDER BY n.slot",
             (tree_id, node_id),
         )
-        children = [self._row_to_node_dict(row, tree_id) for row in cursor.fetchall()]
+        children = sort_siblings(
+            [self._row_to_node_dict(row, tree_id) for row in cursor.fetchall()],
+            lambda node: node["slot"],
+        )
         self._fs_children_cache[key] = children
         return list(children)

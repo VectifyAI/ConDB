@@ -432,6 +432,55 @@ def test_get_root_id_after_ingest(db):
 
 
 # ════════════════════════════════════════════════════════════════════
+# sibling order
+# ════════════════════════════════════════════════════════════════════
+
+def _list_tree(width=12):
+    return {"type": "object", "children": [{"type": "leaf", "attrs": {"i": i}} for i in range(width)]}
+
+def test_get_children_orders_list_indices_numerically(db):
+    """List children come back 0, 1, 2, .., 11, not 0, 1, 10, 11, 2."""
+    tid = db.ingest_tree(_list_tree())
+    root = db.get_root_id(tid)
+    assert [n.to_dict()["attrs"]["i"] for n in db.get_children(tid, root)] == list(range(12))
+    many = db.get_children_many(tid, [root])[root]
+    assert [n.to_dict()["attrs"]["i"] for n in many] == list(range(12))
+
+def test_get_children_keeps_slot_order_for_named_children(db):
+    """Named slots keep plain slot order; only all-numeric groups are reordered."""
+    tid = db.ingest_tree({"type": "object", "children": {k: {"type": "leaf"} for k in ["b", "10", "a", "2"]}})
+    assert [n.slot for n in db.get_children(tid, db.get_root_id(tid))] == ["10", "2", "a", "b"]
+
+def test_get_subtree_walks_children_in_get_children_order(db):
+    """Preorder from get_subtree matches a recursive get_children walk."""
+    tree = {
+        "type": "object",
+        "children": {
+            f"{i:04d}": {"type": "object", "children": [{"type": "leaf"} for _ in range(11)]} for i in range(3)
+        },
+    }
+    tid = db.ingest_tree(tree)
+    root = db.get_root_id(tid)
+
+    def walk(node_id):
+        order = [node_id]
+        for child in db.get_children(tid, node_id):
+            order.extend(walk(child.node_id))
+        return order
+
+    assert [n["node_id"] for n in db.get_subtree(tid, root, max_depth=5)] == walk(root)
+
+
+def test_get_subtree_matches_get_children_for_integer_keys(db):
+    """Integer dict keys are stored as text slots; path order must agree with get_children."""
+    tid = db.ingest_tree({"type": "object", "children": {i: {"type": "leaf"} for i in range(12)}})
+    root = db.get_root_id(tid)
+    children = [n.node_id for n in db.get_children(tid, root)]
+    assert [n.slot for n in db.get_children(tid, root)] == [str(i) for i in range(12)]
+    assert [n["node_id"] for n in db.get_subtree(tid, root, max_depth=1)][1:] == children
+
+
+# ════════════════════════════════════════════════════════════════════
 # delete_tree
 # ════════════════════════════════════════════════════════════════════
 
