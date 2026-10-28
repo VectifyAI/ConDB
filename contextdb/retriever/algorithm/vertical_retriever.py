@@ -56,7 +56,6 @@ class VerticalRetriever(BlockRetriever):
         if not allowed_top:
             allowed_top = top_block.node_ids
 
-        top_cache_segments = self._build_cache_segments(cache_window)
         top_result, llm_called, cache_metrics = self._process_block(
             block=top_block,
             query=query,
@@ -64,7 +63,7 @@ class VerticalRetriever(BlockRetriever):
             previous_top_candidate_ids=previous_top_candidate_ids,
             allowed_node_ids=allowed_top,
             pick_limit=pick_limit,
-            cache_segments=top_cache_segments,
+            cache_window=list(cache_window),
             current_block_content=top_block.cached_content or "",
             cache_current_block=self.cache_current_block,
         )
@@ -124,7 +123,6 @@ class VerticalRetriever(BlockRetriever):
                 if not allowed_sub:
                     allowed_sub = subtree_block.node_ids
 
-                sub_cache_segments = self._build_cache_segments(cache_window)
                 result, branch_calls, branch_cache_metrics = self._process_block(
                     block=subtree_block,
                     query=query,
@@ -132,7 +130,7 @@ class VerticalRetriever(BlockRetriever):
                     previous_top_candidate_ids=previous_top_candidate_ids,
                     allowed_node_ids=allowed_sub,
                     pick_limit=pick_limit,
-                    cache_segments=sub_cache_segments,
+                    cache_window=list(cache_window),
                     current_block_content=subtree_block.cached_content or "",
                     cache_current_block=self.cache_subtree_block,
                 )

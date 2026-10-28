@@ -229,7 +229,7 @@ class BlockRetrieverFilesystemSupport:
         query: str,
         previous_top_candidate_ids: list[str],
         pick_limit: int,
-        cache_segments: list[str] = None,
+        cache_window: list[dict[str, Any]] | None = None,
         cache_current_block: bool = True,
     ) -> list[tuple[dict[str, Any], BlockResult, int, dict[str, int]]]:
         if not subtree_specs:
@@ -245,7 +245,7 @@ class BlockRetrieverFilesystemSupport:
                 previous_top_candidate_ids=previous_top_candidate_ids,
                 allowed_node_ids=block.node_ids,
                 pick_limit=pick_limit,
-                cache_segments=cache_segments or [],
+                cache_window=cache_window,
                 current_block_content=block.cached_content or "",
                 cache_current_block=cache_current_block,
             )
@@ -266,7 +266,7 @@ class BlockRetrieverFilesystemSupport:
                         previous_top_candidate_ids,
                         block.node_ids,
                         pick_limit,
-                        cache_segments=cache_segments or [],
+                        cache_window=cache_window,
                         current_block_content=block.cached_content or "",
                         cache_current_block=cache_current_block,
                     )

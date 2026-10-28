@@ -31,13 +31,16 @@ def get_llm_config(provider: str, model: str) -> dict:
 
     Args:
         provider: LLM provider (anthropic, openai)
-        model: Model name
+        model: Model name, bare or litellm-style ("anthropic/claude-...")
 
     Returns:
         Model configuration dict with context_limit, max_concurrent, etc.
     """
     defaults = get_defaults().get("llm", {})
     provider_config = _load_yaml(CONFIG_DIR / "llm" / f"{provider}.yaml")
+    prefix = f"{provider}/"
+    if model and model.startswith(prefix):
+        model = model[len(prefix):]
     model_config = provider_config.get(model, {})
 
     return {**defaults, **model_config}
