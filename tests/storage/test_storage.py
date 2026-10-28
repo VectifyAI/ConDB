@@ -490,6 +490,18 @@ def test_delete_tree_keeps_shared_entities_until_last_reference_is_gone(db):
     db.delete_tree(t2)
     assert _count(db, "entities") == 0
 
+def test_delete_tree_orphan_check_uses_entity_id_index(db):
+    """The orphan check must not scan every node once per entity."""
+    plan = " ".join(
+        row[3]
+        for row in db.conn.execute(
+            "EXPLAIN QUERY PLAN SELECT 1 FROM entities WHERE entity_id IN (?) AND NOT EXISTS "
+            "(SELECT 1 FROM nodes WHERE nodes.entity_id = entities.entity_id)",
+            ("e",),
+        )
+    )
+    assert "nodes_entity_id_idx (entity_id=?)" in plan
+
 def test_delete_nonexistent_tree(db):
     """Deleting non-existent tree doesn't raise."""
     db.delete_tree("ghost")  # should not raise

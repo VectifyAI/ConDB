@@ -164,6 +164,8 @@ class TreeDB:
         cursor.execute("CREATE INDEX IF NOT EXISTS nodes_path_idx ON nodes(tree_id, path)")
         cursor.execute("CREATE INDEX IF NOT EXISTS nodes_parent_idx ON nodes(tree_id, parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS nodes_entity_idx ON nodes(tree_id, entity_type, entity_id)")
+        # delete_tree's orphan check looks nodes up by entity_id across all trees.
+        cursor.execute("CREATE INDEX IF NOT EXISTS nodes_entity_id_idx ON nodes(entity_id)")
         self.conn.commit()
 
     def _ts(self) -> int:
