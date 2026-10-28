@@ -175,21 +175,6 @@ class BlockRetrieverFilesystemSupport:
             block_id,
         )
 
-    def _build_fs_candidate_block(
-        self,
-        tree_id: str,
-        node_ids: list[str],
-        block_id: str,
-    ) -> tuple[Block, list[str]]:
-        nodes = self._get_nodes_by_ids(tree_id, node_ids)
-        allowed_node_ids = [node["node_id"] for node in nodes]
-        block = self._make_fs_block(
-            tree_id,
-            nodes,
-            block_id,
-        )
-        return block, allowed_node_ids
-
     @staticmethod
     def _merge_unique_ids(node_ids: list[str]) -> list[str]:
         merged: list[str] = []
@@ -603,9 +588,6 @@ class BlockRetrieverFilesystemSupport:
             refs.append(self._format_fs_frontier_ref(frontier_node))
         return refs
 
-    def _format_fs_beam_refs(self, beams: list[dict[str, str]]) -> list[str]:
-        return self._format_fs_frontier_refs(beams)
-
     def _collapse_fs_frontier(self, tree_id: str, frontier: list[dict[str, str]]) -> list[dict[str, str]]:
         collapsed: list[dict[str, str]] = []
         seen_node_ids: set[str] = set()
@@ -645,9 +627,6 @@ class BlockRetrieverFilesystemSupport:
 
             current = self._make_fs_frontier_node(child)
 
-    def _collapse_fs_single_child_beam(self, tree_id: str, beam: dict[str, str]) -> dict[str, str]:
-        return self._collapse_fs_single_child_frontier_node(tree_id, beam)
-
     def _is_virtual_fs_directory_id(self, tree_id: str, node_id: str) -> bool:
         node = self._get_cached_fs_node_dict(tree_id, node_id)
         if not node:
@@ -676,10 +655,6 @@ class BlockRetrieverFilesystemSupport:
             return path
         return frontier_node.get("node_id", "")
 
-    @staticmethod
-    def _format_fs_beam_ref(beam: dict[str, str]) -> str:
-        return BlockRetrieverFilesystemSupport._format_fs_frontier_ref(beam)
-
     def _format_fs_node_ref(self, node: dict[str, Any], fallback: str) -> str:
         attrs = self._fs_node_attrs(node)
         rel_path = (attrs.get("rel_path") or "").strip()
@@ -697,9 +672,6 @@ class BlockRetrieverFilesystemSupport:
             "title": attrs.get("title", ""),
             "path": attrs.get("rel_path", ""),
         }
-
-    def _make_fs_beam(self, node: dict[str, Any]) -> dict[str, str]:
-        return self._make_fs_frontier_node(node)
 
     def _shared_fs_path_prefix(self, nodes: list[dict[str, Any]]) -> str:
         paths = []

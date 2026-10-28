@@ -832,9 +832,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             )
         return result
 
-    def _override_done_if_dirs(self, result: BlockResult, tree_id: str, beams: list[dict]) -> BlockResult:
-        return self._override_done_if_frontier_dirs(result, tree_id, beams)
-
     def _is_fs_directory_id(self, tree_id: str, node_id: str) -> bool:
         key = (tree_id, node_id)
         if key in self._fs_is_dir_cache:

@@ -266,10 +266,6 @@ class ConDB:
         if not self.has_tree(tree_id):
             raise TreeNotFoundError(f"Tree not found: {tree_id}")
 
-def _namespace_entities(tree, entities):
-    """Backward-compatible wrapper around the shared namespacing helper."""
-    return namespace_entities(tree, entities)
-
 
 # ── Module-level convenience ────────────────────────────────────────
 
