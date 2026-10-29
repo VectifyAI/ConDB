@@ -252,12 +252,6 @@ class ContextTree:
     def close(self):
         self.storage.close()
 
-    @staticmethod
-    def _namespace_entities(
-        tree: dict[str, Any], entities: Optional[dict[str, dict[str, Any]]], namespace: Optional[str] = None
-    ):
-        return namespace_entities(tree, entities, namespace=namespace)
-
     def __enter__(self):
         return self
 

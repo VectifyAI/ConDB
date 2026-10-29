@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +59,40 @@ class BlockRetrieverPromptCacheSupport:
     def _cache_static_segment(self) -> str:
         return FS_CACHE_STATIC_SEGMENT if self.mode == "filesystem" else DOC_CACHE_STATIC_SEGMENT
 
-    def _build_cache_segments(self, cache_window: deque[dict[str, Any]]) -> list[str]:
+    def _fit_cache_window(
+        self,
+        cache_window: list[dict[str, Any]],
+        other_tokens: int,
+        block_id: str,
+    ) -> list[dict[str, Any]]:
+        """Drop cached blocks, oldest unpinned first, until the whole prompt fits the model budget.
+
+        Rendered blocks can be well over max_tokens_per_block and the dynamic prompt grows with the
+        allowed node list, so the window size alone does not bound a prompt.
+        """
+        static_tokens = self.token_counter.count_text_tokens(self._cache_static_segment())
+        total = static_tokens + other_tokens + sum(int(entry["tokens"]) for entry in cache_window)
+        if total <= self.prompt_token_budget:
+            return cache_window
+
+        kept = list(cache_window)
+        for drop_pinned in (False, True):
+            index = 0
+            while total > self.prompt_token_budget and index < len(kept):
+                if bool(kept[index].get("pinned")) == drop_pinned:
+                    total -= int(kept.pop(index)["tokens"])
+                else:
+                    index += 1
+        log.warning(
+            "prompt_budget block=%s dropped_blocks=%d est_total=%d budget=%d",
+            block_id,
+            len(cache_window) - len(kept),
+            total,
+            self.prompt_token_budget,
+        )
+        return kept
+
+    def _build_cache_segments(self, cache_window: Iterable[dict[str, Any]]) -> list[str]:
         if not self.cache_enabled:
             return []
 

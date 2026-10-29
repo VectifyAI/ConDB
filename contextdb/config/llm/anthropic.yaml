@@ -1,8 +1,11 @@
 # Anthropic models configuration
 # Pricing in USD per million tokens
+# token_estimate_ratio: real Claude input tokens / local cl100k estimate. Bench logs
+# (6,094 calls) give median 1.20, p95 1.27, max 1.30 for prompts over 5k tokens.
 
 claude-opus-4-6:
   context_limit: 200000
+  token_estimate_ratio: 1.3
   max_concurrent: 50
   rpm_limit: 4000
   tpm_limit: 400000
@@ -13,6 +16,7 @@ claude-opus-4-6:
 
 claude-sonnet-4-6:
   context_limit: 200000
+  token_estimate_ratio: 1.3
   max_concurrent: 50
   rpm_limit: 4000
   tpm_limit: 400000

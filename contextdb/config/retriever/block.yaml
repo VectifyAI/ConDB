@@ -1,7 +1,7 @@
 # Block retriever configuration
 max_tokens_per_block: 16000    # T parameter - max tokens per block
 min_tokens_per_block: 512      # L parameter - preferred minimum tokens per block
-cache_window_tokens: 0         # 0 = auto (model context_limit - cache_window_reserve_tokens)
+cache_window_tokens: 0         # 0 = auto (context_limit / token_estimate_ratio - max_tokens_per_block - reserve)
 cache_window_reserve_tokens: 4096
 cache_window_checkpoints: 4
 cache_current_block: true      # whether to cache current block prompt in all modes

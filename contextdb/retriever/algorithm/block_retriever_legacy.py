@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from jinja2 import Template
 
-from contextdb.config import get_llm_config, get_retriever_config
+from contextdb.config import get_retriever_config
 from contextdb.logger import get_logger
 from contextdb.retriever.algorithm.base_retriever import BaseRetriever
 from contextdb.retriever.algorithm.block_cutter import BlockCutter
@@ -517,16 +517,6 @@ class LegacyBlockRetriever(BaseRetriever):
 
     def get_cache_stats(self):
         return {"plan_cache_size": len(self._plan_cache)}
-
-    def _get_llm_max_concurrent(self, llm):
-        provider = getattr(llm, "provider", None)
-        model = getattr(llm, "model", None)
-        if provider and model:
-            try:
-                return get_llm_config(provider, model).get("max_concurrent", 10)
-            except Exception:
-                pass
-        return 10
 
 
 BlockRetrieverLegacy = LegacyBlockRetriever

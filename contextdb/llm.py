@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -112,6 +114,22 @@ def _response_to_internal(response) -> dict[str, Any]:
     return result
 
 
+def _add_usage(first: dict[str, Any] | None, second: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Sum token counts of two responses that served one request."""
+    if not first or not second:
+        return second or first
+    merged = dict(first)
+    for key, value in second.items():
+        previous = merged.get(key)
+        if isinstance(value, int) and isinstance(previous, int):
+            merged[key] = previous + value
+        elif isinstance(value, dict) and isinstance(previous, dict):
+            merged[key] = _add_usage(previous, value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _convert_assistant_blocks(content: list) -> dict[str, Any]:
     """Convert Anthropic-style assistant content blocks to OpenAI format message."""
     tool_calls = []
@@ -191,6 +209,12 @@ _PROVIDER_PREFIXES = {
     "openai": "openai",
 }
 
+# litellm errors worth retrying: 429, 500/529 (overload; refused connections also
+# land here), 502, 503 and timeouts. APIConnectionError is left out on purpose:
+# litellm wraps every error it cannot map in it, e.g. an Anthropic 403.
+_RETRYABLE_ERRORS = ("RateLimitError", "InternalServerError", "BadGatewayError", "ServiceUnavailableError", "Timeout")
+_RETRY_MAX_DELAY_S = 30.0
+
 
 def _resolve_litellm_model(provider: str, model: str = None) -> str:
     """Resolve to a litellm model string like 'anthropic/claude-...'."""
@@ -211,12 +235,14 @@ def _resolve_litellm_model(provider: str, model: str = None) -> str:
 # ── LLMClient ─────────────────────────────────────────────────────
 
 class LLMClient:
-    def __init__(self, provider: str = "anthropic", api_key: str = None, model: str = None):
+    def __init__(self, provider: str = "anthropic", api_key: str = None, model: str = None, max_retries: int = 4):
         import litellm
         self._litellm = litellm
         self.provider = provider
         self.model = _resolve_litellm_model(provider, model)
         self._api_key = api_key
+        self.max_retries = max(0, int(max_retries))
+        self._retryable_errors = tuple(getattr(litellm, name) for name in _RETRYABLE_ERRORS)
 
         # Suppress litellm's verbose logging by default
         litellm.suppress_debug_info = True
@@ -224,10 +250,29 @@ class LLMClient:
         logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
     def _call(self, **kwargs) -> Any:
-        """Central litellm.completion call, injects api_key if set."""
+        """Central litellm.completion call, injects api_key if set and retries transient errors."""
         if self._api_key:
             kwargs["api_key"] = self._api_key
-        return self._litellm.completion(**kwargs)
+        # Keep this loop the only retry layer; the OpenAI SDK otherwise retries twice per attempt.
+        kwargs["max_retries"] = 0
+        for attempt in range(self.max_retries + 1):
+            try:
+                return self._litellm.completion(**kwargs)
+            except self._retryable_errors:
+                if attempt == self.max_retries:
+                    raise
+                time.sleep(min(_RETRY_MAX_DELAY_S, 2.0 ** attempt) * random.uniform(0.5, 1.0))
+
+    def _complete(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        result = _response_to_internal(self._call(**kwargs))
+        tools = kwargs.get("tools")
+        if tools and len(tools) == 1 and not any(block["type"] == "tool_use" for block in result["content"]):
+            # The model answered in text; ask again with its only tool forced.
+            forced = {"type": "function", "function": {"name": tools[0]["function"]["name"]}}
+            retry = _response_to_internal(self._call(**kwargs, tool_choice=forced))
+            retry["usage"] = _add_usage(result["usage"], retry["usage"])
+            result = retry
+        return result
 
     def chat(
         self,
@@ -242,8 +287,7 @@ class LLMClient:
         if tools:
             kwargs["tools"] = _tools_to_openai(tools)
 
-        response = self._call(**kwargs)
-        return _response_to_internal(response)
+        return self._complete(kwargs)
 
     def chat_with_cache(
         self,
@@ -364,8 +408,7 @@ class LLMClient:
         if oai_tools:
             kwargs["tools"] = oai_tools
 
-        response = self._call(**kwargs)
-        return _response_to_internal(response)
+        return self._complete(kwargs)
 
     @staticmethod
     def _prepend_content(messages: list[dict], content: str) -> list[dict]:

@@ -97,6 +97,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         model = getattr(llm, "model", None)
         llm_config = get_llm_config(provider, model) if provider and model else {}
         context_limit = int(llm_config.get("context_limit", 100000))
+        token_estimate_ratio = float(llm_config.get("token_estimate_ratio", 1.0) or 1.0)
         llm_max_concurrent = max(1, int(llm_config.get("max_concurrent", 10) or 10))
         reserve_tokens = int(_DEFAULT_CONFIG.get("cache_window_reserve_tokens", 4096))
         configured_window = int(_DEFAULT_CONFIG.get("cache_window_tokens", 0) or 0)
@@ -109,9 +110,15 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         if configured_window > 0:
             self.cache_window_tokens = configured_window
         else:
-            # Use model window minus a safety reserve for non-cached + dynamic prompt.
-            self.cache_window_tokens = max(self.max_tokens_per_block, context_limit - reserve_tokens)
+            # Cached prefix + current block + dynamic prompt must fit the model window. Counts here
+            # are estimates, so shrink the window by the model's real/estimated token ratio first.
+            self.cache_window_tokens = max(
+                self.max_tokens_per_block,
+                int(context_limit / token_estimate_ratio) - self.max_tokens_per_block - reserve_tokens,
+            )
         self.cache_window_checkpoints = max(1, int(_DEFAULT_CONFIG.get("cache_window_checkpoints", 4) or 4))
+        # Hard cap on one prompt's estimated tokens; _fit_cache_window enforces it per call.
+        self.prompt_token_budget = int(context_limit / token_estimate_ratio) - reserve_tokens
 
         self.token_counter = TokenCounter(provider=provider, model=model)
         self.block_cutter = BlockCutter(
@@ -198,7 +205,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             if not block_specs:
                 break
 
-            cache_segments = self._build_cache_segments(cache_window)
             block_pick_limit = pick_limit if len(block_specs) <= 1 else max(pick_limit, 2)
             cache_current_block = self.cache_current_block if turn == 0 else self.cache_subtree_block
             block_rows = self._process_fs_block_specs(
@@ -206,7 +212,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                 query=query,
                 previous_top_candidate_ids=previous_top_candidate_ids,
                 pick_limit=block_pick_limit,
-                cache_segments=cache_segments,
+                cache_window=list(cache_window),
                 cache_current_block=cache_current_block,
             )
             if not block_rows:
@@ -381,11 +387,10 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             if group_id and group_id not in processed_groups:
                 processed_groups.add(group_id)
                 group_blocks = h_groups[group_id]
-                group_cache_segments = self._build_cache_segments(cache_window)
 
                 group_results = self._process_horizontal_group(
                     group_blocks, tree_id, query, beams, previous_top_candidate_ids, pick_limit,
-                    cache_segments=group_cache_segments,
+                    cache_window=list(cache_window),
                     cache_current_block=self.cache_current_block,
                 )
 
@@ -452,7 +457,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             if not allowed_node_ids:
                 continue
 
-            block_cache_segments = self._build_cache_segments(cache_window)
             result, llm_called, cache_metrics = self._process_block(
                 block=block,
                 query=query,
@@ -460,7 +464,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                 previous_top_candidate_ids=previous_top_candidate_ids,
                 allowed_node_ids=allowed_node_ids,
                 pick_limit=pick_limit,
-                cache_segments=block_cache_segments,
+                cache_window=list(cache_window),
                 current_block_content=block.cached_content or "",
                 cache_current_block=self.cache_current_block,
             )
@@ -521,7 +525,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         beams,
         previous_top_candidate_ids,
         pick_limit,
-        cache_segments: list[str] = None,
+        cache_window: list[dict[str, Any]] | None = None,
         cache_current_block: bool = True,
     ):
         """Process all blocks in a horizontal group concurrently."""
@@ -538,7 +542,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             blk, allowed = tasks[0]
             result, llm_called, cache_metrics = self._process_block(
                 blk, query, beams, previous_top_candidate_ids, allowed, pick_limit,
-                cache_segments=cache_segments or [],
+                cache_window=cache_window,
                 current_block_content=blk.cached_content or "",
                 cache_current_block=cache_current_block,
             )
@@ -557,7 +561,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                     previous_top_candidate_ids,
                     allowed,
                     pick_limit,
-                    cache_segments=cache_segments or [],
+                    cache_window=cache_window,
                     current_block_content=blk.cached_content or "",
                     cache_current_block=cache_current_block,
                 )
@@ -583,7 +587,7 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
         previous_top_candidate_ids,
         allowed_node_ids,
         pick_limit,
-        cache_segments: list[str] = None,
+        cache_window: list[dict[str, Any]] | None = None,
         current_block_content: str = "",
         cache_current_block: bool = True,
     ):
@@ -596,24 +600,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
             block.block_id,
             current_block_content or block.cached_content or "",
         )
-        non_cached_parts: list[str] = []
-        if self.cache_enabled:
-            cache_segment_parts = list(cache_segments or [])
-            if current_block_prompt:
-                if cache_current_block:
-                    cache_segment_parts.append(current_block_prompt)
-                else:
-                    non_cached_parts.append(current_block_prompt)
-            cache_payload = self._build_cache_payload(cache_segment_parts)
-            cache_key = self._build_block_cache_key(block, cache_payload)
-        else:
-            cache_payload = ""
-            cache_key = None
-            if current_block_prompt:
-                non_cached_parts.append(current_block_prompt)
-        non_cached_content = self._cache_payload_to_text(non_cached_parts)
-        if not non_cached_content:
-            non_cached_content = None
         response_id_map: dict[str, str] | None = None
         if self.mode == "filesystem":
             prompt_context = self._build_fs_prompt_context(
@@ -640,9 +626,33 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                 allowed_node_ids=allowed_node_ids,
                 pick_limit=pick_limit,
             )
-        prefix_tokens = self.token_counter.count_text_tokens(self._cache_payload_to_text(cache_payload))
-        current_tokens = 0 if (self.cache_enabled and cache_current_block) else self.token_counter.count_text_tokens(current_block_prompt)
+        current_block_tokens = self.token_counter.count_text_tokens(current_block_prompt)
         dynamic_tokens = self.token_counter.count_text_tokens(dynamic_prompt)
+
+        non_cached_parts: list[str] = []
+        if self.cache_enabled:
+            cache_segment_parts: list[str] = []
+            if cache_window is not None:
+                fitted_window = self._fit_cache_window(cache_window, current_block_tokens + dynamic_tokens, block.block_id)
+                cache_segment_parts = self._build_cache_segments(fitted_window)
+            if current_block_prompt:
+                if cache_current_block:
+                    cache_segment_parts.append(current_block_prompt)
+                else:
+                    non_cached_parts.append(current_block_prompt)
+            cache_payload = self._build_cache_payload(cache_segment_parts)
+            cache_key = self._build_block_cache_key(block, cache_payload)
+        else:
+            cache_payload = ""
+            cache_key = None
+            if current_block_prompt:
+                non_cached_parts.append(current_block_prompt)
+        non_cached_content = self._cache_payload_to_text(non_cached_parts)
+        if not non_cached_content:
+            non_cached_content = None
+
+        prefix_tokens = self.token_counter.count_text_tokens(self._cache_payload_to_text(cache_payload))
+        current_tokens = 0 if (self.cache_enabled and cache_current_block) else current_block_tokens
         est_total_tokens = prefix_tokens + current_tokens + dynamic_tokens
         log.info(
             "prompt_tokens block=%s prefix=%d current=%d dynamic=%d est_total=%d allowed=%d",
@@ -831,9 +841,6 @@ class BlockRetriever(BlockRetrieverFilesystemSupport, BlockRetrieverPromptCacheS
                 usage=result.usage,
             )
         return result
-
-    def _override_done_if_dirs(self, result: BlockResult, tree_id: str, beams: list[dict]) -> BlockResult:
-        return self._override_done_if_frontier_dirs(result, tree_id, beams)
 
     def _is_fs_directory_id(self, tree_id: str, node_id: str) -> bool:
         key = (tree_id, node_id)

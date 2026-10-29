@@ -1230,3 +1230,17 @@ def test_filesystem_cache_window_pins_top_block(tmp_path):
         assert last_cache.count("=== BLOCK fs_sub_") == 1
     finally:
         db.close()
+
+
+def test_filesystem_children_of_json_array_follow_index_order():
+    db = TreeDB(":memory:")
+    try:
+        tree_id = db.ingest_tree(
+            {"type": "object", "children": [{"type": "leaf", "attrs": {"title": str(i)}} for i in range(12)]},
+            meta={"source": "filesystem"},
+        )
+        retriever = BlockRetriever(db, PathMatchLLM(), cache_enabled=False, mode="filesystem")
+        children = retriever._get_direct_children_nodes(tree_id, db.get_root_id(tree_id))
+        assert [node["slot"] for node in children] == [str(i) for i in range(12)]
+    finally:
+        db.close()
